@@ -251,33 +251,132 @@ class Game {
     }
     
     /**
-     * Update contextual UIs (mining, harvesting, trading) based on the
-     * player's current surroundings.  If a non‑contextual UI (e.g. inventory,
-     * crafting, building or skills) is open, this method will do nothing.
-     * Contextual UIs are those triggered by the world: mining when adjacent
-     * to a cliff, harvesting when on a forest tile, and trading when on or
-     * near a city.  This method ensures that only one of these is visible
-     * at any given time and hides it if the player moves away.
+     * Checks the player's surroundings and updates the contextual UI (mining,
+     * harvesting, trading) to match the current highest-priority action.
+     * This prevents flickering by only changing the UI when the contextual state
+     * itself changes. Non-contextual UIs (inventory, craft, etc.) are not affected.
      */
     updateContextualUIs() {
-        // Treat the mining, harvest and trade panels as contextual.  If
-        // another type of UI is open, skip showing contextual panels.
         const contextualModes = ['mine', 'harvest', 'trade'];
-        if (this.ui.activeUIMode && !contextualModes.includes(this.ui.activeUIMode)) {
+        const isContextualUIActive = contextualModes.includes(this.ui.activeUIMode);
+        const isOverlayUIActive = this.ui.activeUIMode && !isContextualUIActive;
+
+        // If a non-contextual UI like Inventory or Crafting is open, do nothing.
+        if (isOverlayUIActive) {
             return;
         }
-        // Try mining first.  If a mining UI is shown, suppress harvest/trade.
-        if (this.maybeShowMiningUI()) return;
-        // Then harvest.  If shown, suppress trade.
-        if (this.maybeShowHarvestUI()) return;
-        // Then trade.
-        if (this.maybeShowTradeUI()) return;
-        // If none should be shown but one was open, hide it.
-        if (contextualModes.includes(this.ui.activeUIMode)) {
+
+        const { mode: newMode, params } = this.determineContextualMode();
+
+        // If the mode is the same as what's already displayed, do nothing.
+        if (newMode === this.ui.activeUIMode) {
+            return;
+        }
+
+        // The mode has changed. Hide whatever contextual UI was open.
+        if (isContextualUIActive) {
             this.ui.hide();
+        }
+
+        // Show the new UI if there is one.
+        switch (newMode) {
+            case 'mine':
+                this.ui.showMining(params.q, params.r);
+                break;
+            case 'harvest':
+                this.ui.showHarvest(params.q, params.r, params.treeMesh);
+                break;
+            case 'trade':
+                const cityKey = `${params.cityQ},${params.cityR}`;
+                this.initializeCityPrices(cityKey); // Ensure prices are generated
+                this.ui.showTrade(cityKey, this.state.prices[cityKey]);
+                break;
         }
     }
     
+    /**
+     * Determines the highest-priority contextual UI mode based on the player's
+     * current position and surroundings.
+     * @returns {{mode: string|null, params: object}} An object with the mode and its parameters.
+     */
+    determineContextualMode() {
+        const q = this.player.q;
+        const r = this.player.r;
+        const currentHeight = this.world.getHeight(q, r);
+
+        // Define search directions for neighbors
+        const dirs = [ { dq: 1, dr: 0 }, { dq: -1, dr: 0 }, { dq: 0, dr: 1 }, { dq: 0, dr: -1 }, { dq: 1, dr: -1 }, { dq: -1, dr: 1 } ];
+
+        // 1. Check for Mining (Highest Priority)
+        for (const dir of dirs) {
+            const nq = q + dir.dq;
+            const nr = r + dir.dr;
+            const h = this.world.getHeight(nq, nr);
+            // A cliff is a neighbor at least 3 levels higher.
+            if (h !== -Infinity && h - currentHeight >= 3) {
+                return { mode: 'mine', params: { q: nq, r: nr } };
+            }
+        }
+
+        // 2. Check for Harvesting
+        const feat = (this.world.featureMap[r] && this.world.featureMap[r][q]) || 'none';
+        if (feat === 'forest') {
+            if (this.propsGroup) {
+                const treeMesh = this.propsGroup.children.find(child =>
+                    child.userData && child.userData.type === 'forest' && child.userData.q === q && child.userData.r === r
+                );
+                if (treeMesh) {
+                    return { mode: 'harvest', params: { q, r, treeMesh } };
+                }
+            }
+        }
+
+        // 3. Check for Trading
+        let cityQ = null;
+        let cityR = null;
+        for (const dir of [{dq:0, dr:0}, ...dirs]) { // Check current tile and neighbors
+            const nq = q + dir.dq;
+            const nr = r + dir.dr;
+            if (this.world.isInside(nq, nr)) {
+                const featAt = (this.world.featureMap[nr] && this.world.featureMap[nr][nq]) || 'none';
+                if (featAt === 'city') {
+                    cityQ = nq;
+                    cityR = nr;
+                    break;
+                }
+            }
+        }
+        if (cityQ !== null) {
+            return { mode: 'trade', params: { cityQ, cityR } };
+        }
+        
+        // 4. No context found
+        return { mode: null, params: {} };
+    }
+
+    /**
+     * Generates and caches a list of items and prices for a given city if not
+     * already present.
+     * @param {string} cityKey The unique key for the city (e.g., '15,20').
+     */
+    initializeCityPrices(cityKey) {
+        if (this.state.prices[cityKey]) return; // Already initialized
+
+        const allIds = Object.keys(ITEM_BASE_PRICES);
+        const untradeable = ['cabin', 'stone_wall', 'wood_fence'];
+        const tradeable = allIds.filter((id) => !untradeable.includes(id));
+        const count = 5 + Math.floor(Math.random() * 3);
+        const shuffled = tradeable.slice().sort(() => Math.random() - 0.5);
+        const chosen = shuffled.slice(0, count);
+        const prices = {};
+        chosen.forEach((id) => {
+            const base = ITEM_BASE_PRICES[id];
+            const factor = 0.8 + Math.random() * 0.4;
+            prices[id] = Math.max(1, Math.round(base * factor));
+        });
+        this.state.prices[cityKey] = prices;
+    }
+
     // --- All game logic methods follow ---
     // (Crafting, building, trading, harvesting, inventory, etc.)
     // These are now cleaner as they delegate all UI work to this.ui
@@ -633,156 +732,6 @@ class Game {
         }
     }
 
-    /**
-     * Automatically show or hide the mining UI based on the player's adjacency
-     * to a cliff of height difference >= 3.  Returns true if a mining UI
-     * should suppress other contextual UIs.
-     */
-    maybeShowMiningUI() {
-        const q = this.player.q;
-        const r = this.player.r;
-        const currentHeight = this.world.getHeight(q, r);
-        const dirs = [
-            { dq: 1, dr: 0 }, { dq: -1, dr: 0 },
-            { dq: 0, dr: 1 }, { dq: 0, dr: -1 },
-            { dq: 1, dr: -1 }, { dq: -1, dr: 1 },
-        ];
-        let targetQ = null;
-        let targetR = null;
-        for (const dir of dirs) {
-            const nq = q + dir.dq;
-            const nr = r + dir.dr;
-            const h = this.world.getHeight(nq, nr);
-            // A cliff is defined as a neighbor at least 3 levels higher.
-            if (h !== -Infinity && h - currentHeight >= 3) {
-                targetQ = nq;
-                targetR = nr;
-                break;
-            }
-        }
-        if (targetQ != null) {
-            // Mining overrides other UIs: close any non‑contextual panel first.
-            if (this.ui.activeUIMode && !['mine', 'harvest', 'trade'].includes(this.ui.activeUIMode)) {
-                this.ui.hide();
-            }
-            this.ui.showMining(targetQ, targetR);
-            return true;
-        }
-        // No cliff nearby: if the mining UI was open, hide it.
-        if (this.ui.activeUIMode === 'mine') {
-            this.ui.hide();
-        }
-        return false;
-    }
-
-    /**
-     * Automatically show or hide the harvest UI when standing on a forest tile
-     * with an unharvested tree prop.  Returns true if the harvest UI is shown.
-     */
-    maybeShowHarvestUI() {
-        const q = this.player.q;
-        const r = this.player.r;
-        const feat = (this.world.featureMap[r] && this.world.featureMap[r][q]) || 'none';
-        // Do not interrupt another UI unless it's the harvest UI itself.
-        if (this.ui.activeUIMode && this.ui.activeUIMode !== 'harvest') {
-            return false;
-        }
-        // If not on a forest tile, close any open harvest panel and return.
-        if (feat !== 'forest') {
-            if (this.ui.activeUIMode === 'harvest') {
-                this.ui.hide();
-            }
-            return false;
-        }
-        // Determine if a tree mesh exists at this tile.  If not, hide and return.
-        let treeMesh = null;
-        if (this.propsGroup) {
-            for (const child of this.propsGroup.children) {
-                if (child.userData && child.userData.type === 'forest' && child.userData.q === q && child.userData.r === r) {
-                    treeMesh = child;
-                    break;
-                }
-            }
-        }
-        if (!treeMesh) {
-            if (this.ui.activeUIMode === 'harvest') {
-                this.ui.hide();
-            }
-            return false;
-        }
-        // If the harvest UI is already visible, do nothing.
-        if (this.ui.activeUIMode === 'harvest') {
-            return false;
-        }
-        // Show the harvest interface.
-        this.ui.showHarvest(q, r, treeMesh);
-        return true;
-    }
-
-    /**
-     * Automatically show or hide the trade UI when the player is on or near a city.
-     * Returns true if the trade UI is shown.
-     */
-    maybeShowTradeUI() {
-        const q = this.player.q;
-        const r = this.player.r;
-        // Do not interrupt another UI unless it's the trade UI itself.
-        if (this.ui.activeUIMode && this.ui.activeUIMode !== 'trade') {
-            return false;
-        }
-        // Determine if the player is on or adjacent to a city.
-        const dirs = [
-            { dq: 0, dr: 0 },
-            { dq: 1, dr: 0 }, { dq: -1, dr: 0 },
-            { dq: 0, dr: 1 }, { dq: 0, dr: -1 },
-            { dq: 1, dr: -1 }, { dq: -1, dr: 1 },
-        ];
-        let nearCity = false;
-        let cityQ = null;
-        let cityR = null;
-        for (const dir of dirs) {
-            const nq = q + dir.dq;
-            const nr = r + dir.dr;
-            const featAt = (this.world.featureMap[nr] && this.world.featureMap[nr][nq]) || 'none';
-            if (featAt === 'city') {
-                nearCity = true;
-                cityQ = nq;
-                cityR = nr;
-                break;
-            }
-        }
-        // If not near a city and the trade UI is open, close it.
-        if (!nearCity) {
-            if (this.ui.activeUIMode === 'trade') {
-                this.ui.hide();
-            }
-            return false;
-        }
-        // Build or retrieve price list for this city
-        const cityKey = `${cityQ},${cityR}`;
-        if (!this.state.prices[cityKey]) {
-            const allIds = Object.keys(ITEM_BASE_PRICES);
-            const untradeable = ['cabin', 'stone_wall', 'wood_fence'];
-            const tradeable = allIds.filter((id) => !untradeable.includes(id));
-            const count = 5 + Math.floor(Math.random() * 3);
-            const shuffled = tradeable.slice().sort(() => Math.random() - 0.5);
-            const chosen = shuffled.slice(0, count);
-            const prices = {};
-            chosen.forEach((id) => {
-                const base = ITEM_BASE_PRICES[id];
-                const factor = 0.8 + Math.random() * 0.4;
-                prices[id] = Math.max(1, Math.round(base * factor));
-            });
-            this.state.prices[cityKey] = prices;
-        }
-        const prices = this.state.prices[cityKey];
-        // If trade UI already open, refresh is handled by the UI controller; otherwise show it.
-        if (this.ui.activeUIMode === 'trade') {
-            return false;
-        }
-        this.ui.showTrade(cityKey, prices);
-        return true;
-    }
     
     // A* Pathfinding (unchanged from original)
     findPath(q0, r0, q1, r1) {

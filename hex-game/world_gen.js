@@ -415,12 +415,15 @@ export class HexWorld {
         if (!this.isInside(q, r)) continue;
         const h = this.heightMap[r][q];
         const type = this.blockMap[r][q];
-        const layers = type === 'water' ? 1 : h + 1;
 
-        for (let y = 0; y < layers; y++) {
-          const isTop = (type !== 'water' && y === h);
-          const matKey = isTop ? 'grass' : type; // Grass on top, block type on sides
-          instanceCounts[matKey] = (instanceCounts[matKey] || 0) + 1;
+        if (type === 'water') {
+            // Water tiles are just one block
+            instanceCounts['water'] = (instanceCounts['water'] || 0) + 1;
+        } else {
+            // Land tiles have a full column of blocks...
+            instanceCounts[type] = (instanceCounts[type] || 0) + (h + 1);
+            // ...and one grass cap on top.
+            instanceCounts['grass'] = (instanceCounts['grass'] || 0) + 1;
         }
       }
     }
@@ -446,30 +449,35 @@ export class HexWorld {
         const h = this.heightMap[r][q];
         const type = this.blockMap[r][q];
         const { x, z } = axialToWorld(q - this.boardRadius, r - this.boardRadius, this.radius);
-        const layers = type === 'water' ? 1 : h + 1;
 
-        for (let y = 0; y < layers; y++) {
-          const isTop = (type !== 'water' && y === h);
-          
-          // Set side cylinder instance
-          const sideKey = type;
-          if (!isTop && instancedMeshes[sideKey]) {
-            const imesh = instancedMeshes[sideKey];
-            dummy.position.set(x, y * this.hScale, z);
-            dummy.updateMatrix();
-            imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
-          }
+        if (type === 'water') {
+            const imesh = instancedMeshes['water'];
+            if (imesh) {
+                dummy.position.set(x, 0, z); // Water is a single layer at y=0
+                dummy.updateMatrix();
+                imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
+            }
+        } else {
+            // Position all the side cylinders for the column
+            const sideMesh = instancedMeshes[type];
+            if (sideMesh) {
+                for (let y = 0; y <= h; y++) {
+                    dummy.position.set(x, y * this.hScale, z);
+                    dummy.updateMatrix();
+                    sideMesh.mesh.setMatrixAt(sideMesh.index++, dummy.matrix);
+                }
+            }
 
-          // Set top cap instance
-          if (isTop && instancedMeshes['grass']) {
-             const imesh = instancedMeshes['grass'];
-             const stickerScale = STICKER_SCALE;
-             dummy.position.set(x, (y + 1) * this.hScale + 0.001, z);
-             dummy.scale.set(stickerScale, stickerScale, stickerScale);
-             dummy.updateMatrix();
-             imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
-             dummy.scale.set(1, 1, 1); // Reset scale
-          }
+            // Position the top grass cap
+            const topMesh = instancedMeshes['grass'];
+            if (topMesh) {
+                 const stickerScale = STICKER_SCALE;
+                 dummy.position.set(x, (h + 1) * this.hScale + 0.001, z);
+                 dummy.scale.set(stickerScale, stickerScale, stickerScale);
+                 dummy.updateMatrix();
+                 topMesh.mesh.setMatrixAt(topMesh.index++, dummy.matrix);
+                 dummy.scale.set(1, 1, 1); // Reset scale
+            }
         }
         
         // Add invisible picking surface at the top
