@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Seeded Hex Terrain Game</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+        font-family: Arial, sans-serif;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+        z-index: 2;
+      }
+      code {
+        color: #9cf;
+      }
+      #ui {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        color: #eee;
+        background: rgba(18, 18, 18, 0.95);
+        padding: 10px 14px;
+        border: 2px solid #666;
+        border-radius: 6px;
+        font-size: 14px;
+        z-index: 3;
+        max-width: 360px;
+        display: none;
+        line-height: 1.4;
+        font-family: monospace;
+      }
+      .icon {
+        width: 20px;
+        height: 20px;
+        vertical-align: middle;
+        margin-right: 4px;
+      }
+      #ui button {
+        background: #444;
+        color: #eee;
+        border: 1px solid #888;
+        padding: 2px 6px;
+        margin-top: 2px;
+        font-family: monospace;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      #ui button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <div id="info">
+      Seeded hex world. Use <code>?seed=value</code> in the URL to generate a unique map.<br />
+      Click on tiles to move. Arrow keys orbit/tilt the camera; scroll to zoom. You can climb up one layer and drop down up to two layers.<br />
+      <span id="seed-display"></span>
+    </div>
+    <div id="ui"></div>
+    
+    <script type="module" src="game.js"></script>
+    
+    <script>
+      // Global error handler for better debugging
+      window.addEventListener('error', (e) => {
+        const infoEl = document.getElementById('info');
+        if (infoEl) {
+          const errorMsg = document.createElement('div');
+          errorMsg.style.color = '#ff9999';
+          errorMsg.innerText = `\nError: ${e.message} at ${e.filename}:${e.lineno}`;
+          infoEl.appendChild(errorMsg);
+        }
+      });
+    </script>
+  </body>
+</html>
