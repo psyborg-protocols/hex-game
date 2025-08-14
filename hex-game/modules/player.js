@@ -50,16 +50,49 @@ export class Player {
     canMove(dq, dr) {
         const nq = this.q + dq;
         const nr = this.r + dr;
+
+        if (!this.world.isInside(nq, nr)) return false;
+
         const currentHeight = this.world.getHeight(this.q, this.r);
         const targetHeight = this.world.getHeight(nq, nr);
+        const rawTargetHeight = this.world.heightMap[nr][nq]; // Height ignoring structures
 
-        if (targetHeight === -Infinity) return false; // Target is outside the map
+        if (rawTargetHeight === -Infinity) return false;
 
-        // Allow climbing up one layer
-        if (targetHeight - currentHeight > 1) return false;
+        // MODIFIED: Check for structures that enable movement
+        
+        // Check for a ladder connecting current and target tiles
+        const structureAtTarget = this.world.getStructure(nq, nr);
+        if (structureAtTarget && structureAtTarget.type === 'ladder') {
+            const { from, to } = structureAtTarget;
+            const connects = (from.q === this.q && from.r === this.r && to.q === nq && to.r === nr) ||
+                           (to.q === this.q && to.r === this.r && from.q === nq && from.r === nr);
+            if (connects) return true;
+        }
+        
+        // Check for a bridge at the target tile
+        if (structureAtTarget && structureAtTarget.type === 'bridge') {
+             const { from, to } = structureAtTarget;
+             // Can move onto a bridge from either end
+             const isAtFrom = from.q === this.q && from.r === this.r;
+             const isAtTo = to.q === this.q && to.r === this.r;
+             if (isAtFrom || isAtTo) return true;
+        }
+        
+        // Check if moving OFF a bridge
+        const structureAtCurrent = this.world.getStructure(this.q, this.r);
+        if(structureAtCurrent && structureAtCurrent.type === 'bridge') {
+            const { from, to } = structureAtCurrent;
+            // Can move from a bridge to either of its ends
+            const isTargetFrom = from.q === nq && from.r === nr;
+            const isTargetTo = to.q === nq && to.r === nr;
+            if(isTargetFrom || isTargetTo) return true;
+        }
 
-        // Allow dropping down up to two layers
-        if (currentHeight - targetHeight > 2) return false;
+
+        // Original height-based movement rules
+        if (targetHeight - currentHeight > 1) return false; // Too high to climb
+        if (currentHeight - targetHeight > 2) return false; // Too far to drop
 
         return true;
     }

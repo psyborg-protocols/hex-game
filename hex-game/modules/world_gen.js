@@ -133,6 +133,11 @@ export class HexWorld {
     this.featureMap = []; // 'none' | 'forest' | 'city'
     this.propSpawns = []; // list of prop spawn instructions
 
+    // ADDED: A map to store player-built structures.
+    // Key: string like 'q,r'
+    // Value: { type: 'ladder' | 'bridge', from: {q, r}, to: {q, r}, ... }
+    this.structures = new Map();
+
     for (let r = 0; r < this.depth; r++) {
       this.heightMap[r] = [];
       this.blockMap[r] = [];
@@ -144,6 +149,17 @@ export class HexWorld {
       }
     }
   }
+  
+  // ADDED: Helper methods to manage structures
+  addStructure(q, r, data) {
+    const key = `${q},${r}`;
+    this.structures.set(key, data);
+  }
+
+  getStructure(q, r) {
+    return this.structures.get(`${q},${r}`);
+  }
+
   isInside(q, r) {
     const aq = q - this.boardRadius;
     const ar = r - this.boardRadius;
@@ -389,16 +405,10 @@ export class HexWorld {
     }
   }
 
-  /**
-   * REFACTORED buildMesh
-   * This version uses InstancedMesh to draw all hexes in a small number of draw calls,
-   * dramatically improving performance.
-   */
   buildMesh(textures) {
     const group = new THREE.Group();
     const pickGroup = new THREE.Group();
 
-    // 1. Prepare Geometries and Materials
     const baseGeo = new THREE.CylinderGeometry(this.radius, this.radius, this.hScale, 6);
     baseGeo.translate(0, this.hScale / 2, 0);
     baseGeo.rotateY(Math.PI / 6);
@@ -408,7 +418,6 @@ export class HexWorld {
 
     const materialCache = this.createMaterialCache(textures);
 
-    // 2. Count instances needed for each material type
     const instanceCounts = {};
     for (let r = 0; r < this.depth; r++) {
       for (let q = 0; q < this.width; q++) {
@@ -417,20 +426,16 @@ export class HexWorld {
         const type = this.blockMap[r][q];
 
         if (type === 'water') {
-            // Water tiles are just one block
             instanceCounts['water'] = (instanceCounts['water'] || 0) + 1;
         } else {
-            // Land tiles have a full column of blocks...
             instanceCounts[type] = (instanceCounts[type] || 0) + (h + 1);
-            // ...and one grass cap on top.
             instanceCounts['grass'] = (instanceCounts['grass'] || 0) + 1;
         }
       }
     }
 
-    // 3. Create InstancedMeshes
     const instancedMeshes = {};
-    const dummy = new THREE.Object3D(); // Helper object for matrix transforms
+    const dummy = new THREE.Object3D();
     for (const key in instanceCounts) {
       const count = instanceCounts[key];
       const mat = materialCache[key] || new THREE.MeshLambertMaterial({ color: this.getColorForType(key) });
@@ -441,7 +446,6 @@ export class HexWorld {
       instancedMeshes[key] = { mesh, index: 0 };
     }
 
-    // 4. Position instances
     for (let r = 0; r < this.depth; r++) {
       for (let q = 0; q < this.width; q++) {
         if (!this.isInside(q, r)) continue;
@@ -453,12 +457,11 @@ export class HexWorld {
         if (type === 'water') {
             const imesh = instancedMeshes['water'];
             if (imesh) {
-                dummy.position.set(x, 0, z); // Water is a single layer at y=0
+                dummy.position.set(x, 0, z);
                 dummy.updateMatrix();
                 imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
             }
         } else {
-            // Position all the side cylinders for the column
             const sideMesh = instancedMeshes[type];
             if (sideMesh) {
                 for (let y = 0; y <= h; y++) {
@@ -468,7 +471,6 @@ export class HexWorld {
                 }
             }
 
-            // Position the top grass cap
             const topMesh = instancedMeshes['grass'];
             if (topMesh) {
                  const stickerScale = STICKER_SCALE;
@@ -476,11 +478,10 @@ export class HexWorld {
                  dummy.scale.set(stickerScale, stickerScale, stickerScale);
                  dummy.updateMatrix();
                  topMesh.mesh.setMatrixAt(topMesh.index++, dummy.matrix);
-                 dummy.scale.set(1, 1, 1); // Reset scale
+                 dummy.scale.set(1, 1, 1);
             }
         }
         
-        // Add invisible picking surface at the top
         const topLayer = type === 'water' ? 0 : h;
         const pickRadius = this.radius;
         const pickGeo = new THREE.CylinderGeometry(pickRadius, pickRadius, 0.05, 6);
@@ -494,7 +495,6 @@ export class HexWorld {
       }
     }
     
-    // Notify three.js that instance matrices have been updated
     Object.values(instancedMeshes).forEach(im => im.mesh.instanceMatrix.needsUpdate = true);
 
     this.pickGroup = pickGroup;
@@ -510,7 +510,6 @@ export class HexWorld {
           const tex = new THREE.TextureLoader().load(uri);
           tex.magFilter = THREE.NearestFilter;
           tex.minFilter = THREE.NearestFilter;
-          // three r152+: mark color textures as sRGB
           tex.colorSpace = THREE.SRGBColorSpace;
           
           if (tKey === 'grass') {
@@ -548,6 +547,12 @@ export class HexWorld {
   getHeight(q, r) {
     if (q < 0 || q >= this.width || r < 0 || r >= this.depth) return -Infinity;
     if (!this.isInside(q, r)) return -Infinity;
+    // MODIFIED: A bridge makes water traversable at land height
+    const structure = this.getStructure(q, r);
+    if (structure && structure.type === 'bridge') {
+        // A bridge is placed *on* a water tile. Its effective height is that of the land it connects from.
+        return this.getHeight(structure.from.q, structure.from.r);
+    }
     return this.heightMap[r][q];
   }
 

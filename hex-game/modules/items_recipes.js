@@ -20,7 +20,10 @@ export const ITEMS = {
   cabin: { id: 'cabin', name: 'Log Cabin', stack: 1, icon: 'icons/cabin.png' },
   saw: { id: 'saw', name: 'Saw', stack: 1, icon: 'icons/saw.png' },
   stone_wall: { id: 'stone_wall', name: 'Stone Wall', stack: 99, icon: 'icons/stone_wall.png' },
-  wood_fence: { id: 'wood_fence', name: 'Wood Fence', stack: 99, icon: 'icons/wood_fence.png' }
+  wood_fence: { id: 'wood_fence', name: 'Wood Fence', stack: 99, icon: 'icons/wood_fence.png' },
+  // ADDED: New buildable items
+  ladder: { id: 'ladder', name: 'Ladder', stack: 99, icon: 'icons/ladder.png' },
+  bridge: { id: 'bridge', name: 'Bridge', stack: 99, icon: 'icons/bridge.png' }
 };
 
 export const ITEM_BASE_PRICES = {
@@ -42,7 +45,10 @@ export const ITEM_BASE_PRICES = {
   cabin: 20,
   saw: 15,
   stone_wall: 8,
-  wood_fence: 6
+  wood_fence: 6,
+  // ADDED: Prices for new items
+  ladder: 8,
+  bridge: 12
 };
 
 export const RECIPES = {
@@ -93,5 +99,14 @@ export const RECIPES = {
   wood_fence: {
     id: 'wood_fence', name: 'Wood Fence', inputs: { beam: 2 }, output: { wood_fence: 1 },
     skill: 'woodworking', level: 2, xp: 6, category: 'build'
+  },
+  // ADDED: New buildable recipes
+  ladder: {
+    id: 'ladder', name: 'Ladder', inputs: { beam: 3, branch: 4 }, output: { ladder: 1 },
+    skill: 'woodworking', level: 2, xp: 10, category: 'build'
+  },
+  bridge: {
+    id: 'bridge', name: 'Bridge', inputs: { log: 2, plank: 4 }, output: { bridge: 1 },
+    skill: 'woodworking', level: 3, xp: 15, category: 'build'
   }
 };

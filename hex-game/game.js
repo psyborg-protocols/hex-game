@@ -38,7 +38,6 @@ class Game {
         this.cameraOffset = new THREE.Vector3();
         this.targetOffset = new THREE.Vector3();
         
-        // Centralized game state
         this.state = {
             inventory: new Array(20).fill(null),
             gold: 50,
@@ -47,18 +46,21 @@ class Game {
                 stoneworking: { level: 1, xp: 0 },
                 metalworking: { level: 1, xp: 0 }
             },
-            prices: {} // Per-village prices, keyed by 'q,r'
+            prices: {}
         };
 
         this.keyStates = { left: false, right: false, up: false, down: false };
         this.path = [];
         this.movingAlongPath = false;
         this.lastMoveTime = 0;
-        this.moveInterval = 350; // ms
+        this.moveInterval = 350;
+
+        // ADDED: State for new placement mode
+        this.placementMode = null; // e.g., { recipeId: 'ladder' }
+        this.placementHighlights = new THREE.Group();
     }
 
     async init() {
-        // --- 1. Core Three.js Setup ---
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x87ceeb);
 
@@ -76,11 +78,9 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(this.renderer.domElement);
 
-        // three r152+: color management defaults; be explicit
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-        // --- 2. World Generation ---
         const params = new URLSearchParams(location.search);
         const seed = params.get('seed') || Math.floor(Math.random() * 1e9).toString();
         document.getElementById('seed-display').textContent = `Seed: ${seed}`;
@@ -97,7 +97,6 @@ class Game {
         this.world.assignBlocks();
         this.world.assignFeatures();
 
-        // --- 3. Build Scene Objects ---
         this.worldGroup = this.world.buildMesh(BLOCK_TEXTURES);
         this.scene.add(this.worldGroup);
         if (this.world.pickGroup) {
@@ -105,6 +104,9 @@ class Game {
             this.pickGroup.visible = false;
             this.scene.add(this.pickGroup);
         }
+        
+        // ADDED: Add highlight group to scene
+        this.scene.add(this.placementHighlights);
 
         this.player = new Player(this.world, this.scene);
         this.setupCameraFollow();
@@ -113,7 +115,6 @@ class Game {
         this.propsGroup = this.world.buildProps(models);
         this.scene.add(this.propsGroup);
 
-        // --- 4. Start Game ---
         this.addEventListeners();
         this.animate();
     }
@@ -146,6 +147,13 @@ class Game {
     }
 
     onKeyDown(event) {
+        // ADDED: Escape to cancel placement mode
+        if (event.key === 'Escape' && this.placementMode) {
+            this.exitPlacementMode();
+            event.preventDefault();
+            return;
+        }
+
         const key = event.key.toLowerCase();
         const keyMap = {
             'i': () => this.ui.toggle('inventory', () => this.ui.showInventory()),
@@ -178,8 +186,6 @@ class Game {
     }
     
     onMouseDown(event) {
-        if (this.ui.uiEl.contains(event.target)) return; // Ignore clicks on the UI
-
         const rect = this.renderer.domElement.getBoundingClientRect();
         const mouse = new THREE.Vector2(
             ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -187,19 +193,32 @@ class Game {
         );
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, this.camera);
+        
+        // MODIFIED: Handle placement mode click first
+        if (this.placementMode) {
+            const intersects = raycaster.intersectObjects(this.placementHighlights.children);
+            if (intersects.length > 0) {
+                const highlight = intersects[0].object;
+                if (highlight.userData.isHighlight) {
+                    this.confirmPlacement(highlight.userData.placementData);
+                }
+            }
+            return; // Prevent pathfinding while in placement mode
+        }
+
+        if (this.ui.uiEl.contains(event.target)) return;
+
         const intersects = this.pickGroup ? raycaster.intersectObjects(this.pickGroup.children, true) : [];
         if (intersects.length === 0) return;
         
         const hit = intersects[0].object;
         if (hit && hit.userData) {
             const { qIndex, rIndex } = hit.userData;
-            if (this.world.getHeight(qIndex, rIndex) !== -Infinity) {
-                const path = this.findPath(this.player.q, this.player.r, qIndex, rIndex);
-                if (path && path.length > 0) {
-                    path.shift();
-                    this.path = path;
-                    this.movingAlongPath = true;
-                }
+            const path = this.findPath(this.player.q, this.player.r, qIndex, rIndex);
+            if (path && path.length > 0) {
+                path.shift();
+                this.path = path;
+                this.movingAlongPath = true;
             }
         }
     }
@@ -215,11 +234,9 @@ class Game {
     
     animate() {
         requestAnimationFrame(() => this.animate());
-        
         this.updateCamera();
         this.updateMovement();
         this.updateContextualUIs();
-
         this.followPlayer();
         this.renderer.render(this.scene, this.camera);
     }
@@ -259,35 +276,20 @@ class Game {
         }
     }
     
-    /**
-     * Checks the player's surroundings and updates the contextual UI (mining,
-     * harvesting, trading) to match the current highest-priority action.
-     * This prevents flickering by only changing the UI when the contextual state
-     * itself changes. Non-contextual UIs (inventory, craft, etc.) are not affected.
-     */
     updateContextualUIs() {
         const contextualModes = ['mine', 'harvest', 'trade'];
         const isContextualUIActive = contextualModes.includes(this.ui.activeUIMode);
         const isOverlayUIActive = this.ui.activeUIMode && !isContextualUIActive;
 
-        // If a non-contextual UI like Inventory or Crafting is open, do nothing.
-        if (isOverlayUIActive) {
+        if (isOverlayUIActive || this.placementMode) {
             return;
         }
 
         const { mode: newMode, params } = this.determineContextualMode();
+        if (newMode === this.ui.activeUIMode) return;
 
-        // If the mode is the same as what's already displayed, do nothing.
-        if (newMode === this.ui.activeUIMode) {
-            return;
-        }
+        if (isContextualUIActive) this.ui.hide();
 
-        // The mode has changed. Hide whatever contextual UI was open.
-        if (isContextualUIActive) {
-            this.ui.hide();
-        }
-
-        // Show the new UI if there is one.
         switch (newMode) {
             case 'mine':
                 this.ui.showMining(params.q, params.r);
@@ -297,82 +299,51 @@ class Game {
                 break;
             case 'trade':
                 const cityKey = `${params.cityQ},${params.cityR}`;
-                this.initializeCityPrices(cityKey); // Ensure prices are generated
+                this.initializeCityPrices(cityKey);
                 this.ui.showTrade(cityKey, this.state.prices[cityKey]);
                 break;
         }
     }
     
-    /**
-     * Determines the highest-priority contextual UI mode based on the player's
-     * current position and surroundings.
-     * @returns {{mode: string|null, params: object}} An object with the mode and its parameters.
-     */
     determineContextualMode() {
         const q = this.player.q;
         const r = this.player.r;
         const currentHeight = this.world.getHeight(q, r);
-
-        // Define search directions for neighbors
         const dirs = [ { dq: 1, dr: 0 }, { dq: -1, dr: 0 }, { dq: 0, dr: 1 }, { dq: 0, dr: -1 }, { dq: 1, dr: -1 }, { dq: -1, dr: 1 } ];
 
-        // 1. Check for Mining (Highest Priority)
         for (const dir of dirs) {
             const nq = q + dir.dq;
             const nr = r + dir.dr;
             const h = this.world.getHeight(nq, nr);
-            // A cliff is a neighbor at least 3 levels higher.
             if (h !== -Infinity && h - currentHeight >= 3) {
                 return { mode: 'mine', params: { q: nq, r: nr } };
             }
         }
 
-        // 2. Check for Harvesting
         const feat = (this.world.featureMap[r] && this.world.featureMap[r][q]) || 'none';
-        if (feat === 'forest') {
-            if (this.propsGroup) {
-                const treeMesh = this.propsGroup.children.find(child =>
-                    child.userData && child.userData.type === 'forest' && child.userData.q === q && child.userData.r === r
-                );
-                if (treeMesh) {
-                    return { mode: 'harvest', params: { q, r, treeMesh } };
-                }
-            }
+        if (feat === 'forest' && this.propsGroup) {
+            const treeMesh = this.propsGroup.children.find(child =>
+                child.userData?.type === 'forest' && child.userData.q === q && child.userData.r === r
+            );
+            if (treeMesh) return { mode: 'harvest', params: { q, r, treeMesh } };
         }
 
-        // 3. Check for Trading
-        let cityQ = null;
-        let cityR = null;
-        for (const dir of [{dq:0, dr:0}, ...dirs]) { // Check current tile and neighbors
+        for (const dir of [{dq:0, dr:0}, ...dirs]) {
             const nq = q + dir.dq;
             const nr = r + dir.dr;
             if (this.world.isInside(nq, nr)) {
                 const featAt = (this.world.featureMap[nr] && this.world.featureMap[nr][nq]) || 'none';
-                if (featAt === 'city') {
-                    cityQ = nq;
-                    cityR = nr;
-                    break;
-                }
+                if (featAt === 'city') return { mode: 'trade', params: { cityQ: nq, cityR: nr } };
             }
         }
-        if (cityQ !== null) {
-            return { mode: 'trade', params: { cityQ, cityR } };
-        }
         
-        // 4. No context found
         return { mode: null, params: {} };
     }
 
-    /**
-     * Generates and caches a list of items and prices for a given city if not
-     * already present.
-     * @param {string} cityKey The unique key for the city (e.g., '15,20').
-     */
     initializeCityPrices(cityKey) {
-        if (this.state.prices[cityKey]) return; // Already initialized
-
+        if (this.state.prices[cityKey]) return;
         const allIds = Object.keys(ITEM_BASE_PRICES);
-        const untradeable = ['cabin', 'stone_wall', 'wood_fence'];
+        const untradeable = ['cabin', 'stone_wall', 'wood_fence', 'ladder', 'bridge'];
         const tradeable = allIds.filter((id) => !untradeable.includes(id));
         const count = 5 + Math.floor(Math.random() * 3);
         const shuffled = tradeable.slice().sort(() => Math.random() - 0.5);
@@ -386,30 +357,18 @@ class Game {
         this.state.prices[cityKey] = prices;
     }
 
-    // --- All game logic methods follow ---
-    // (Crafting, building, trading, harvesting, inventory, etc.)
-    // These are now cleaner as they delegate all UI work to this.ui
-
-    // Example of a fully refactored logic chain
     handleCraft(recId) {
         const rec = RECIPES[recId];
         if (!rec) return;
-
         if (!this.canCraft(recId)) {
             this.ui.showNotification("You can't craft this yet.");
             return;
         }
-        
         Object.entries(rec.inputs).forEach(([id, qty]) => this.removeItem(id, qty));
         Object.entries(rec.output).forEach(([id, qty]) => this.addItem(id, qty));
         this.addXP(rec.skill, rec.xp);
-        
         this.ui.showNotification(`Crafted ${rec.name}!`);
-        
-        // Refresh the UI if it's still open
-        if (this.ui.activeUIMode === 'craft') {
-            this.ui.showCrafting();
-        }
+        if (this.ui.activeUIMode === 'craft') this.ui.showCrafting();
     }
 
     canCraft(recId) {
@@ -421,18 +380,11 @@ class Game {
         const hasMats = Object.entries(rec.inputs).every(([id, qty]) => this.hasItem(id, qty));
         return hasSkill && hasTools && hasMats;
     }
-    /**
-     * Add an item to the player's inventory.  Attempts to stack items up to
-     * their maximum stack size and then uses empty slots as needed.  Any
-     * remainder that cannot fit is silently discarded.
-     * @param {string} id The item identifier
-     * @param {number} qty Quantity to add
-     */
+
     addItem(id, qty = 1) {
         const item = ITEMS[id];
         if (!item) return;
         let remaining = qty;
-        // Fill existing stacks first
         for (let i = 0; i < this.state.inventory.length && remaining > 0; i++) {
             const slot = this.state.inventory[i];
             if (slot && slot.id === id) {
@@ -444,7 +396,6 @@ class Game {
                 }
             }
         }
-        // Place into empty slots
         for (let i = 0; i < this.state.inventory.length && remaining > 0; i++) {
             if (!this.state.inventory[i]) {
                 const add = Math.min(item.stack, remaining);
@@ -454,12 +405,6 @@ class Game {
         }
     }
 
-    /**
-     * Remove items from the inventory.  Removes from stacks in order until the
-     * desired quantity is taken.  Returns true if all items were removed.
-     * @param {string} id The item identifier
-     * @param {number} qty Quantity to remove
-     */
     removeItem(id, qty = 1) {
         let remaining = qty;
         for (let i = 0; i < this.state.inventory.length && remaining > 0; i++) {
@@ -474,11 +419,6 @@ class Game {
         return remaining === 0;
     }
 
-    /**
-     * Check whether the player has at least a certain quantity of an item.
-     * @param {string} id The item identifier
-     * @param {number} qty Required quantity
-     */
     hasItem(id, qty = 1) {
         let count = 0;
         this.state.inventory.forEach((slot) => {
@@ -487,12 +427,6 @@ class Game {
         return count >= qty;
     }
 
-    /**
-     * Award XP to a skill.  Levels up when a threshold is reached.  Caps
-     * progress beyond a certain level until a mentor/quest is completed.
-     * @param {string} skillName Name of the skill
-     * @param {number} xp Amount of XP to add
-     */
     addXP(skillName, xp) {
         const skill = this.state.skills[skillName];
         if (!skill) return;
@@ -506,133 +440,264 @@ class Game {
                 this.ui.showNotification(`Your ${skillName} skill increased to level ${skill.level}!`);
             } else {
                 skill.xp = threshold;
-                this.ui.showNotification(`Your ${skillName} skill is capped at level ${skill.level}. You need to find a mentor or complete a quest to progress further.`);
+                this.ui.showNotification(`Your ${skillName} skill is capped at level ${skill.level}.`);
             }
         }
     }
 
-    /**
-     * Perform a building action using a recipe that produces a structure on the map.
-     * Consumes materials, checks skill and tools, grants XP and spawns the model.
-     * @param {string} recId The recipe identifier
-     */
+    // --- NEW PLACEMENT LOGIC ---
+
+    enterPlacementMode(recipeId) {
+        if (!this.canCraft(recipeId)) {
+            this.ui.showNotification("You don't have the resources or skill.");
+            return;
+        }
+        this.placementMode = { recipeId };
+        this.ui.hide();
+        this.ui.showNotification(`Placing ${RECIPES[recipeId].name}. Click a valid spot. (ESC to cancel)`);
+        this.updatePlacementHighlights();
+    }
+
+    exitPlacementMode() {
+        this.placementMode = null;
+        this.placementHighlights.clear();
+        this.ui.showNotification("Placement cancelled.");
+    }
+
+    updatePlacementHighlights() {
+        this.placementHighlights.clear();
+        if (!this.placementMode) return;
+
+        const { recipeId } = this.placementMode;
+        const potentialSpots = this.findValidPlacementSpots(recipeId);
+
+        potentialSpots.forEach(spot => {
+            const highlightGeo = new THREE.CircleGeometry(this.world.radius * 0.8, 6);
+            highlightGeo.rotateX(-Math.PI / 2);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+            const mesh = new THREE.Mesh(highlightGeo, mat);
+
+            const targetCoords = recipeId === 'bridge' ? spot.across : spot.to;
+            const { x, z } = axialToWorld(targetCoords.q - this.world.boardRadius, targetCoords.r - this.world.boardRadius, this.world.radius);
+            
+            const h = this.world.getHeight(this.player.q, this.player.r);
+            mesh.position.set(x, (h + 1) * this.world.hScale + 0.1, z);
+            
+            mesh.userData = { isHighlight: true, placementData: spot };
+            this.placementHighlights.add(mesh);
+        });
+    }
+
+    findValidPlacementSpots(recipeId) {
+        const spots = [];
+        const q = this.player.q;
+        const r = this.player.r;
+        const currentHeight = this.world.getHeight(q, r);
+        const dirs = [ {dq:1,dr:0},{dq:-1,dr:0},{dq:0,dr:1},{dq:0,dr:-1},{dq:1,dr:-1},{dq:-1,dr:1} ];
+
+        for (const dir of dirs) {
+            const nq = q + dir.dq;
+            const nr = r + dir.dr;
+            if (!this.world.isInside(nq, nr)) continue;
+
+            const rawTargetHeight = this.world.heightMap[nr][nq];
+
+            if (recipeId === 'ladder') {
+                const heightDiff = Math.abs(currentHeight - rawTargetHeight);
+                if (heightDiff > 1 && heightDiff <= 4) {
+                    const [from, to] = currentHeight < rawTargetHeight ? [{q,r}, {q:nq,r:nr}] : [{q:nq,r:nr}, {q,r}];
+                    spots.push({ type: 'ladder', from, to });
+                }
+            }
+
+            if (recipeId === 'bridge') {
+                // MODIFIED: Allow building from land or another bridge
+                const isStandingOnTraversable = this.world.blockMap[r]?.[q] !== 'water' || this.world.getStructure(q,r)?.type === 'bridge';
+
+                if (isStandingOnTraversable) {
+                    const isTargetWater = this.world.blockMap[nr]?.[nq] === 'water';
+                    if (isTargetWater) {
+                        // This spot is valid for starting a bridge.
+                        // We don't require a far bank to show the highlight.
+                        // The bridge will be one tile long for now, but this can be extended.
+                         spots.push({ type: 'bridge', from: {q,r}, across: {q:nq, r:nr} });
+                    }
+                }
+            }
+        }
+        return spots;
+    }
+    
+    confirmPlacement(placementData) {
+        const { recipeId } = this.placementMode;
+        const rec = RECIPES[recipeId];
+
+        Object.entries(rec.inputs).forEach(([id, qty]) => this.removeItem(id, qty));
+        this.addXP(rec.skill, rec.xp);
+
+        if (placementData.type === 'ladder') {
+            this.world.addStructure(placementData.to.q, placementData.to.r, placementData);
+            this.world.addStructure(placementData.from.q, placementData.from.r, placementData);
+        } else if (placementData.type === 'bridge') {
+            // Find the far bank to complete the bridge data
+            const dir = { dq: placementData.across.q - placementData.from.q, dr: placementData.across.r - placementData.from.r };
+            let landing = null;
+            let current_q = placementData.across.q;
+            let current_r = placementData.across.r;
+            // Look ahead to find the next land tile
+            for(let i=0; i<5; i++) { // Max bridge length of 5
+                current_q += dir.dq;
+                current_r += dir.dr;
+                if(this.world.isInside(current_q, current_r) && this.world.blockMap[current_r]?.[current_q] !== 'water') {
+                    landing = { q: current_q, r: current_r };
+                    break;
+                }
+            }
+            
+            // If we found a landing spot, build the full bridge
+            if(landing) {
+                placementData.to = landing;
+                // Add structure data for every water tile spanned
+                let q = placementData.from.q;
+                let r = placementData.from.r;
+                while(q !== landing.q || r !== landing.r) {
+                    q += dir.dq;
+                    r += dir.dr;
+                    if(this.world.blockMap[r]?.[q] === 'water') {
+                        this.world.addStructure(q, r, placementData);
+                         this.buildStructure(recipeId, { ...placementData, currentTile: {q, r} });
+                    }
+                }
+            } else {
+                // If no landing, just build one segment
+                placementData.to = placementData.across; // Bridge leads nowhere for now
+                this.world.addStructure(placementData.across.q, placementData.across.r, placementData);
+                this.buildStructure(recipeId, { ...placementData, currentTile: placementData.across });
+            }
+        }
+        
+        this.ui.showNotification(`Built ${rec.name}!`);
+        this.exitPlacementMode();
+    }
+    
     handleBuild(recId) {
         const rec = RECIPES[recId];
         if (!rec || rec.category !== 'build') return;
-        const skill = this.state.skills[rec.skill];
-        if (!skill || skill.level < rec.level) {
-            this.ui.showNotification(`You need ${rec.skill} lvl ${rec.level} to build ${rec.name}.`);
-            return;
-        }
-        // Check required tools
-        if (rec.tools) {
-            const missing = Object.entries(rec.tools).find(([tid, qty]) => !this.hasItem(tid, qty));
-            if (missing) {
-                const [tid] = missing;
-                this.ui.showNotification(`You need a ${ITEMS[tid].name} to build ${rec.name}.`);
+        
+        if (recId === 'cabin' || recId === 'wood_fence' || recId === 'stone_wall') {
+            if (!this.canCraft(recId)) {
+                this.ui.showNotification("Cannot build this.");
                 return;
             }
-        }
-        // Check materials
-        const enough = Object.entries(rec.inputs).every(([id, qty]) => this.hasItem(id, qty));
-        if (!enough) {
-            this.ui.showNotification('Not enough materials.');
-            return;
-        }
-        // Consume materials
-        Object.entries(rec.inputs).forEach(([id, qty]) => this.removeItem(id, qty));
-        // Grant XP
-        this.addXP(rec.skill, rec.xp);
-        // Spawn structure
-        this.buildStructure(recId);
-        this.ui.showNotification(`Built ${rec.name}!`);
-        // Refresh building UI if still open
-        if (this.ui.activeUIMode === 'build') {
-            this.ui.showBuilding();
+            Object.entries(rec.inputs).forEach(([id, qty]) => this.removeItem(id, qty));
+            this.addXP(rec.skill, rec.xp);
+            this.buildStructure(recId, { at: { q: this.player.q, r: this.player.r } });
+            this.ui.showNotification(`Built ${rec.name}!`);
+        } else {
+            this.enterPlacementMode(recId);
         }
     }
 
-    /**
-     * Instantiate a building model at the player's current tile.  Models are
-     * simple procedural shapes that roughly represent the intended structure.
-     * @param {string} recId The recipe identifier for the structure
-     */
-    buildStructure(recId) {
-        const q = this.player.q;
-        const r = this.player.r;
-        const h = this.world.getHeight(q, r);
-        const { x, z } = axialToWorld(q - this.world.boardRadius, r - this.world.boardRadius, this.world.radius);
+    buildStructure(recId, placementData) {
         let mesh;
-        if (recId === 'cabin') {
-            // A log cabin constructed from several huts
+        if (recId === 'ladder') {
+            mesh = new THREE.Group();
+            const mat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
+            const beamGeo = new THREE.BoxGeometry(0.1, 1, 0.1);
+            
+            const leftBeam = new THREE.Mesh(beamGeo, mat);
+            leftBeam.position.x = -0.3;
+            const rightBeam = new THREE.Mesh(beamGeo, mat);
+            rightBeam.position.x = 0.3;
+            mesh.add(leftBeam, rightBeam);
+
+            const h_diff = Math.abs(this.world.heightMap[placementData.from.r][placementData.from.q] - this.world.heightMap[placementData.to.r][placementData.to.q]);
+            const ladderHeight = h_diff * this.world.hScale + this.world.hScale * 0.5;
+            leftBeam.scale.y = rightBeam.scale.y = ladderHeight;
+
+            const rungCount = Math.floor(h_diff * 2);
+            const rungGeo = new THREE.BoxGeometry(0.7, 0.08, 0.08);
+            for(let i = 0; i <= rungCount; i++) {
+                const rung = new THREE.Mesh(rungGeo, mat);
+                rung.position.y = (i / (rungCount + 1) - 0.5) * ladderHeight;
+                mesh.add(rung);
+            }
+
+            const fromWorld = axialToWorld(placementData.from.q - this.world.boardRadius, placementData.from.r - this.world.boardRadius, this.world.radius);
+            const toWorld = axialToWorld(placementData.to.q - this.world.boardRadius, placementData.to.r - this.world.boardRadius, this.world.radius);
+            
+            const fromVec = new THREE.Vector3(fromWorld.x, (this.world.getHeight(placementData.from.q, placementData.from.r) + 0.5) * this.world.hScale, fromWorld.z);
+            const toVec = new THREE.Vector3(toWorld.x, (this.world.getHeight(placementData.to.q, placementData.to.r) + 0.5) * this.world.hScale, toWorld.z);
+
+            mesh.position.copy(fromVec).lerp(toVec, 0.5);
+            
+            // MODIFIED: Correctly lean the ladder towards the cliff
+            const target = this.world.getHeight(placementData.from.q, placementData.from.r) < this.world.getHeight(placementData.to.q, placementData.to.r) ? toVec : fromVec;
+            mesh.lookAt(target);
+            mesh.rotation.x = Math.PI / 2 + 0.1; // Stand straighter
+
+        } else if (recId === 'bridge') {
+            // MODIFIED: New bridge model
+            mesh = new THREE.Group();
+            const plankMat = new THREE.MeshLambertMaterial({ color: 0x966F33 }); // Plank color
+            const postMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b }); // Darker post color
+
+            // Hexagonal plank top
+            const topGeo = new THREE.CylinderGeometry(this.world.radius * 0.95, this.world.radius * 0.95, 0.15, 6);
+            const topMesh = new THREE.Mesh(topGeo, plankMat);
+            topMesh.rotation.y = Math.PI / 6;
+            mesh.add(topMesh);
+
+            const bridgeCoords = placementData.currentTile || placementData.across;
+            const { x, z } = axialToWorld(bridgeCoords.q - this.world.boardRadius, bridgeCoords.r - this.world.boardRadius, this.world.radius);
+            const h = this.world.getHeight(placementData.from.q, placementData.from.r);
+            const bridgeY = (h + 1) * this.world.hScale - (this.world.hScale - 0.1);
+            mesh.position.set(x, bridgeY, z);
+            
+            // Four support posts
+            const postHeight = bridgeY; // From bridge deck to y=0 (water)
+            const postGeo = new THREE.BoxGeometry(0.15, postHeight, 0.15);
+            const postPositions = [
+                new THREE.Vector3(0.5, -postHeight/2, 0.5),
+                new THREE.Vector3(-0.5, -postHeight/2, 0.5),
+                new THREE.Vector3(0.5, -postHeight/2, -0.5),
+                new THREE.Vector3(-0.5, -postHeight/2, -0.5),
+            ];
+            postPositions.forEach(pos => {
+                const post = new THREE.Mesh(postGeo, postMat);
+                post.position.copy(pos);
+                mesh.add(post);
+            });
+
+
+        } else if (recId === 'cabin') {
             mesh = new THREE.Group();
             const wallMat = new THREE.MeshLambertMaterial({ color: 0xb0b0b5 });
-            const roofMat = new THREE.MeshLambertMaterial({ color: 0x8b6b48 });
-            const configs = [
-                { pos: [0.0, 0.0], scale: 1.2 },
-                { pos: [0.6, 0.4], scale: 0.8 },
-                { pos: [-0.6, -0.4], scale: 0.8 },
-                { pos: [0.4, -0.5], scale: 0.7 },
-            ];
-            configs.forEach(({ pos, scale }) => {
+            [{ pos: [0.0, 0.0], scale: 1.2 }, { pos: [0.6, 0.4], scale: 0.8 }].forEach(({ pos, scale }) => {
                 const [hx, hz] = pos;
                 const baseGeo = new THREE.BoxGeometry(1.0 * scale, 0.6 * scale, 1.0 * scale);
                 const baseMesh = new THREE.Mesh(baseGeo, wallMat);
                 baseMesh.position.set(hx, 0.3 * scale, hz);
                 mesh.add(baseMesh);
-                const roofGeo = new THREE.ConeGeometry(0.6 * scale, 0.6 * scale, 4);
-                const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-                roofMesh.position.set(hx, 0.6 * scale + 0.3 * scale, hz);
-                mesh.add(roofMesh);
             });
-        } else if (recId === 'wood_fence') {
-            mesh = new THREE.Group();
-            const postMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
-            const railMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
-            const postGeo = new THREE.BoxGeometry(0.1, 1.0, 0.1);
-            const railGeo = new THREE.BoxGeometry(1.0, 0.05, 0.1);
-            const positions = [ [-0.6, -0.6], [0.6, -0.6], [0.6, 0.6], [-0.6, 0.6] ];
-            positions.forEach(([dx, dz]) => {
-                const post = new THREE.Mesh(postGeo, postMat);
-                post.position.set(dx, 0.5, dz);
-                mesh.add(post);
-            });
-            const rail1 = new THREE.Mesh(railGeo, railMat);
-            rail1.position.set(0, 0.3, -0.6);
-            mesh.add(rail1);
-            const rail2 = rail1.clone();
-            rail2.position.set(0, 0.3, 0.6);
-            mesh.add(rail2);
-            const rail3 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 1.2), railMat);
-            rail3.position.set(0.6, 0.3, 0);
-            mesh.add(rail3);
-            const rail4 = rail3.clone();
-            rail4.position.set(-0.6, 0.3, 0);
-            mesh.add(rail4);
-        } else if (recId === 'stone_wall') {
-            const wallMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-            const baseGeo = new THREE.BoxGeometry(1.8, 1.2, 0.4);
-            mesh = new THREE.Mesh(baseGeo, wallMat);
-        } else {
-            // Fallback: a simple cube for unknown building types
-            const mat = new THREE.MeshLambertMaterial({ color: 0xffffff * Math.random() });
-            const geo = new THREE.BoxGeometry(1, 1, 1);
-            mesh = new THREE.Mesh(geo, mat);
         }
-        mesh.position.set(x, (h + 1) * this.world.hScale, z);
-        mesh.userData = { type: 'building', recId: recId, q: q, r: r };
-        if (!this.propsGroup) {
-            this.propsGroup = new THREE.Group();
-            this.scene.add(this.propsGroup);
+        
+        if (mesh) {
+            if (placementData.at) { // Place-at-feet
+                const { q, r } = placementData.at;
+                const { x, z } = axialToWorld(q - this.world.boardRadius, r - this.world.boardRadius, this.world.radius);
+                const h = this.world.getHeight(q, r);
+                mesh.position.set(x, (h + 1) * this.world.hScale, z);
+                mesh.userData = { type: 'building', recId: recId, q: q, r: r };
+            } else { // Interactive placement
+                 const targetCoords = placementData.currentTile || placementData.across || placementData.from;
+                 mesh.userData = { type: 'building', recId: recId, q: targetCoords.q, r: targetCoords.r };
+            }
+            this.propsGroup.add(mesh);
         }
-        this.propsGroup.add(mesh);
     }
 
-    /**
-     * Buy an item from a village.  Deducts gold, grants the item and refreshes the trade UI.
-     * @param {string} cityKey Key of the village price list
-     * @param {string} itemId Item identifier to purchase
-     */
+
     handleBuy(cityKey, itemId) {
         const priceList = this.state.prices[cityKey];
         if (!priceList) return;
@@ -644,19 +709,10 @@ class Game {
         }
         this.state.gold -= price;
         this.addItem(itemId, 1);
-        // Refresh trade UI
         this.ui.showTrade(cityKey, this.state.prices[cityKey]);
-        // Also refresh inventory UI if open
-        if (this.ui.activeUIMode === 'inventory') {
-            this.ui.showInventory();
-        }
+        if (this.ui.activeUIMode === 'inventory') this.ui.showInventory();
     }
 
-    /**
-     * Sell an item to a village.  Removes the item, awards half its buy price and refreshes UI.
-     * @param {string} cityKey Key of the village price list
-     * @param {string} itemId Item identifier to sell
-     */
     handleSell(cityKey, itemId) {
         const priceList = this.state.prices[cityKey];
         if (!priceList) return;
@@ -669,68 +725,32 @@ class Game {
         const price = Math.max(1, Math.floor(fullPrice / 2));
         this.removeItem(itemId, 1);
         this.state.gold += price;
-        // Refresh trade UI
         this.ui.showTrade(cityKey, this.state.prices[cityKey]);
-        if (this.ui.activeUIMode === 'inventory') {
-            this.ui.showInventory();
-        }
+        if (this.ui.activeUIMode === 'inventory') this.ui.showInventory();
     }
 
-    /**
-     * Begin a harvest action on a forest tile.  Shows a progress bar and then
-     * awards items when complete.  If chopping, requires an axe in inventory.
-     * @param {string} action 'chop' or 'branch'
-     * @param {number} q Axial q coordinate
-     * @param {number} r Axial r coordinate
-     * @param {THREE.Object3D} treeMesh The mesh representing the tree (unused here but passed for potential future use)
-     */
     startHarvest(action, q, r, treeMesh) {
         if (action === 'chop' && !this.hasItem('axe', 1)) {
-            this.ui.showNotification('You need an axe to chop down a tree. You can gather branches without an axe.');
-            // Re-show harvest UI so the player can choose another action
+            this.ui.showNotification('You need an axe to chop down a tree.');
             this.ui.showHarvest(q, r, treeMesh);
             return;
         }
-        // Hide current UI and show a progress bar
         this.ui.hide();
-        this.ui.showProgress('Harvesting', 2000, () => {
-            this.finishHarvest(action, q, r, treeMesh);
-        });
+        this.ui.showProgress('Harvesting', 2000, () => this.finishHarvest(action, q, r, treeMesh));
     }
 
-    /**
-     * Complete a harvest action and award items.  Branches leave the tree intact; chopping produces logs.
-     */
     finishHarvest(action, q, r, treeMesh) {
-        let id;
-        let qty;
-        if (action === 'chop') {
-            id = 'rough_log';
-            qty = 1;
-        } else {
-            id = 'branch';
-            qty = 2;
-        }
+        let id = (action === 'chop') ? 'rough_log' : 'branch';
+        let qty = (action === 'chop') ? 1 : 2;
         this.addItem(id, qty);
         this.ui.showNotification(`You obtained ${qty} x ${ITEMS[id].name}!`);
     }
 
-    /**
-     * Begin a mining action when adjacent to a steep cliff.  Shows a progress bar and awards stone/ore.
-     * @param {number} q Target q coordinate for mining
-     * @param {number} r Target r coordinate for mining
-     */
     startMining(q, r) {
-        // Hide any open UI and show progress
         this.ui.hide();
-        this.ui.showProgress('Mining', 2000, () => {
-            this.finishMining(q, r);
-        });
+        this.ui.showProgress('Mining', 2000, () => this.finishMining(q, r));
     }
 
-    /**
-     * Complete a mining action.  Awards stone and occasionally ore.
-     */
     finishMining(q, r) {
         this.addItem('stone', 3);
         if (Math.random() < 0.2) {
@@ -740,26 +760,20 @@ class Game {
             this.ui.showNotification('You mined 3 Stone.');
         }
     }
-
     
-    // A* Pathfinding (unchanged from original)
     findPath(q0, r0, q1, r1) {
       if (q0 === q1 && r0 === r1) return [];
-      function heuristic(q, r) {
-        const dq = Math.abs(q - q1);
-        const dr = Math.abs(r - r1);
-        const dSum = Math.abs(dq + dr);
+      const heuristic = (q, r) => {
+        const dq = Math.abs(q - q1), dr = Math.abs(r - r1), dSum = Math.abs(dq + dr);
         return Math.max(dq, dr, dSum);
-      }
-      const directions = [
-        { dq: 1, dr: 0 }, { dq: -1, dr: 0 }, { dq: 0, dr: 1 }, { dq: 0, dr: -1 },
-        { dq: 1, dr: -1 }, { dq: -1, dr: 1 },
-      ];
-      const open = []; const openMap = {}; const closed = {};
+      };
+      const directions = [ { dq: 1, dr: 0 }, { dq: -1, dr: 0 }, { dq: 0, dr: 1 }, { dq: 0, dr: -1 }, { dq: 1, dr: -1 }, { dq: -1, dr: 1 } ];
+      const open = [], openMap = {}, closed = {};
       const startNode = { q: q0, r: r0, g: 0, f: heuristic(q0, r0), parent: null };
-      const hash = (q, r) => q + ',' + r;
+      const hash = (q, r) => `${q},${r}`;
       open.push(startNode);
       openMap[hash(q0, r0)] = startNode;
+
       while (open.length > 0) {
         open.sort((a, b) => a.f - b.f);
         const current = open.shift();
@@ -770,11 +784,44 @@ class Game {
           return path;
         }
         closed[hash(current.q, current.r)] = true;
+
         for (const dir of directions) {
-          const nq = current.q + dir.dq; const nr = current.r + dir.dr;
+          const nq = current.q + dir.dq, nr = current.r + dir.dr;
+          if (!this.world.isInside(nq, nr)) continue;
+
+          let canTraverse = false;
           const h0 = this.world.getHeight(current.q, current.r);
           const h1 = this.world.getHeight(nq, nr);
-          if (h1 === -Infinity || h1 - h0 > 1) continue;
+          const raw_h1 = this.world.heightMap[nr][nq];
+
+          const structure = this.world.getStructure(nq, nr) || this.world.getStructure(current.q, current.r);
+          if (structure) {
+              if (structure.type === 'ladder') {
+                  const { from, to } = structure;
+                  if ((from.q === current.q && from.r === current.r && to.q === nq && to.r === nr) ||
+                      (to.q === current.q && to.r === current.r && from.q === nq && from.r === nr)) {
+                      canTraverse = true;
+                  }
+              }
+              if (structure.type === 'bridge') {
+                  const { from, to } = structure;
+                  const across = structure.across || {q: nq, r: nr}; // fallback for single bridges
+                  if ((from.q === current.q && from.r === current.r && across.q === nq && across.r === nr) ||
+                      (to && to.q === current.q && to.r === current.r && across.q === nq && across.r === nr) ||
+                      ((across.q === current.q && across.r === current.r) && ((from.q === nq && from.r === nr) || (to && to.q === nq && to.r === nr)))) {
+                      canTraverse = true;
+                  }
+              }
+          }
+
+          if (!canTraverse && raw_h1 !== -Infinity) {
+              if (h1 - h0 <= 1 && h0 - h1 <= 2) {
+                canTraverse = true;
+              }
+          }
+          
+          if (!canTraverse) continue;
+
           const key = hash(nq, nr);
           if (closed[key]) continue;
           const tentativeG = current.g + 1;
@@ -790,7 +837,6 @@ class Game {
       return null;
     }
 
-    // Model Loading (unchanged from original)
     async loadPropModels() {
       const treeFallback = new THREE.Group();
       {
@@ -805,26 +851,18 @@ class Game {
       const buildingFallback = new THREE.Group();
       {
         const wallMat = new THREE.MeshLambertMaterial({ color: 0xb0b0b5 });
-        const roofMat = new THREE.MeshLambertMaterial({ color: 0x8b6b48 });
-        const hutConfigs = [
-          { pos: [0.0, 0.0], scale: 0.8 }, { pos: [0.5, 0.35], scale: 0.6 },
-          { pos: [-0.5, -0.35], scale: 0.6 }, { pos: [0.3, -0.45], scale: 0.5 }
-        ];
+        const hutConfigs = [ { pos: [0.0, 0.0], scale: 0.8 }, { pos: [0.5, 0.35], scale: 0.6 } ];
         hutConfigs.forEach(({ pos, scale }) => {
           const [hx, hz] = pos;
           const baseGeo = new THREE.BoxGeometry(1.0 * scale, 0.6 * scale, 1.0 * scale);
           const baseMesh = new THREE.Mesh(baseGeo, wallMat); baseMesh.position.set(hx, 0.3 * scale, hz);
           buildingFallback.add(baseMesh);
-          const roofGeo = new THREE.ConeGeometry(0.6 * scale, 0.6 * scale, 4);
-          const roofMesh = new THREE.Mesh(roofGeo, roofMat); roofMesh.position.set(hx, 0.6 * scale + 0.3 * scale, hz);
-          buildingFallback.add(roofMesh);
         });
       }
       return { forest: treeFallback, city: buildingFallback };
     }
 }
 
-// --- Main Execution ---
 document.addEventListener('DOMContentLoaded', () => {
     const game = new Game();
     game.init();
