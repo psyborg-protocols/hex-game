@@ -71,6 +71,10 @@ class Game {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(this.renderer.domElement);
 
+        // three r152+: color management defaults; be explicit
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
         // --- 2. World Generation ---
         const params = new URLSearchParams(location.search);
         const seed = params.get('seed') || Math.floor(Math.random() * 1e9).toString();

@@ -510,6 +510,8 @@ export class HexWorld {
           const tex = new THREE.TextureLoader().load(uri);
           tex.magFilter = THREE.NearestFilter;
           tex.minFilter = THREE.NearestFilter;
+          // three r152+: mark color textures as sRGB
+          tex.colorSpace = THREE.SRGBColorSpace;
           
           if (tKey === 'grass') {
             tex.center.set(0.5, 0.5);
