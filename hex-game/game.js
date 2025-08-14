@@ -472,16 +472,43 @@ class Game {
         const potentialSpots = this.findValidPlacementSpots(recipeId);
 
         potentialSpots.forEach(spot => {
-            const highlightGeo = new THREE.CircleGeometry(this.world.radius * 0.8, 6);
-            highlightGeo.rotateX(-Math.PI / 2);
+            let mesh;
             const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-            const mesh = new THREE.Mesh(highlightGeo, mat);
 
-            const targetCoords = recipeId === 'bridge' ? spot.across : spot.to;
-            const { x, z } = axialToWorld(targetCoords.q - this.world.boardRadius, targetCoords.r - this.world.boardRadius, this.world.radius);
-            
-            const h = this.world.getHeight(this.player.q, this.player.r);
-            mesh.position.set(x, (h + 1) * this.world.hScale + 0.1, z);
+            if (recipeId === 'ladder') {
+                const fromH = this.world.getHeight(spot.from.q, spot.from.r);
+                const toH = this.world.getHeight(spot.to.q, spot.to.r);
+                const h_diff = Math.abs(fromH - toH);
+                
+                // Create a vertical plane to represent the ladder against the cliff
+                const highlightGeo = new THREE.PlaneGeometry(this.world.radius * 0.8, h_diff * this.world.hScale);
+                mesh = new THREE.Mesh(highlightGeo, mat);
+
+                const fromWorld = axialToWorld(spot.from.q - this.world.boardRadius, spot.from.r - this.world.boardRadius, this.world.radius);
+                const toWorld = axialToWorld(spot.to.q - this.world.boardRadius, spot.to.r - this.world.boardRadius, this.world.radius);
+
+                const lowerH = Math.min(fromH, toH);
+                
+                const fromVec = new THREE.Vector3(fromWorld.x, (fromH + 1) * this.world.hScale, fromWorld.z);
+                const toVec = new THREE.Vector3(toWorld.x, (toH + 1) * this.world.hScale, toWorld.z);
+
+                // Position the highlight in the middle of the cliff face
+                mesh.position.copy(fromVec).lerp(toVec, 0.5);
+                
+                // Make it face the player's current tile
+                const playerPos = axialToWorld(this.player.q - this.world.boardRadius, this.player.r - this.world.boardRadius, this.world.radius);
+                mesh.lookAt(new THREE.Vector3(playerPos.x, mesh.position.y, playerPos.z));
+
+            } else { // Fallback for bridges or other placeables
+                const highlightGeo = new THREE.CircleGeometry(this.world.radius * 0.8, 6);
+                highlightGeo.rotateX(-Math.PI / 2);
+                mesh = new THREE.Mesh(highlightGeo, mat);
+
+                const targetCoords = recipeId === 'bridge' ? spot.across : spot.to;
+                const { x, z } = axialToWorld(targetCoords.q - this.world.boardRadius, targetCoords.r - this.world.boardRadius, this.world.radius);
+                const h = this.world.getHeight(this.player.q, this.player.r);
+                mesh.position.set(x, (h + 1) * this.world.hScale + 0.1, z);
+            }
             
             mesh.userData = { isHighlight: true, placementData: spot };
             this.placementHighlights.add(mesh);
@@ -538,6 +565,7 @@ class Game {
         if (placementData.type === 'ladder') {
             this.world.addStructure(placementData.to.q, placementData.to.r, placementData);
             this.world.addStructure(placementData.from.q, placementData.from.r, placementData);
+            this.buildStructure('ladder', placementData);
         } else if (placementData.type === 'bridge') {
             // Find the far bank to complete the bridge data
             const dir = { dq: placementData.across.q - placementData.from.q, dr: placementData.across.r - placementData.from.r };
@@ -603,38 +631,68 @@ class Game {
         if (recId === 'ladder') {
             mesh = new THREE.Group();
             const mat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
-            const beamGeo = new THREE.BoxGeometry(0.1, 1, 0.1);
+
+            const fromH = this.world.getHeight(placementData.from.q, placementData.from.r);
+            const toH   = this.world.getHeight(placementData.to.q,   placementData.to.r);
+
+            const fromWorld = axialToWorld(placementData.from.q - this.world.boardRadius, placementData.from.r - this.world.boardRadius, this.world.radius);
+            const toWorld   = axialToWorld(placementData.to.q   - this.world.boardRadius, placementData.to.r   - this.world.boardRadius, this.world.radius);
+
+            // Calculate edge positions instead of center positions
+            const fromCenter = new THREE.Vector3(fromWorld.x, (fromH + 1) * this.world.hScale, fromWorld.z);
+            const toCenter = new THREE.Vector3(toWorld.x, (toH + 1) * this.world.hScale, toWorld.z);
             
+            // Find the direction between hex centers
+            const centerDirection = new THREE.Vector3().subVectors(toCenter, fromCenter);
+            centerDirection.y = 0; // Only consider horizontal direction
+            centerDirection.normalize();
+            
+            // Move points to the edges of the hexes (closer to each other)
+            const edgeOffset = this.world.radius * 0.7; // Adjust this value to control how close to the edge
+            const startPoint = fromCenter.clone().add(centerDirection.clone().multiplyScalar(edgeOffset));
+            const endPoint = toCenter.clone().sub(centerDirection.clone().multiplyScalar(edgeOffset));
+            
+            // Restore the Y coordinates for height difference
+            startPoint.y = (fromH + 1) * this.world.hScale;
+            endPoint.y = (toH + 1) * this.world.hScale;
+
+            // Calculate direction and length for the actual ladder
+            const direction = new THREE.Vector3().subVectors(endPoint, startPoint);
+            const length = direction.length();
+            
+            if (length < 0.5) {
+                console.warn('Ladder too short, length:', length);
+                return;
+            }
+
+            // Create ladder beams with proper dimensions
+            const beamGeo = new THREE.BoxGeometry(0.15, length, 0.15);
             const leftBeam = new THREE.Mesh(beamGeo, mat);
-            leftBeam.position.x = -0.3;
             const rightBeam = new THREE.Mesh(beamGeo, mat);
-            rightBeam.position.x = 0.3;
+            
+            // Position beams relative to ladder center
+            leftBeam.position.set(-0.25, 0, 0);
+            rightBeam.position.set(0.25, 0, 0);
+            
             mesh.add(leftBeam, rightBeam);
 
-            const h_diff = Math.abs(this.world.heightMap[placementData.from.r][placementData.from.q] - this.world.heightMap[placementData.to.r][placementData.to.q]);
-            const ladderHeight = h_diff * this.world.hScale + this.world.hScale * 0.5;
-            leftBeam.scale.y = rightBeam.scale.y = ladderHeight;
-
-            const rungCount = Math.floor(h_diff * 2);
-            const rungGeo = new THREE.BoxGeometry(0.7, 0.08, 0.08);
-            for(let i = 0; i <= rungCount; i++) {
-                const rung = new THREE.Mesh(rungGeo, mat);
-                rung.position.y = (i / (rungCount + 1) - 0.5) * ladderHeight;
+            // Add rungs along the ladder
+            const rungCount = Math.max(3, Math.floor(length * 1.5));
+            const rungMat = new THREE.MeshLambertMaterial({ color: 0x9b6b3a });
+            
+            for (let i = 0; i < rungCount; i++) {
+                const rung = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.1), rungMat);
+                const t = (i + 1) / (rungCount + 1);
+                rung.position.set(0, (t - 0.5) * length, 0);
                 mesh.add(rung);
             }
 
-            const fromWorld = axialToWorld(placementData.from.q - this.world.boardRadius, placementData.from.r - this.world.boardRadius, this.world.radius);
-            const toWorld = axialToWorld(placementData.to.q - this.world.boardRadius, placementData.to.r - this.world.boardRadius, this.world.radius);
+            // Position ladder at midpoint between edge points
+            const midPoint = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
+            mesh.position.copy(midPoint);
             
-            const fromVec = new THREE.Vector3(fromWorld.x, (this.world.getHeight(placementData.from.q, placementData.from.r) + 0.5) * this.world.hScale, fromWorld.z);
-            const toVec = new THREE.Vector3(toWorld.x, (this.world.getHeight(placementData.to.q, placementData.to.r) + 0.5) * this.world.hScale, toWorld.z);
-
-            mesh.position.copy(fromVec).lerp(toVec, 0.5);
-            
-            // MODIFIED: Correctly lean the ladder towards the cliff
-            const target = this.world.getHeight(placementData.from.q, placementData.from.r) < this.world.getHeight(placementData.to.q, placementData.to.r) ? toVec : fromVec;
-            mesh.lookAt(target);
-            mesh.rotation.x = Math.PI / 2 + 0.1; // Stand straighter
+            // Make sure it's visible and properly scaled
+            mesh.scale.setScalar(1.0);
 
         } else if (recId === 'bridge') {
             // MODIFIED: New bridge model
@@ -848,15 +906,42 @@ class Game {
         const leavesMesh = new THREE.Mesh(leaves, mLeaves); leavesMesh.position.y = 0.9;
         treeFallback.add(trunkMesh, leavesMesh);
       }
+      
+      // --- NEW, PRETTIER VILLAGE MODEL ---
       const buildingFallback = new THREE.Group();
       {
-        const wallMat = new THREE.MeshLambertMaterial({ color: 0xb0b0b5 });
-        const hutConfigs = [ { pos: [0.0, 0.0], scale: 0.8 }, { pos: [0.5, 0.35], scale: 0.6 } ];
-        hutConfigs.forEach(({ pos, scale }) => {
-          const [hx, hz] = pos;
-          const baseGeo = new THREE.BoxGeometry(1.0 * scale, 0.6 * scale, 1.0 * scale);
-          const baseMesh = new THREE.Mesh(baseGeo, wallMat); baseMesh.position.set(hx, 0.3 * scale, hz);
-          buildingFallback.add(baseMesh);
+        const wallMat = new THREE.MeshLambertMaterial({ color: 0xd2b48c }); // Sandy brown wall
+        const roofMat = new THREE.MeshLambertMaterial({ color: 0x8b4513 }); // Saddle brown roof
+
+        const hutConfigs = [
+            { pos: [-0.3, 0.3], scale: 0.5, rot: 0.3 },
+            { pos: [0.4, 0.4], scale: 0.6, rot: -0.2 },
+            { pos: [0.1, -0.35], scale: 0.55, rot: 0.8 },
+        ];
+
+        hutConfigs.forEach(({ pos, scale, rot }) => {
+            const hut = new THREE.Group();
+            const [hx, hz] = pos;
+
+            // Base of the hut
+            const baseHeight = 0.5 * scale;
+            const baseGeo = new THREE.BoxGeometry(0.8 * scale, baseHeight, 0.9 * scale);
+            const baseMesh = new THREE.Mesh(baseGeo, wallMat);
+            baseMesh.position.y = baseHeight / 2;
+            
+            // Pitched Roof
+            const roofHeight = 0.6 * scale;
+            const roofGeo = new THREE.CylinderGeometry(0, 0.7 * scale, roofHeight, 4); // 4 sides for a pyramid/pitched roof
+            const roofMesh = new THREE.Mesh(roofGeo, roofMat);
+            roofMesh.position.y = baseHeight + roofHeight / 2;
+            roofMesh.rotation.y = Math.PI / 4; // Align pyramid faces with walls
+
+            hut.add(baseMesh);
+            hut.add(roofMesh);
+            
+            hut.position.set(hx, 0, hz);
+            hut.rotation.y = rot;
+            buildingFallback.add(hut);
         });
       }
       return { forest: treeFallback, city: buildingFallback };
