@@ -432,16 +432,10 @@ class Game {
         if (!skill) return;
         skill.xp += xp;
         const threshold = skill.level * skill.level * 10;
-        const maxWithoutQuest = 3;
         if (skill.xp >= threshold) {
-            if (skill.level < maxWithoutQuest) {
-                skill.xp -= threshold;
-                skill.level += 1;
-                this.ui.showNotification(`Your ${skillName} skill increased to level ${skill.level}!`);
-            } else {
-                skill.xp = threshold;
-                this.ui.showNotification(`Your ${skillName} skill is capped at level ${skill.level}.`);
-            }
+            skill.xp -= threshold;
+            skill.level += 1;
+            this.ui.showNotification(`Your ${skillName} skill increased to level ${skill.level}!`);
         }
     }
 

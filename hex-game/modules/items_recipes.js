@@ -107,6 +107,6 @@ export const RECIPES = {
   },
   bridge: {
     id: 'bridge', name: 'Bridge', inputs: { log: 4, plank: 4, beam:2 }, output: { bridge: 1 },
-    skill: 'woodworking', level: 5, xp: 15, category: 'build'
+    skill: 'woodworking', level: 4, xp: 15, category: 'build'
   }
 };
