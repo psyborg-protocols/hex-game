@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Seeded Hex Terrain Game</title>
     <style>
       body {
@@ -60,6 +61,35 @@
         opacity: 0.5;
         cursor: default;
       }
+      #mobile-controls {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 10;
+      }
+      .mobile-btn {
+        width: 60px;
+        height: 60px;
+        background-color: rgba(0,0,0,0.5);
+        border: 2px solid rgba(255,255,255,0.7);
+        border-radius: 50%;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        user-select: none;
+      }
+      @media (max-width: 768px) {
+        #mobile-controls {
+          display: flex;
+        }
+      }
     </style>
     <script type="importmap">
     {
@@ -77,6 +107,12 @@
       <span id="seed-display"></span>
     </div>
     <div id="ui"></div>
+    <div id="mobile-controls">
+      <div id="inventory-btn" class="mobile-btn">Inv</div>
+      <div id="craft-btn" class="mobile-btn">Craft</div>
+      <div id="skills-btn" class="mobile-btn">Skills</div>
+      <div id="build-btn" class="mobile-btn">Build</div>
+    </div>
     
     <script type="module" src="game.js"></script>
     

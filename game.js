@@ -58,6 +58,18 @@ class Game {
         // ADDED: State for new placement mode
         this.placementMode = null; // e.g., { recipeId: 'ladder' }
         this.placementHighlights = new THREE.Group();
+
+        // Mobile touch state
+        this.touchState = {
+            isDragging: false,
+            isPinching: false,
+            lastPan: { x: 0, y: 0 },
+            lastPinchDist: 0,
+            tapTimeout: null,
+            tapMaxDelay: 200,
+            tapMaxDistance: 10,
+            startTapPos: { x: 0, y: 0 },
+        };
     }
 
     async init() {
@@ -138,6 +150,17 @@ class Game {
         window.addEventListener('keyup', (e) => this.onKeyUp(e));
         this.renderer.domElement.addEventListener('mousedown', (e) => this.onMouseDown(e));
         this.renderer.domElement.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+
+        // Mobile Touch Events
+        this.renderer.domElement.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
+        this.renderer.domElement.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
+        this.renderer.domElement.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });
+        
+        // Mobile UI Buttons
+        document.getElementById('inventory-btn').addEventListener('click', () => this.ui.toggle('inventory', () => this.ui.showInventory()));
+        document.getElementById('craft-btn').addEventListener('click', () => this.ui.toggle('craft', () => this.ui.showCrafting()));
+        document.getElementById('skills-btn').addEventListener('click', () => this.ui.toggle('skills', () => this.ui.showSkills()));
+        document.getElementById('build-btn').addEventListener('click', () => this.ui.toggle('build', () => this.ui.showBuilding()));
     }
     
     onResize() {
@@ -191,8 +214,12 @@ class Game {
             ((event.clientX - rect.left) / rect.width) * 2 - 1,
             -((event.clientY - rect.top) / rect.height) * 2 + 1
         );
+        this.handleTileClick(mouse);
+    }
+
+    handleTileClick(coords) {
         const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, this.camera);
+        raycaster.setFromCamera(coords, this.camera);
         
         // MODIFIED: Handle placement mode click first
         if (this.placementMode) {
@@ -205,8 +232,6 @@ class Game {
             }
             return; // Prevent pathfinding while in placement mode
         }
-
-        if (this.ui.uiEl.contains(event.target)) return;
 
         const intersects = this.pickGroup ? raycaster.intersectObjects(this.pickGroup.children, true) : [];
         if (intersects.length === 0) return;
@@ -232,6 +257,86 @@ class Game {
         this.targetOffset.setLength(clamped);
     }
     
+    onTouchStart(event) {
+        event.preventDefault();
+        
+        clearTimeout(this.touchState.tapTimeout);
+
+        if (event.touches.length === 1) {
+            this.touchState.isDragging = true;
+            this.touchState.lastPan = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            this.touchState.startTapPos = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            
+            this.touchState.tapTimeout = setTimeout(() => {
+                // If it's a long press, clear the timeout, it's not a tap
+                clearTimeout(this.touchState.tapTimeout);
+                this.touchState.tapTimeout = null;
+            }, this.touchState.tapMaxDelay);
+
+        } else if (event.touches.length === 2) {
+            this.touchState.isDragging = false;
+            this.touchState.isPinching = true;
+            const dx = event.touches[0].clientX - event.touches[1].clientX;
+            const dy = event.touches[0].clientY - event.touches[1].clientY;
+            this.touchState.lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+        }
+    }
+
+    onTouchMove(event) {
+        event.preventDefault();
+        
+        if (this.touchState.isDragging && event.touches.length === 1) {
+            const deltaX = event.touches[0].clientX - this.touchState.lastPan.x;
+            
+            const angle = -deltaX * 0.005; // Adjust sensitivity
+            this.targetOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+            
+            this.touchState.lastPan = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+
+        } else if (this.touchState.isPinching && event.touches.length === 2) {
+            const dx = event.touches[0].clientX - event.touches[1].clientX;
+            const dy = event.touches[0].clientY - event.touches[1].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            const zoomFactor = this.touchState.lastPinchDist / dist;
+            this.targetOffset.multiplyScalar(zoomFactor);
+            const distance = this.targetOffset.length();
+            const clamped = Math.min(Math.max(distance, 10), 150);
+            this.targetOffset.setLength(clamped);
+
+            this.touchState.lastPinchDist = dist;
+        }
+    }
+
+    onTouchEnd(event) {
+        event.preventDefault();
+        
+        // If it was a tap...
+        if (this.touchState.tapTimeout) {
+            clearTimeout(this.touchState.tapTimeout);
+            this.touchState.tapTimeout = null;
+
+            const endPos = this.touchState.lastPan;
+            const dist = Math.sqrt(
+              Math.pow(endPos.x - this.touchState.startTapPos.x, 2) +
+              Math.pow(endPos.y - this.touchState.startTapPos.y, 2)
+            );
+            
+            if (dist < this.touchState.tapMaxDistance) {
+                 if (this.ui.uiEl.contains(event.target)) return;
+                 const rect = this.renderer.domElement.getBoundingClientRect();
+                 const touchCoords = new THREE.Vector2(
+                    ((endPos.x - rect.left) / rect.width) * 2 - 1,
+                    -((endPos.y - rect.top) / rect.height) * 2 + 1
+                 );
+                 this.handleTileClick(touchCoords);
+            }
+        }
+
+        this.touchState.isDragging = false;
+        this.touchState.isPinching = false;
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
         this.updateCamera();
