@@ -7,7 +7,7 @@ import { ContextSystem } from './modules/context_system.js';
 import { HexWorld, axialToWorld } from './modules/world_gen.js';
 import { Player } from './modules/player.js';
 import { UIController } from './modules/ui_controller.js';
-import { ITEMS, ITEM_BASE_PRICES, RECIPES } from './modules/items_recipes.js';
+import { ITEMS, ITEM_BASE_PRICES, RECIPES } from './modules/items_recipes_skills.js';
 
 // Texture paths are now defined in one place.
 const BLOCK_TEXTURES = {

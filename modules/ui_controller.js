@@ -1,5 +1,4 @@
-import { ITEMS, RECIPES } from './items_recipes.js';
-import { SKILL_INFO } from './skills_info.js';
+import { ITEMS, RECIPES, SKILL_INFO } from './items_recipes_skills.js';
 
 // A mapping of UI modes to their icons for consistent headers
 const UI_ICONS = {

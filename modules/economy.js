@@ -1,5 +1,5 @@
 // economy.js
-import { ITEM_BASE_PRICES } from './items_recipes.js';
+import { ITEM_BASE_PRICES } from './items_recipes_skills.js';
 const UNTRADEABLE = new Set(['cabin', 'stone_wall', 'wood_fence']);
 export class Economy {
   constructor(game) { this.game = game; }

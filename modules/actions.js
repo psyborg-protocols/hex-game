@@ -1,5 +1,5 @@
 // actions.js
-import { ITEMS, RECIPES } from './items_recipes.js';
+import { ITEMS, RECIPES } from './items_recipes_skills.js';
 export class Actions {
   constructor(game) { this.game = game; }
   addItem(id, qty=1) {
