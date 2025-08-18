@@ -102,7 +102,7 @@ export const RECIPES = {
   },
   ladder: {
     id: 'ladder', name: 'Ladder', inputs: { beam: 5 }, output: { ladder: 1 },
-    skill: 'woodworking', level: 3, xp: 10, category: 'build'
+    skill: 'woodworking', level: 4, xp: 10, category: 'build'
   },
   bridge: {
     id: 'bridge', name: 'Bridge', inputs: { log: 4, plank: 3, beam:2 }, output: { bridge: 1 },

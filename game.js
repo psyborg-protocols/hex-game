@@ -703,7 +703,22 @@ class Game {
 
             const midPoint = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
             mesh.position.copy(midPoint);
-            mesh.scale.setScalar(1.0);
+
+            // The 'up' vector for the ladder object is the direction along its length
+            mesh.up.copy(direction.clone().normalize());
+
+            // The target to look at is a point away from the cliff face.
+            // 'centerDirection' points from the lower tile towards the upper one (into the cliff).
+            // By subtracting it from the ladder's position, we get a target point "outside" the cliff.
+            const lookTarget = new THREE.Vector3().subVectors(midPoint, centerDirection);
+            mesh.lookAt(lookTarget);
+
+            // The scale was set to 1.0 at the end, but it's better to remove it
+            // as it's the default and was misplaced from other logic.
+            // mesh.scale.setScalar(1.0); // This line can be removed
+
+        } else if (recId === 'bridge') {
+
 
         } else if (recId === 'bridge') {
             // Simple decorative bridge segment on water tile
