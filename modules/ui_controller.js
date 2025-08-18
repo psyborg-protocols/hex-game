@@ -189,7 +189,7 @@ export class UIController {
         this.show('harvest', html);
         
         this.uiEl.querySelectorAll('button[data-action]').forEach(btn => {
-            btn.onclick = () => this.game.startHarvest(btn.dataset.action, q, r, treeMesh);
+            btn.onclick = () => this.game.actions.startHarvest(btn.dataset.action, q, r, treeMesh);
         });
         this.addCloseListener();
     }
@@ -204,7 +204,7 @@ export class UIController {
         html += `<br/><button id="close-btn">Cancel</button>`;
         this.show('mine', html);
         
-        this.uiEl.querySelector('#start-mine').onclick = () => this.game.startMining(q, r);
+        this.uiEl.querySelector('#start-mine').onclick = () => this.game.actions.startMining(q, r);
         this.addCloseListener();
     }
 
@@ -215,7 +215,7 @@ export class UIController {
         const outputStr = Object.entries(rec.output).map(([id, qty]) => `${ITEMS[id].name} x${qty}`).join(', ');
         const toolStr = rec.tools ? ' (requires ' + Object.keys(rec.tools).map(tid => ITEMS[tid].name).join(', ') + ')' : '';
         
-        const canCraft = this.game.canCraft(rec.id);
+        const canCraft = this.game.actions.canCraft(rec.id);
         const disabledAttr = canCraft ? '' : 'disabled';
 
         const outId = Object.keys(rec.output)[0];
@@ -230,8 +230,8 @@ export class UIController {
     addRecipeListeners(type) {
         this.uiEl.querySelectorAll(`button[data-id]`).forEach(btn => {
             btn.onclick = () => {
-                if (type === 'craft') this.game.handleCraft(btn.dataset.id);
-                if (type === 'build') this.game.handleBuild(btn.dataset.id);
+                if (type === 'craft') this.game.actions.handleCraft(btn.dataset.id);
+                if (type === 'build') this.game.actions.handleBuild(btn.dataset.id);
             };
         });
         this.addCloseListener();
@@ -240,8 +240,8 @@ export class UIController {
     addTradeListeners(cityKey) {
         this.uiEl.querySelectorAll('button[data-action]').forEach(btn => {
             btn.onclick = () => {
-                if (btn.dataset.action === 'buy') this.game.handleBuy(cityKey, btn.dataset.id);
-                if (btn.dataset.action === 'sell') this.game.handleSell(cityKey, btn.dataset.id);
+                if (btn.dataset.action === 'buy') this.game.actions.handleBuy(cityKey, btn.dataset.id);
+                if (btn.dataset.action === 'sell') this.game.actions.handleSell(cityKey, btn.dataset.id);
             };
         });
         this.addCloseListener();
