@@ -1,4 +1,4 @@
-// actions.js
+// modules/actions.js
 import { ITEMS, RECIPES } from './items_recipes_skills.js';
 
 export class Actions {
@@ -140,10 +140,9 @@ export class Actions {
     startHarvest(action, q, r, treeMesh) {
         if (action === 'chop' && !this.hasItem('axe', 1)) {
             this.game.ui.showNotification('You need an axe to chop down a tree.');
-            this.game.ui.showHarvest(q, r, treeMesh);
             return;
         }
-        this.game.ui.hide();
+        this.game.ui.hideAllWorldspaceUIs();
         this.game.ui.showProgress('Harvesting', 2000, () => this.finishHarvest(action, q, r, treeMesh));
     }
 
@@ -155,7 +154,7 @@ export class Actions {
     }
 
     startMining(q, r) {
-        this.game.ui.hide();
+        this.game.ui.hideAllWorldspaceUIs();
         this.game.ui.showProgress('Mining', 2000, () => this.finishMining(q, r));
     }
 

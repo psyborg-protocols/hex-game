@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { CameraController } from './modules/camera_controller.js';
 import { findPath } from './modules/pathfinding.js';
 import { Actions } from './modules/actions.js';
-import { Economy } from './modules/economy.js';
 import { ContextSystem } from './modules/context_system.js';
 import { HexWorld, axialToWorld } from './modules/world_gen.js';
 import { Player } from './modules/player.js';
@@ -20,6 +19,10 @@ const BLOCK_TEXTURES = {
     water: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAzUlEQVR4nH1SQQrEIAxMdUGseBDsa/rgvqiv8JBDKNJDYQ+zZK1bd05JcJKZmGnd9sqScz6uk4gqi0+RxjBElHOe5xn5n9eV5UNAby0RUbDul4BeBkkRRmmJCS0QKLSF6fqBiaDlqIqbpJGYFqbLWzKmYc4S09f0I1QPaEXYp1hZjCrpXKqZB0m6TY1VQItgnU9xWrd9aHA0YYTK0i5taFrN+BSxtGAdbmyJ6UZAj85usO64TtxFEX6hhOMrT8LanyH96SJchFVxt7d2428xx3BZ0Y//OwAAAABJRU5ErkJggg=='
 };
 
+// State for the contextual UI
+let contextualUIId = null;
+let activeContextualTarget = null;
+
 /**
  * The main Game class, responsible for orchestrating the entire application.
  */
@@ -30,19 +33,19 @@ class Game {
         this.renderer = null;
         this.world = null;
         this.player = null;
+        
+        // Initialize modules
         this.ui = new UIController(this);
         this.actions = new Actions(this);
+        this.contextSystem = new ContextSystem(this);
 
         this.worldGroup = null;
         this.pickGroup = null;
         this.propsGroup = null;
-
-        // Camera controller (replaces manual camera logic)
         this.cameraController = null;
-
-        // Smooth movement timing
         this.clock = new THREE.Clock();
 
+        // Game state
         this.state = {
             inventory: new Array(20).fill(null),
             gold: 50,
@@ -54,15 +57,18 @@ class Game {
             prices: {}
         };
 
-        // --- Path & Smooth Movement State ---
+        // Path & Smooth Movement State
         this.path = [];
         this.movingAlongPath = false;
-        this.currentSegment = null; // { from:{q,r}, to:{q,r}, t:0, duration }
-        this.speedTilesPerSec = 2.8; // tune for feel
+        this.currentSegment = null;
+        this.speedTilesPerSec = 2.8;
 
-        // ADDED: State for new placement mode
-        this.placementMode = null; // e.g., { recipeId: 'ladder' }
+        // Placement Mode State
+        this.placementMode = null;
         this.placementHighlights = new THREE.Group();
+        
+        // A helper object for positioning mining UI
+        this.miningTarget = new THREE.Object3D();
 
         // Mobile touch state
         this.touchState = {
@@ -123,12 +129,10 @@ class Game {
             this.scene.add(this.pickGroup);
         }
 
-        // ADDED: Add highlight group to scene
         this.scene.add(this.placementHighlights);
+        this.scene.add(this.miningTarget);
 
         this.player = new Player(this.world, this.scene);
-
-        // NEW: Initialize camera controller to follow the player
         this.cameraController = new CameraController(this.camera, this.player.mesh);
 
         const models = await this.loadPropModels();
@@ -151,7 +155,7 @@ class Game {
         this.renderer.domElement.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
         this.renderer.domElement.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });
 
-        // Mobile UI Buttons (guard in case not present)
+        // Mobile UI Buttons
         const byId = (id) => document.getElementById(id);
         byId('inventory-btn')?.addEventListener('click', () => this.ui.toggle('inventory', () => this.ui.showInventory()));
         byId('craft-btn')?.addEventListener('click', () => this.ui.toggle('craft', () => this.ui.showCrafting()));
@@ -166,7 +170,6 @@ class Game {
     }
 
     onKeyDown(event) {
-        // ADDED: Escape to cancel placement mode
         if (event.key === 'Escape' && this.placementMode) {
             this.exitPlacementMode();
             event.preventDefault();
@@ -179,11 +182,10 @@ class Game {
             'c': () => this.ui.toggle('craft', () => this.ui.showCrafting()),
             'k': () => this.ui.toggle('skills', () => this.ui.showSkills()),
             'b': () => this.ui.toggle('build', () => this.ui.showBuilding()),
-            // Camera keys are delegated to CameraController
-            'arrowleft': () => this.cameraController && this.cameraController.handleKeyDown('arrowleft'),
-            'arrowright': () => this.cameraController && this.cameraController.handleKeyDown('arrowright'),
-            'arrowup': () => this.cameraController && this.cameraController.handleKeyDown('arrowup'),
-            'arrowdown': () => this.cameraController && this.cameraController.handleKeyDown('arrowdown'),
+            'arrowleft': () => this.cameraController?.handleKeyDown('arrowleft'),
+            'arrowright': () => this.cameraController?.handleKeyDown('arrowright'),
+            'arrowup': () => this.cameraController?.handleKeyDown('arrowup'),
+            'arrowdown': () => this.cameraController?.handleKeyDown('arrowdown'),
         };
         if (keyMap[key]) {
             keyMap[key]();
@@ -194,10 +196,10 @@ class Game {
     onKeyUp(event) {
         const key = event.key.toLowerCase();
         const keyMap = {
-            'arrowleft': () => this.cameraController && this.cameraController.handleKeyUp('arrowleft'),
-            'arrowright': () => this.cameraController && this.cameraController.handleKeyUp('arrowright'),
-            'arrowup': () => this.cameraController && this.cameraController.handleKeyUp('arrowup'),
-            'arrowdown': () => this.cameraController && this.cameraController.handleKeyUp('arrowdown'),
+            'arrowleft': () => this.cameraController?.handleKeyUp('arrowleft'),
+            'arrowright': () => this.cameraController?.handleKeyUp('arrowright'),
+            'arrowup': () => this.cameraController?.handleKeyUp('arrowup'),
+            'arrowdown': () => this.cameraController?.handleKeyUp('arrowdown'),
         };
         if (keyMap[key]) {
             keyMap[key]();
@@ -218,7 +220,6 @@ class Game {
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(coords, this.camera);
 
-        // MODIFIED: Handle placement mode click first
         if (this.placementMode) {
             const intersects = raycaster.intersectObjects(this.placementHighlights.children);
             if (intersects.length > 0) {
@@ -227,19 +228,18 @@ class Game {
                     this.confirmPlacement(highlight.userData.placementData);
                 }
             }
-            return; // Prevent pathfinding while in placement mode
+            return;
         }
 
         const intersects = this.pickGroup ? raycaster.intersectObjects(this.pickGroup.children, true) : [];
         if (intersects.length === 0) return;
 
         const hit = intersects[0].object;
-        if (hit && hit.userData) {
+        if (hit?.userData) {
             const { qIndex, rIndex } = hit.userData;
-            // UPDATED: Call the imported findPath function
             const path = findPath(this.world, this.player, qIndex, rIndex);
             if (path && path.length > 0) {
-                path.shift(); // remove starting tile
+                path.shift();
                 this.startPath(path);
             }
         }
@@ -247,24 +247,21 @@ class Game {
 
     onWheel(event) {
         event.preventDefault();
-        if (this.cameraController) this.cameraController.handleWheel(event.deltaY);
+        this.cameraController?.handleWheel(event.deltaY);
     }
 
     onTouchStart(event) {
         event.preventDefault();
-
         clearTimeout(this.touchState.tapTimeout);
 
         if (event.touches.length === 1) {
             this.touchState.isDragging = true;
             this.touchState.lastPan = { x: event.touches[0].clientX, y: event.touches[0].clientY };
             this.touchState.startTapPos = { x: event.touches[0].clientX, y: event.touches[0].clientY };
-
             this.touchState.tapTimeout = setTimeout(() => {
                 clearTimeout(this.touchState.tapTimeout);
                 this.touchState.tapTimeout = null;
             }, this.touchState.tapMaxDelay);
-
         } else if (event.touches.length === 2) {
             this.touchState.isDragging = false;
             this.touchState.isPinching = true;
@@ -276,38 +273,32 @@ class Game {
 
     onTouchMove(event) {
         event.preventDefault();
-
         if (this.touchState.isDragging && event.touches.length === 1) {
             const deltaX = event.touches[0].clientX - this.touchState.lastPan.x;
-            if (this.cameraController) this.cameraController.handlePan(deltaX);
+            this.cameraController?.handlePan(deltaX);
             this.touchState.lastPan = { x: event.touches[0].clientX, y: event.touches[0].clientY };
-
         } else if (this.touchState.isPinching && event.touches.length === 2) {
             const dx = event.touches[0].clientX - event.touches[1].clientX;
             const dy = event.touches[0].clientY - event.touches[1].clientY;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            const zoomFactor = this.touchState.lastPinchDist / dist; // >1 zoom in, <1 zoom out
-            if (this.cameraController) this.cameraController.handlePinch(zoomFactor);
+            const zoomFactor = this.touchState.lastPinchDist / dist;
+            this.cameraController?.handlePinch(zoomFactor);
             this.touchState.lastPinchDist = dist;
         }
     }
 
     onTouchEnd(event) {
         event.preventDefault();
-
-        // If it was a tap...
         if (this.touchState.tapTimeout) {
             clearTimeout(this.touchState.tapTimeout);
             this.touchState.tapTimeout = null;
-
             const endPos = this.touchState.lastPan;
             const dist = Math.sqrt(
                 Math.pow(endPos.x - this.touchState.startTapPos.x, 2) +
                 Math.pow(endPos.y - this.touchState.startTapPos.y, 2)
             );
-
             if (dist < this.touchState.tapMaxDistance) {
-                if (this.ui.uiEl && this.ui.uiEl.contains(event.target)) return;
+                if (this.ui.uiEl?.contains(event.target)) return;
                 const rect = this.renderer.domElement.getBoundingClientRect();
                 const touchCoords = new THREE.Vector2(
                     ((endPos.x - rect.left) / rect.width) * 2 - 1,
@@ -316,15 +307,15 @@ class Game {
                 this.handleTileClick(touchCoords);
             }
         }
-
         this.touchState.isDragging = false;
         this.touchState.isPinching = false;
     }
 
     animate() {
         requestAnimationFrame(() => this.animate());
-        const delta = this.clock.getDelta(); // seconds since last frame
-        if (this.cameraController) this.cameraController.update();
+        const delta = this.clock.getDelta();
+        this.cameraController?.update();
+        this.ui?.update(this.camera);
         this.updateMovement(delta);
         this.updateContextualUIs();
         this.renderer.render(this.scene, this.camera);
@@ -332,7 +323,7 @@ class Game {
 
     // ===== Smooth movement helpers =====
     startPath(path) {
-        this.path = path.slice(); // [{q,r},...]
+        this.path = path.slice();
         this.movingAlongPath = this.path.length > 0;
         this.currentSegment = null;
         if (this.movingAlongPath) this.beginNextSegment();
@@ -344,26 +335,22 @@ class Game {
             this.currentSegment = null;
             return;
         }
-        const next = this.path.shift(); // destination tile for this segment
+        const next = this.path.shift();
         const from = { q: this.player.q, r: this.player.r };
         const to = { q: next.q, r: next.r };
 
-        // compute world start/end positions (center of hex at surface)
         const start = this.axialToWorldWithHeight(from.q, from.r);
         const end = this.axialToWorldWithHeight(to.q, to.r);
 
-        // duration based on speed (tiles per sec). Distance is ~1 tile; allow for elevation variance
         const horizontal = new THREE.Vector3(start.x, 0, start.z).distanceTo(new THREE.Vector3(end.x, 0, end.z));
-        const vertical = Math.abs(end.y - start.y) / this.world.hScale; // convert back to "tile-like" units
-        const distanceTiles = Math.sqrt(horizontal * horizontal + vertical * vertical) / (this.world.radius * 1.0); // normalize by hex radius
-        const tiles = Math.max(0.75, Math.min(1.5, distanceTiles)); // clamp to avoid extremes
+        const vertical = Math.abs(end.y - start.y) / this.world.hScale;
+        const distanceTiles = Math.sqrt(horizontal * horizontal + vertical * vertical) / (this.world.radius * 1.0);
+        const tiles = Math.max(0.75, Math.min(1.5, distanceTiles));
         const duration = tiles / this.speedTilesPerSec;
 
-        // face the direction of travel (y-rotation only)
         const dir = new THREE.Vector3(end.x - start.x, 0, end.z - start.z);
         if (dir.lengthSq() > 1e-6) {
-            const angle = Math.atan2(dir.x, dir.z);
-            this.player.mesh.rotation.y = angle;
+            this.player.mesh.rotation.y = Math.atan2(dir.x, dir.z);
         }
 
         this.currentSegment = { from, to, start, end, t: 0, duration };
@@ -377,33 +364,21 @@ class Game {
     }
 
     easeInOut(t) {
-        // Smoothstep-ish (cubic) for nicer accel/decel
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
 
     updateMovement(delta) {
         if (!this.movingAlongPath || !this.currentSegment) return;
-
-        // advance t
         const seg = this.currentSegment;
         seg.t += (delta / seg.duration);
         const t = Math.min(1, this.easeInOut(seg.t));
-
-        // interpolate world position
         const x = THREE.MathUtils.lerp(seg.start.x, seg.end.x, t);
         const y = THREE.MathUtils.lerp(seg.start.y, seg.end.y, t);
         const z = THREE.MathUtils.lerp(seg.start.z, seg.end.z, t);
         this.player.mesh.position.set(x, y, z);
-
         if (seg.t >= 1) {
-            // arrive logically at tile
             this.player.q = seg.to.q;
             this.player.r = seg.to.r;
-
-            // If your Player class also manages its own mesh position, make sure it
-            // does NOT snap here; we're already at the correct place.
-
-            // start next segment or finish
             if (this.path.length > 0) {
                 this.beginNextSegment();
             } else {
@@ -415,67 +390,71 @@ class Game {
     // ===== end smooth movement =====
 
     updateContextualUIs() {
-        const contextualModes = ['mine', 'harvest', 'trade'];
-        const isContextualUIActive = contextualModes.includes(this.ui.activeUIMode);
-        const isOverlayUIActive = this.ui.activeUIMode && !isContextualUIActive;
-
+        const isOverlayUIActive = this.ui.activeUIMode && !['mine', 'harvest', 'trade'].includes(this.ui.activeUIMode);
         if (isOverlayUIActive || this.placementMode) {
+            if (contextualUIId) {
+                this.ui.hideWorldspaceUI(contextualUIId);
+                contextualUIId = null;
+                activeContextualTarget = null;
+            }
             return;
         }
 
-        const { mode: newMode, params } = this.determineContextualMode();
-        if (newMode === this.ui.activeUIMode) return;
+        const { mode: newMode, params } = this.contextSystem.determine();
 
-        if (isContextualUIActive) this.ui.hide();
-
-        switch (newMode) {
-            case 'mine':
-                this.ui.showMining(params.q, params.r);
-                break;
-            case 'harvest':
-                this.ui.showHarvest(params.q, params.r, params.treeMesh);
-                break;
-            case 'trade':
-                const cityKey = `${params.cityQ},${params.cityR}`;
-                this.initializeCityPrices(cityKey);
-                this.ui.showTrade(cityKey, this.state.prices[cityKey]);
-                break;
+        const getTargetKey = (mode, params) => {
+            if (!mode) return null;
+            if (mode === 'mine') return `mine-${params.q},${params.r}`;
+            if (mode === 'harvest') return `harvest-${params.q},${params.r}`;
+            if (mode === 'trade') return `trade-${params.cityQ},${params.cityR}`;
+            return null;
         }
-    }
 
-    determineContextualMode() {
-        const q = this.player.q;
-        const r = this.player.r;
-        const currentHeight = this.world.getHeight(q, r);
-        const dirs = [ { dq: 1, dr: 0 }, { dq: -1, dr: 0 }, { dq: 0, dr: 1 }, { dq: 0, dr: -1 }, { dq: 1, dr: -1 }, { dq: -1, dr: 1 } ];
+        const newTargetKey = getTargetKey(newMode, params);
 
-        for (const dir of dirs) {
-            const nq = q + dir.dq;
-            const nr = r + dir.dr;
-            const h = this.world.getHeight(nq, nr);
-            if (h !== -Infinity && h - currentHeight >= 3) {
-                return { mode: 'mine', params: { q: nq, r: nr } };
+        if (activeContextualTarget !== newTargetKey) {
+            if (contextualUIId) this.ui.hideWorldspaceUI(contextualUIId);
+            activeContextualTarget = newTargetKey;
+
+            let title = '';
+            let actions = [];
+            let targetObject = null;
+
+            switch (newMode) {
+                case 'mine': {
+                    const { x, z } = axialToWorld(params.q - this.world.boardRadius, params.r - this.world.boardRadius, this.world.radius);
+                    const y = (this.world.getHeight(params.q, params.r)) * this.world.hScale;
+                    this.miningTarget.position.set(x, y, z);
+                    targetObject = this.miningTarget;
+                    title = 'Mine Cliff';
+                    actions = [{ label: 'Mine', callback: () => this.actions.startMining(params.q, params.r) }];
+                    break;
+                }
+                case 'harvest': {
+                    targetObject = params.treeMesh;
+                    title = 'Harvest Tree';
+                    actions = [
+                        { label: 'Chop', callback: () => this.actions.startHarvest('chop', params.q, params.r, params.treeMesh) },
+                        { label: 'Gather', callback: () => this.actions.startHarvest('branch', params.q, params.r, params.treeMesh) }
+                    ];
+                    break;
+                }
+                case 'trade': {
+                    const cityKey = `${params.cityQ},${params.cityR}`;
+                    this.initializeCityPrices(cityKey);
+                    targetObject = this.propsGroup.children.find(c => c.userData.q === params.cityQ && c.userData.r === params.cityR);
+                    if (targetObject) {
+                        title = 'Village Market';
+                        actions = [{ label: 'Trade', callback: () => this.ui.showTrade(cityKey, this.state.prices[cityKey]) }];
+                    }
+                    break;
+                }
+            }
+
+            if (targetObject && title) {
+                contextualUIId = this.ui.showWorldspaceUI(targetObject, title, actions);
             }
         }
-
-        const feat = (this.world.featureMap[r] && this.world.featureMap[r][q]) || 'none';
-        if (feat === 'forest' && this.propsGroup) {
-            const treeMesh = this.propsGroup.children.find(child =>
-                child.userData?.type === 'forest' && child.userData.q === q && child.userData.r === r
-            );
-            if (treeMesh) return { mode: 'harvest', params: { q, r, treeMesh } };
-        }
-
-        for (const dir of [{dq:0, dr:0}, ...dirs]) {
-            const nq = q + dir.dq;
-            const nr = r + dir.dr;
-            if (this.world.isInside(nq, nr)) {
-                const featAt = (this.world.featureMap[nr] && this.world.featureMap[nr][nq]) || 'none';
-                if (featAt === 'city') return { mode: 'trade', params: { cityQ: nq, cityR: nr } };
-            }
-        }
-
-        return { mode: null, params: {} };
     }
 
     initializeCityPrices(cityKey) {
@@ -530,7 +509,6 @@ class Game {
                 const toH = this.world.getHeight(spot.to.q, spot.to.r);
                 const h_diff = Math.abs(fromH - toH);
 
-                // Create a vertical plane to represent the ladder against the cliff
                 const highlightGeo = new THREE.PlaneGeometry(this.world.radius * 0.8, h_diff * this.world.hScale);
                 mesh = new THREE.Mesh(highlightGeo, mat);
 
@@ -540,14 +518,12 @@ class Game {
                 const fromVec = new THREE.Vector3(fromWorld.x, (fromH + 1) * this.world.hScale, fromWorld.z);
                 const toVec = new THREE.Vector3(toWorld.x, (toH + 1) * this.world.hScale, toWorld.z);
 
-                // Position the highlight in the middle of the cliff face
                 mesh.position.copy(fromVec).lerp(toVec, 0.5);
 
-                // Make it face the player's current tile
                 const playerPos = axialToWorld(this.player.q - this.world.boardRadius, this.player.r - this.world.boardRadius, this.world.radius);
                 mesh.lookAt(new THREE.Vector3(playerPos.x, mesh.position.y, playerPos.z));
 
-            } else { // Fallback for bridges or other placeables
+            } else {
                 const highlightGeo = new THREE.CircleGeometry(this.world.radius * 0.8, 6);
                 highlightGeo.rotateX(-Math.PI / 2);
                 mesh = new THREE.Mesh(highlightGeo, mat);
@@ -586,9 +562,7 @@ class Game {
             }
 
             if (recipeId === 'bridge') {
-                // Allow building from land or another bridge
                 const isStandingOnTraversable = this.world.blockMap[r]?.[q] !== 'water' || this.world.getStructure(q,r)?.type === 'bridge';
-
                 if (isStandingOnTraversable) {
                     const isTargetWater = this.world.blockMap[nr]?.[nq] === 'water';
                     if (isTargetWater) {
@@ -612,12 +586,11 @@ class Game {
             this.world.addStructure(placementData.from.q, placementData.from.r, placementData);
             this.buildStructure('ladder', placementData);
         } else if (placementData.type === 'bridge') {
-            // Find the far bank to complete the bridge data
             const dir = { dq: placementData.across.q - placementData.from.q, dr: placementData.across.r - placementData.from.r };
             let landing = null;
             let current_q = placementData.across.q;
             let current_r = placementData.across.r;
-            for(let i=0; i<5; i++) { // Max bridge length of 5
+            for(let i=0; i<5; i++) {
                 current_q += dir.dq;
                 current_r += dir.dr;
                 if(this.world.isInside(current_q, current_r) && this.world.blockMap[current_r]?.[current_q] !== 'water') {
@@ -639,7 +612,7 @@ class Game {
                     }
                 }
             } else {
-                placementData.to = placementData.across; // single segment
+                placementData.to = placementData.across;
                 this.world.addStructure(placementData.across.q, placementData.across.r, placementData);
                 this.buildStructure(recipeId, { ...placementData, currentTile: placementData.across });
             }
@@ -677,10 +650,7 @@ class Game {
 
             const direction = new THREE.Vector3().subVectors(endPoint, startPoint);
             const length = direction.length();
-            if (length < 0.5) {
-                console.warn('Ladder too short, length:', length);
-                return;
-            }
+            if (length < 0.5) return;
 
             const beamGeo = new THREE.BoxGeometry(0.15, length, 0.15);
             const leftBeam = new THREE.Mesh(beamGeo, mat);
@@ -703,25 +673,11 @@ class Game {
 
             const midPoint = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
             mesh.position.copy(midPoint);
-
-            // The 'up' vector for the ladder object is the direction along its length
             mesh.up.copy(direction.clone().normalize());
-
-            // The target to look at is a point away from the cliff face.
-            // 'centerDirection' points from the lower tile towards the upper one (into the cliff).
-            // By subtracting it from the ladder's position, we get a target point "outside" the cliff.
             const lookTarget = new THREE.Vector3().subVectors(midPoint, centerDirection);
             mesh.lookAt(lookTarget);
 
-            // The scale was set to 1.0 at the end, but it's better to remove it
-            // as it's the default and was misplaced from other logic.
-            // mesh.scale.setScalar(1.0); // This line can be removed
-
         } else if (recId === 'bridge') {
-
-
-        } else if (recId === 'bridge') {
-            // Simple decorative bridge segment on water tile
             mesh = new THREE.Group();
             const plankMat = new THREE.MeshLambertMaterial({ color: 0x966F33 });
             const postMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
@@ -764,21 +720,19 @@ class Game {
         }
 
         if (mesh) {
-            if (placementData.at) { // Place-at-feet
+            if (placementData.at) {
                 const { q, r } = placementData.at;
                 const { x, z } = axialToWorld(q - this.world.boardRadius, r - this.world.boardRadius, this.world.radius);
                 const h = this.world.getHeight(q, r);
                 mesh.position.set(x, (h + 1) * this.world.hScale, z);
                 mesh.userData = { type: 'building', recId: recId, q: q, r: r };
-            } else { // Interactive placement
+            } else {
                 const targetCoords = placementData.currentTile || placementData.across || placementData.from;
                 mesh.userData = { type: 'building', recId: recId, q: targetCoords.q, r: targetCoords.r };
             }
             this.propsGroup.add(mesh);
         }
     }
-
-    // REMOVED: findPath method is now in its own module
 
     async loadPropModels() {
         const treeFallback = new THREE.Group();
@@ -792,36 +746,28 @@ class Game {
             treeFallback.add(trunkMesh, leavesMesh);
         }
 
-        // --- NEW, PRETTIER VILLAGE MODEL ---
         const buildingFallback = new THREE.Group();
         {
-            const wallMat = new THREE.MeshLambertMaterial({ color: 0xd2b48c }); // Sandy brown wall
-            const roofMat = new THREE.MeshLambertMaterial({ color: 0x8b4513 }); // Saddle brown roof
-
+            const wallMat = new THREE.MeshLambertMaterial({ color: 0xd2b48c });
+            const roofMat = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
             const hutConfigs = [
                 { pos: [-0.3, 0.3], scale: 0.5, rot: 0.3 },
                 { pos: [0.4, 0.4], scale: 0.6, rot: -0.2 },
                 { pos: [0.1, -0.35], scale: 0.55, rot: 0.8 },
             ];
-
             hutConfigs.forEach(({ pos, scale, rot }) => {
                 const hut = new THREE.Group();
                 const [hx, hz] = pos;
-
                 const baseHeight = 0.5 * scale;
                 const baseGeo = new THREE.BoxGeometry(0.8 * scale, baseHeight, 0.9 * scale);
                 const baseMesh = new THREE.Mesh(baseGeo, wallMat);
                 baseMesh.position.y = baseHeight / 2;
-
                 const roofHeight = 0.6 * scale;
                 const roofGeo = new THREE.CylinderGeometry(0, 0.7 * scale, roofHeight, 4);
                 const roofMesh = new THREE.Mesh(roofGeo, roofMat);
                 roofMesh.position.y = baseHeight + roofHeight / 2;
                 roofMesh.rotation.y = Math.PI / 4;
-
-                hut.add(baseMesh);
-                hut.add(roofMesh);
-
+                hut.add(baseMesh, roofMesh);
                 hut.position.set(hx, 0, hz);
                 hut.rotation.y = rot;
                 buildingFallback.add(hut);

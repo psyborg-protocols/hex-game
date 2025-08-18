@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { ITEMS, RECIPES, SKILL_INFO } from './items_recipes_skills.js';
 
 // A mapping of UI modes to their icons for consistent headers
@@ -21,7 +22,9 @@ export class UIController {
     constructor(game) {
         this.game = game; // Reference to the main game object to access state and methods
         this.uiEl = document.getElementById('ui');
+        this.worldspaceUIContainer = document.getElementById('worldspace-ui');
         this.activeUIMode = null;
+        this.activeWorldspaceUIs = []; // To track pop-ups
     }
 
     // --- Core UI Management ---
@@ -46,11 +49,100 @@ export class UIController {
         }
     }
 
+    // --- World-space UI Methods ---
+
+    /**
+     * Displays a UI element in world space, attached to a 3D object.
+     * @param {THREE.Object3D} targetObject The object to follow.
+     * @param {string} title The title text for the popup.
+     * @param {Array<{label: string, callback: function}>} actions Array of button actions.
+     * @returns {string} The ID of the created UI element.
+     */
+    showWorldspaceUI(targetObject, title, actions = []) {
+        const element = document.createElement('div');
+        element.className = 'world-popup';
+
+        const titleEl = document.createElement('b');
+        titleEl.textContent = title;
+        element.appendChild(titleEl);
+
+        actions.forEach(action => {
+            const button = document.createElement('button');
+            button.textContent = action.label;
+            button.onclick = (event) => {
+                // Prevent clicks on UI from triggering game world actions like movement
+                event.stopPropagation();
+                action.callback();
+            };
+            element.appendChild(button);
+        });
+
+        this.worldspaceUIContainer.appendChild(element);
+
+        const popup = {
+            element,
+            target: targetObject,
+            id: `ws-${Date.now()}-${Math.random()}`
+        };
+        this.activeWorldspaceUIs.push(popup);
+        
+        // Make it visible after a short delay to trigger the CSS transition
+        setTimeout(() => element.classList.add('visible'), 10);
+        
+        return popup.id;
+    }
+
+    hideWorldspaceUI(id) {
+        const index = this.activeWorldspaceUIs.findIndex(p => p.id === id);
+        if (index !== -1) {
+            const popup = this.activeWorldspaceUIs[index];
+            popup.element.classList.remove('visible');
+            // Remove from DOM after transition finishes
+            setTimeout(() => {
+                if (this.worldspaceUIContainer.contains(popup.element)) {
+                    this.worldspaceUIContainer.removeChild(popup.element);
+                }
+            }, 200);
+            this.activeWorldspaceUIs.splice(index, 1);
+        }
+    }
+
+    hideAllWorldspaceUIs() {
+        while(this.activeWorldspaceUIs.length > 0) {
+            this.hideWorldspaceUI(this.activeWorldspaceUIs[0].id);
+        }
+    }
+
+    /**
+     * Updates the screen position of all active world-space UI elements.
+     * @param {THREE.Camera} camera The main game camera.
+     */
+    update(camera) {
+        const halfWidth = window.innerWidth / 2;
+        const halfHeight = window.innerHeight / 2;
+        
+        this.activeWorldspaceUIs.forEach(popup => {
+            const position = new THREE.Vector3();
+            popup.target.getWorldPosition(position);
+            position.project(camera);
+            
+            // Convert normalized device coordinates to screen coordinates
+            const x = (position.x * halfWidth) + halfWidth;
+            const y = -(position.y * halfHeight) + halfHeight;
+            
+            popup.element.style.left = `${x}px`;
+            popup.element.style.top = `${y}px`;
+
+            // Hide if it's behind the camera
+            const isBehind = position.z > 1;
+            popup.element.style.display = isBehind ? 'none' : '';
+        });
+    }
+
     // --- General Purpose UI Components ---
 
     showNotification(message, duration = 3000) {
         const notification = document.createElement('div');
-        // Simple styling; could be moved to a CSS class
         Object.assign(notification.style, {
             position: 'absolute', bottom: '80px', left: '50%',
             transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)',
@@ -156,6 +248,7 @@ export class UIController {
     }
 
     showTrade(cityKey, prices) {
+        this.hideAllWorldspaceUIs(); // Hide popups when opening a full-screen UI
         const headerIcon = UI_ICONS.trade ? `<img src="${UI_ICONS.trade}" class="icon"/>` : '';
         let html = `${headerIcon}<b>Village Market</b><br/>Gold: ${Math.floor(this.game.state.gold)}<br/><br/>`;
         Object.entries(prices).forEach(([id, price]) => {
@@ -176,36 +269,6 @@ export class UIController {
         html += `<br/><button id="close-btn">Close</button>`;
         this.show('trade', html);
         this.addTradeListeners(cityKey);
-    }
-    
-    showHarvest(q, r, treeMesh) {
-        const headerIcon = UI_ICONS.harvest ? `<img src="${UI_ICONS.harvest}" class="icon"/>` : '';
-        let html = `${headerIcon}<b>Harvest Tree</b><br/>Choose an action:<br/>`;
-        const chopIcon = ITEMS['rough_log'].icon ? `<img src="${ITEMS['rough_log'].icon}" class="icon"/>` : '';
-        html += `<button data-action="chop">Chop Tree (${chopIcon}${ITEMS['rough_log'].name} x1)</button> `;
-        const branchIcon = ITEMS['branch'].icon ? `<img src="${ITEMS['branch'].icon}" class="icon"/>` : '';
-        html += `<button data-action="branch">Gather Branches (${branchIcon}${ITEMS['branch'].name} x2)</button><br/>`;
-        html += `<br/><button id="close-btn">Cancel</button>`;
-        this.show('harvest', html);
-        
-        this.uiEl.querySelectorAll('button[data-action]').forEach(btn => {
-            btn.onclick = () => this.game.actions.startHarvest(btn.dataset.action, q, r, treeMesh);
-        });
-        this.addCloseListener();
-    }
-    
-    showMining(q, r) {
-        const headerIcon = UI_ICONS.mine ? `<img src="${UI_ICONS.mine}" class="icon"/>` : '';
-        let html = `${headerIcon}<b>Mine Cliff</b><br/>`;
-        const stoneIcon = ITEMS['stone'].icon ? `<img src="${ITEMS['stone'].icon}" class="icon"/>` : '';
-        const oreIcon = ITEMS['ore'].icon ? `<img src="${ITEMS['ore'].icon}" class="icon"/>` : '';
-        html += `Harvest ${stoneIcon}Stone x3 with a 20% chance of ${oreIcon}Ore.<br/>`;
-        html += `<button id="start-mine">Mine</button><br/>`;
-        html += `<br/><button id="close-btn">Cancel</button>`;
-        this.show('mine', html);
-        
-        this.uiEl.querySelector('#start-mine').onclick = () => this.game.actions.startMining(q, r);
-        this.addCloseListener();
     }
 
     // --- UI Helpers and Listeners ---
