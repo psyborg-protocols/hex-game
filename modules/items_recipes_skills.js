@@ -100,14 +100,13 @@ export const RECIPES = {
     id: 'wood_fence', name: 'Wood Fence', inputs: { beam: 2 }, output: { wood_fence: 1 },
     skill: 'woodworking', level: 2, xp: 6, category: 'build'
   },
-  // TODO: ladder requirements
   ladder: {
     id: 'ladder', name: 'Ladder', inputs: { beam: 5 }, output: { ladder: 1 },
     skill: 'woodworking', level: 3, xp: 10, category: 'build'
   },
   bridge: {
-    id: 'bridge', name: 'Bridge', inputs: { log: 4, plank: 4, beam:2 }, output: { bridge: 1 },
-    skill: 'woodworking', level: 4, xp: 15, category: 'build'
+    id: 'bridge', name: 'Bridge', inputs: { log: 4, plank: 3, beam:2 }, output: { bridge: 1 },
+    skill: 'woodworking', level: 5, xp: 15, category: 'build'
   }
 };
 

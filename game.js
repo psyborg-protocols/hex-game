@@ -236,7 +236,8 @@ class Game {
         const hit = intersects[0].object;
         if (hit && hit.userData) {
             const { qIndex, rIndex } = hit.userData;
-            const path = this.findPath(this.player.q, this.player.r, qIndex, rIndex);
+            // UPDATED: Call the imported findPath function
+            const path = findPath(this.world, this.player, qIndex, rIndex);
             if (path && path.length > 0) {
                 path.shift(); // remove starting tile
                 this.startPath(path);
@@ -762,81 +763,7 @@ class Game {
         }
     }
 
-    findPath(q0, r0, q1, r1) {
-        if (q0 === q1 && r0 === r1) return [];
-        const heuristic = (q, r) => {
-            const dq = Math.abs(q - q1), dr = Math.abs(r - r1), dSum = Math.abs(dq + dr);
-            return Math.max(dq, dr, dSum);
-        };
-        const directions = [ { dq: 1, dr: 0 }, { dq: -1, dr: 0 }, { dq: 0, dr: 1 }, { dq: 0, dr: -1 }, { dq: 1, dr: -1 }, { dq: -1, dr: 1 } ];
-        const open = [], openMap = {}, closed = {};
-        const startNode = { q: q0, r: r0, g: 0, f: heuristic(q0, r0), parent: null };
-        const hash = (q, r) => `${q},${r}`;
-        open.push(startNode);
-        openMap[hash(q0, r0)] = startNode;
-
-        while (open.length > 0) {
-            open.sort((a, b) => a.f - b.f);
-            const current = open.shift();
-            delete openMap[hash(current.q, current.r)];
-            if (current.q === q1 && current.r === r1) {
-                const path = []; let n = current;
-                while (n) { path.unshift({ q: n.q, r: n.r }); n = n.parent; }
-                return path;
-            }
-            closed[hash(current.q, current.r)] = true;
-
-            for (const dir of directions) {
-                const nq = current.q + dir.dq, nr = current.r + dir.dr;
-                if (!this.world.isInside(nq, nr)) continue;
-
-                let canTraverse = false;
-                const h0 = this.world.getHeight(current.q, current.r);
-                const h1 = this.world.getHeight(nq, nr);
-                const raw_h1 = this.world.heightMap[nr][nq];
-
-                const structure = this.world.getStructure(nq, nr) || this.world.getStructure(current.q, current.r);
-                if (structure) {
-                    if (structure.type === 'ladder') {
-                        const { from, to } = structure;
-                        if ((from.q === current.q && from.r === current.r && to.q === nq && to.r === nr) ||
-                            (to.q === current.q && to.r === current.r && from.q === nq && from.r === nr)) {
-                            canTraverse = true;
-                        }
-                    }
-                    if (structure.type === 'bridge') {
-                        const { from, to } = structure;
-                        const across = structure.across || {q: nq, r: nr};
-                        if ((from.q === current.q && from.r === current.r && across.q === nq && across.r === nr) ||
-                            (to && to.q === current.q && to.r === current.r && across.q === nq && across.r === nr) ||
-                            ((across.q === current.q && across.r === current.r) && ((from.q === nq && from.r === nr) || (to && to.q === nq && to.r === nr)))) {
-                            canTraverse = true;
-                        }
-                    }
-                }
-
-                if (!canTraverse && raw_h1 !== -Infinity) {
-                    if (h1 - h0 <= 1 && h0 - h1 <= 2) {
-                        canTraverse = true;
-                    }
-                }
-
-                if (!canTraverse) continue;
-
-                const key = hash(nq, nr);
-                if (closed[key]) continue;
-                const tentativeG = current.g + 1;
-                let neighbor = openMap[key];
-                if (!neighbor) {
-                    neighbor = { q: nq, r: nr, g: tentativeG, f: tentativeG + heuristic(nq, nr), parent: current };
-                    open.push(neighbor); openMap[key] = neighbor;
-                } else if (tentativeG < neighbor.g) {
-                    neighbor.g = tentativeG; neighbor.f = tentativeG + heuristic(nq, nr); neighbor.parent = current;
-                }
-            }
-        }
-        return null;
-    }
+    // REMOVED: findPath method is now in its own module
 
     async loadPropModels() {
         const treeFallback = new THREE.Group();
