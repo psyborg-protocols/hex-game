@@ -110,7 +110,7 @@ class Game {
         if (seedEl) seedEl.textContent = `Seed: ${seed}`;
 
         this.world = new HexWorld({
-            boardRadius: 25, radius: 0.85, hScale: 0.5,
+            boardRadius: 40, radius: 0.85, hScale: 0.5,
             maxHeight: 20, noiseScale: 0.08, seed: seed,
         });
 
@@ -120,6 +120,9 @@ class Game {
         this.world.carveCliffWithRamp();
         this.world.assignBlocks();
         this.world.assignFeatures();
+
+        // MODIFIED: Get spawn point from world generation logic
+        const spawnPoint = this.world.findPlayerSpawn();
 
         this.worldGroup = this.world.buildMesh(BLOCK_TEXTURES);
         this.scene.add(this.worldGroup);
@@ -133,6 +136,12 @@ class Game {
         this.scene.add(this.miningTarget);
 
         this.player = new Player(this.world, this.scene);
+        
+        // MODIFIED: Set player's start position from the new method
+        this.player.q = spawnPoint.q;
+        this.player.r = spawnPoint.r;
+        this.player.updatePosition();
+        
         this.cameraController = new CameraController(this.camera, this.player.mesh);
 
         const models = await this.loadPropModels();
@@ -745,6 +754,18 @@ class Game {
             const leavesMesh = new THREE.Mesh(leaves, mLeaves); leavesMesh.position.y = 0.9;
             treeFallback.add(trunkMesh, leavesMesh);
         }
+        
+        const darkTreeFallback = new THREE.Group();
+        {
+            const trunk = new THREE.CylinderGeometry(0.15, 0.15, 1.0, 8);
+            const leaves = new THREE.ConeGeometry(0.6, 1.5, 8);
+            const mTrunk = new THREE.MeshLambertMaterial({ color: 0x5D4037 }); // Darker brown
+            const mLeaves = new THREE.MeshLambertMaterial({ color: 0x1B5E20 }); // Darker green
+            const trunkMesh = new THREE.Mesh(trunk, mTrunk); trunkMesh.position.y = 0.5;
+            const leavesMesh = new THREE.Mesh(leaves, mLeaves); leavesMesh.position.y = 1.4;
+            darkTreeFallback.add(trunkMesh, leavesMesh);
+        }
+
 
         const buildingFallback = new THREE.Group();
         {
@@ -773,7 +794,7 @@ class Game {
                 buildingFallback.add(hut);
             });
         }
-        return { forest: treeFallback, city: buildingFallback };
+        return { forest: treeFallback, city: buildingFallback, dark_forest: darkTreeFallback };
     }
 }
 

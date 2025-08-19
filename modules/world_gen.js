@@ -132,10 +132,9 @@ export class HexWorld {
     this.blockMap = [];
     this.featureMap = []; // 'none' | 'forest' | 'city'
     this.propSpawns = []; // list of prop spawn instructions
+    
+    this.riverPath = new Array(this.depth).fill(this.boardRadius);
 
-    // ADDED: A map to store player-built structures.
-    // Key: string like 'q,r'
-    // Value: { type: 'ladder' | 'bridge', from: {q, r}, to: {q, r}, ... }
     this.structures = new Map();
 
     for (let r = 0; r < this.depth; r++) {
@@ -150,7 +149,6 @@ export class HexWorld {
     }
   }
   
-  // ADDED: Helper methods to manage structures
   addStructure(q, r, data) {
     const key = `${q},${r}`;
     this.structures.set(key, data);
@@ -223,18 +221,43 @@ export class HexWorld {
     });
   }
   carveRiver() {
-    const widthTiles = Math.max(2, Math.floor(this.boardRadius * 0.15));
-    const phase = this.rng.range(0, Math.PI * 2);
+    // MODIFIED: More natural river path and variable width
+    const phase1 = this.rng.range(0, Math.PI * 2);
+    const freq1 = this.rng.range(0.08, 0.15);
+    const amp1 = this.rng.range(this.boardRadius * 0.3, this.boardRadius * 0.5);
+
+    const phase2 = this.rng.range(0, Math.PI * 2);
+    const freq2 = this.rng.range(0.2, 0.4);
+    const amp2 = this.rng.range(this.boardRadius * 0.1, this.boardRadius * 0.2);
+
+    const lakeR = this.rng.irange(this.depth * 0.4, this.depth * 0.6);
+    const lakeLength = this.rng.irange(8, 15);
+
     for (let r = 0; r < this.depth; r++) {
-      const cx = Math.floor(this.boardRadius + (this.boardRadius * 0.5) * Math.sin(r * 0.12 + phase) + this.rng.range(-2, 2));
-      for (let dq = -widthTiles; dq <= widthTiles; dq++) {
-        const qIndex = cx + dq;
-        if (qIndex >= 0 && qIndex < this.width && this.isInside(qIndex, r)) {
-          const drop = (widthTiles - Math.abs(dq) + 1);
-          this.heightMap[r][qIndex] = Math.max(0, this.heightMap[r][qIndex] - (4 + drop));
-          this.blockMap[r][qIndex] = 'water';
+        const mainWander = amp1 * Math.sin(r * freq1 + phase1);
+        const fineWander = amp2 * Math.sin(r * freq2 + phase2);
+        const cx = Math.floor(this.boardRadius + mainWander + fineWander);
+        this.riverPath[r] = cx;
+
+        let widthNoise = (this.perlin.noise(r * 0.1, 10.5) + 1) / 2; // Range 0 to 1
+        let baseWidth = 2;
+        let widthTiles = Math.floor(baseWidth + widthNoise * 3);
+
+        // Create a wider "lake" area
+        if (r >= lakeR && r < lakeR + lakeLength) {
+            const t = (r - lakeR) / lakeLength;
+            const lakeWidth = Math.sin(t * Math.PI) * 7; // Swells in the middle
+            widthTiles += Math.floor(lakeWidth);
         }
-      }
+        
+        for (let dq = -widthTiles; dq <= widthTiles; dq++) {
+            const qIndex = cx + dq;
+            if (qIndex >= 0 && qIndex < this.width && this.isInside(qIndex, r)) {
+                const drop = (widthTiles - Math.abs(dq) + 1);
+                this.heightMap[r][qIndex] = Math.max(0, this.heightMap[r][qIndex] - (4 + drop));
+                this.blockMap[r][qIndex] = 'water';
+            }
+        }
     }
   }
   carveCliffWithRamp() {
@@ -283,127 +306,108 @@ export class HexWorld {
     }
   }
   assignFeatures() {
-    const nearWater = (q, r) => {
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dq = -1; dq <= 1; dq++) {
-          if (dq === 0 && dr === 0) continue;
-          const nq = q + dq, nr = r + dr;
-          if (!this.isInside(nq, nr)) continue;
-          if (this.blockMap[nr][nq] === 'water') return true;
-        }
-      }
-      return false;
-    };
-    const isFlatNeighborhood = (q, r, tol = 1) => {
-      const h0 = this.heightMap[r][q];
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dq = -1; dq <= 1; dq++) {
-          const nq = q + dq, nr = r + dr;
-          if (!this.isInside(nq, nr)) continue;
-          if (Math.abs(this.heightMap[nr][nq] - h0) > tol) return false;
-        }
-      }
-      return true;
-    };
-
-    for (let r = 0; r < this.depth; r++) {
-      for (let q = 0; q < this.width; q++) {
-        if (!this.isInside(q, r)) continue;
-        if (this.blockMap[r][q] === 'water') continue;
-
-        const h = this.heightMap[r][q];
-        const nx = (q - this.boardRadius) * this.noiseScale + 12.3;
-        const ny = (r - this.boardRadius) * this.noiseScale - 7.7;
-        const moist = (this.perlin.noise(nx * 1.7, ny * 1.7) + 1) / 2;
-        const civ = (this.perlin.noise(nx * 3.3 + 50, ny * 3.3 - 20, 7.5) + 1) / 2;
-
-        if (this.featureMap[r][q] === 'none') {
-          if (h >= 2 && h <= Math.floor(this.maxHeight * 0.5) && moist > 0.55 && this.rng.next() < 0.45) {
-            this.featureMap[r][q] = 'forest';
+      const isFlatNeighborhood = (q, r, tol = 1) => {
+          const h0 = this.heightMap[r][q];
+          for (let dr = -1; dr <= 1; dr++) {
+              for (let dq = -1; dq <= 1; dq++) {
+                  const nq = q + dq, nr = r + dr;
+                  if (!this.isInside(nq, nr)) continue;
+                  if (Math.abs(this.heightMap[nr][nq] - h0) > tol) return false;
+              }
           }
-        }
-        if (this.featureMap[r][q] === 'none') {
-          if (isFlatNeighborhood(q, r, 1) && nearWater(q, r) && civ > 0.4 && this.rng.next() < 0.3) {
-            this.featureMap[r][q] = 'city';
-          }
-        }
-      }
-    }
+          return true;
+      };
 
-    for (let r = 0; r < this.depth; r++) {
-      for (let q = 0; q < this.width; q++) {
-        if (this.featureMap[r][q] !== 'city') continue;
-        for (let dr = -1; dr <= 1; dr++) {
-          for (let dq = -1; dq <= 1; dq++) {
-            const nq = q + dq, nr = r + dr;
-            if (!this.isInside(nq, nr)) continue;
-            if (this.featureMap[nr][nq] === 'forest') this.featureMap[nr][nq] = 'none';
+      // MODIFIED: Gather potential village spots first
+      const villageCandidates = [];
+      for (let r = 0; r < this.depth; r++) {
+          for (let q = 0; q < this.width; q++) {
+              if (!this.isInside(q, r) || this.blockMap[r][q] === 'water') continue;
+              
+              const riverQ = this.riverPath[r];
+              const isVillageSide = q < riverQ;
+
+              if (isVillageSide && isFlatNeighborhood(q, r, 1) && this.heightMap[r][q] > 0) {
+                  villageCandidates.push({ q, r });
+              }
           }
-        }
       }
-    }
-    
-    this.propSpawns.length = 0;
-    for (let r = 0; r < this.depth; r++) {
-      for (let q = 0; q < this.width; q++) {
-        const feat = this.featureMap[r][q];
-        if (feat === 'none') continue;
-        const h = this.heightMap[r][q];
-        const { x, z } = axialToWorld(q - this.boardRadius, r - this.boardRadius, this.radius);
-        if (feat === 'forest') {
-          const count = 2 + this.rng.irange(0, 2);
-          for (let i = 0; i < count; i++) {
-            const jx = this.rng.range(-0.35, 0.35);
-            const jz = this.rng.range(-0.35, 0.35);
-            this.propSpawns.push({
-              type: 'forest', q, r, x: x + jx, z: z + jz, y: (h + 1) * this.hScale,
-              scale: this.rng.range(0.6, 1.1), rotY: this.rng.range(0, Math.PI * 2),
-            });
+
+      // MODIFIED: Place a limited number of villages
+      const numVillages = this.rng.irange(3, 6);
+      const villageLocations = [];
+      let attempts = 0;
+      while (villageLocations.length < numVillages && attempts < 500 && villageCandidates.length > 0) {
+          const candIndex = this.rng.irange(0, villageCandidates.length - 1);
+          const candidate = villageCandidates[candIndex];
+          villageCandidates.splice(candIndex, 1); // Avoid re-picking
+
+          let tooClose = false;
+          for (const loc of villageLocations) {
+              const dist = Math.sqrt(Math.pow(loc.q - candidate.q, 2) + Math.pow(loc.r - candidate.r, 2));
+              if (dist < this.boardRadius * 0.2) { // Minimum distance between villages
+                  tooClose = true;
+                  break;
+              }
           }
-        } else if (feat === 'city') {
-            this.propSpawns.push({
-              type: 'city', q, r, x: x + this.rng.range(-0.1, 0.1), z: z + this.rng.range(-0.1, 0.1),
-              y: (h + 1) * this.hScale, scale: this.rng.range(0.9, 1.1), rotY: this.rng.range(0, Math.PI * 2),
-            });
-        }
+
+          if (!tooClose) {
+              villageLocations.push(candidate);
+              this.featureMap[candidate.r][candidate.q] = 'city';
+          }
+          attempts++;
       }
-    }
-    let existingCities = 0;
-    for (let rr = 0; rr < this.depth; rr++) {
-      for (let qq = 0; qq < this.width; qq++) {
-        if (this.featureMap[rr][qq] === 'city') existingCities++;
+      
+      // Now place forests on remaining tiles
+      for (let r = 0; r < this.depth; r++) {
+          for (let q = 0; q < this.width; q++) {
+              if (!this.isInside(q, r) || this.blockMap[r][q] === 'water' || this.featureMap[r][q] !== 'none') continue;
+              
+              const h = this.heightMap[r][q];
+              const riverQ = this.riverPath[r];
+              const isVillageSide = q < riverQ;
+
+              if (isVillageSide) {
+                  if (h >= 2 && h <= Math.floor(this.maxHeight * 0.6) && this.rng.next() < 0.1) {
+                      this.featureMap[r][q] = 'forest';
+                  }
+              } else {
+                  if (h >= 1 && h < this.maxHeight * 0.85 && this.rng.next() < 0.85) {
+                      this.featureMap[r][q] = 'dark_forest';
+                  }
+              }
+          }
       }
-    }
-    const minCities = Math.max(6, Math.floor(this.boardRadius / 4) + 2);
-    let attempts = 0;
-    while (existingCities < minCities && attempts < 200) {
-      const qRandom = this.rng.irange(0, this.width - 1);
-      const rRandom = this.rng.irange(0, this.depth - 1);
-      if (!this.isInside(qRandom, rRandom)) { attempts++; continue; }
-      if (this.blockMap[rRandom][qRandom] === 'water') { attempts++; continue; }
-      if (this.heightMap[rRandom][qRandom] < 1) { attempts++; continue; }
-      const baseHeight = this.heightMap[rRandom][qRandom];
-      let flat = true;
-      for (let dr = -1; dr <= 1 && flat; dr++) {
-        for (let dq = -1; dq <= 1; dq++) {
-          const nq = qRandom + dq;
-          const nr = rRandom + dr;
-          if (!this.isInside(nq, nr)) continue;
-          if (Math.abs(this.heightMap[nr][nq] - baseHeight) > 1) { flat = false; break; }
-        }
+
+      this.propSpawns.length = 0;
+      for (let r = 0; r < this.depth; r++) {
+          for (let q = 0; q < this.width; q++) {
+              const feat = this.featureMap[r][q];
+              if (feat === 'none') continue;
+              
+              const h = this.heightMap[r][q];
+              const { x, z } = axialToWorld(q - this.boardRadius, r - this.boardRadius, this.radius);
+              
+              if (feat === 'forest' || feat === 'dark_forest') {
+                  const count = feat === 'dark_forest' ? this.rng.irange(2, 4) : 1;
+                  for (let i = 0; i < count; i++) {
+                      const jx = this.rng.range(-0.35, 0.35);
+                      const jz = this.rng.range(-0.35, 0.35);
+                      this.propSpawns.push({
+                          type: feat, q, r, x: x + jx, z: z + jz, y: (h + 1) * this.hScale,
+                          scale: this.rng.range(0.8, 1.2), rotY: this.rng.range(0, Math.PI * 2),
+                      });
+                  }
+              } else if (feat === 'city') {
+                  this.propSpawns.push({
+                      type: 'city', q, r, x: x + this.rng.range(-0.1, 0.1), z: z + this.rng.range(-0.1, 0.1),
+                      y: (h + 1) * this.hScale, scale: this.rng.range(0.9, 1.1), rotY: this.rng.range(0, Math.PI * 2),
+                  });
+              }
+          }
       }
-      if (!flat) { attempts++; continue; }
-      this.featureMap[rRandom][qRandom] = 'city';
-      existingCities++;
-      const { x, z } = axialToWorld(qRandom - this.boardRadius, rRandom - this.boardRadius, this.radius);
-      this.propSpawns.push({
-        type: 'city', q: qRandom, r: rRandom, x: x + this.rng.range(-0.1, 0.1),
-        z: z + this.rng.range(-0.1, 0.1), y: (this.heightMap[rRandom][qRandom] + 1) * this.hScale,
-        scale: this.rng.range(0.9, 1.1), rotY: this.rng.range(0, Math.PI * 2)
-      });
-      attempts++;
-    }
   }
+
 
   buildMesh(textures) {
     const group = new THREE.Group();
@@ -547,28 +551,67 @@ export class HexWorld {
   getHeight(q, r) {
     if (q < 0 || q >= this.width || r < 0 || r >= this.depth) return -Infinity;
     if (!this.isInside(q, r)) return -Infinity;
-    // MODIFIED: A bridge makes water traversable at land height
     const structure = this.getStructure(q, r);
     if (structure && structure.type === 'bridge') {
-        // A bridge is placed *on* a water tile. Its effective height is that of the land it connects from.
         return this.getHeight(structure.from.q, structure.from.r);
     }
     return this.heightMap[r][q];
   }
 
   buildProps(models) {
-    const group = new THREE.Group();
-    const makeInstance = (tpl) => tpl.clone(true);
-    for (const spawn of this.propSpawns) {
-      const tpl = spawn.type === 'forest' ? models.forest : models.city;
-      if (!tpl) continue;
-      const inst = makeInstance(tpl);
-      inst.position.set(spawn.x, spawn.y, spawn.z);
-      inst.rotation.y = spawn.rotY;
-      inst.scale.setScalar(spawn.scale);
-      inst.userData = { type: spawn.type, q: spawn.q, r: spawn.r };
-      group.add(inst);
-    }
-    return group;
+      const group = new THREE.Group();
+      const makeInstance = (tpl) => {
+          if (!tpl) return null;
+          return tpl.clone(true);
+      };
+
+      for (const spawn of this.propSpawns) {
+          let tpl;
+          if (spawn.type === 'forest') {
+              tpl = models.forest;
+          } else if (spawn.type === 'dark_forest') {
+              tpl = models.dark_forest;
+          } else if (spawn.type === 'city') {
+              tpl = models.city;
+          }
+
+          if (!tpl) continue;
+          
+          const inst = makeInstance(tpl);
+          inst.position.set(spawn.x, spawn.y, spawn.z);
+          inst.rotation.y = spawn.rotY;
+          inst.scale.setScalar(spawn.scale);
+          inst.userData = { type: 'forest', q: spawn.q, r: spawn.r };
+          if(spawn.type === 'city') inst.userData.type = 'city';
+
+          group.add(inst);
+      }
+      return group;
+  }
+  
+  // ADDED: New function to find a safe starting spot for the player
+  findPlayerSpawn() {
+      const centerR = this.boardRadius;
+      const searchRadius = Math.floor(this.boardRadius * 0.5);
+
+      // Search for an ideal spot near the center, on the village side
+      for (let r = centerR - searchRadius; r < centerR + searchRadius; r++) {
+          if(r < 0 || r >= this.depth) continue;
+          const riverQ = this.riverPath[r];
+          // Search from the river outwards into the village side
+          for (let q = riverQ - 1; q > riverQ - 25; q--) {
+               if (this.isInside(q, r) &&
+                   this.blockMap[r][q] !== 'water' &&
+                   this.featureMap[r][q] === 'none' &&
+                   this.heightMap[r][q] > 0)
+              {
+                  return { q, r };
+              }
+          }
+      }
+
+      // Fallback if no ideal spot is found (should be rare)
+      console.warn("Could not find ideal player spawn, using fallback.");
+      return { q: this.boardRadius - 5, r: this.boardRadius };
   }
 }
