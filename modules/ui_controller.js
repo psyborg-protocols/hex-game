@@ -49,16 +49,17 @@ export class UIController {
         }
     }
 
-    // --- World-space UI Methods ---
+    // --- MODIFIED: World-space UI Methods for stacking and persistence ---
 
     /**
      * Displays a UI element in world space, attached to a 3D object.
      * @param {THREE.Object3D} targetObject The object to follow.
      * @param {string} title The title text for the popup.
      * @param {Array<{label: string, callback: function}>} actions Array of button actions.
+     * @param {string} key A unique key to identify this contextual action.
      * @returns {string} The ID of the created UI element.
      */
-    showWorldspaceUI(targetObject, title, actions = []) {
+    showWorldspaceUI(targetObject, title, actions = [], key) {
         const element = document.createElement('div');
         element.className = 'world-popup';
 
@@ -70,7 +71,6 @@ export class UIController {
             const button = document.createElement('button');
             button.textContent = action.label;
             button.onclick = (event) => {
-                // Prevent clicks on UI from triggering game world actions like movement
                 event.stopPropagation();
                 action.callback();
             };
@@ -82,11 +82,11 @@ export class UIController {
         const popup = {
             element,
             target: targetObject,
-            id: `ws-${Date.now()}-${Math.random()}`
+            id: `ws-${Date.now()}-${Math.random()}`,
+            key: key,
         };
         this.activeWorldspaceUIs.push(popup);
         
-        // Make it visible after a short delay to trigger the CSS transition
         setTimeout(() => element.classList.add('visible'), 10);
         
         return popup.id;
@@ -97,7 +97,6 @@ export class UIController {
         if (index !== -1) {
             const popup = this.activeWorldspaceUIs[index];
             popup.element.classList.remove('visible');
-            // Remove from DOM after transition finishes
             setTimeout(() => {
                 if (this.worldspaceUIContainer.contains(popup.element)) {
                     this.worldspaceUIContainer.removeChild(popup.element);
@@ -114,28 +113,44 @@ export class UIController {
     }
 
     /**
-     * Updates the screen position of all active world-space UI elements.
+     * Updates the screen position of all active world-space UI elements, handling stacking.
      * @param {THREE.Camera} camera The main game camera.
      */
     update(camera) {
         const halfWidth = window.innerWidth / 2;
         const halfHeight = window.innerHeight / 2;
         
-        this.activeWorldspaceUIs.forEach(popup => {
-            const position = new THREE.Vector3();
-            popup.target.getWorldPosition(position);
-            position.project(camera);
-            
-            // Convert normalized device coordinates to screen coordinates
-            const x = (position.x * halfWidth) + halfWidth;
-            const y = -(position.y * halfHeight) + halfHeight;
-            
-            popup.element.style.left = `${x}px`;
-            popup.element.style.top = `${y}px`;
+        const targetScreenPositions = new Map();
 
-            // Hide if it's behind the camera
-            const isBehind = position.z > 1;
-            popup.element.style.display = isBehind ? 'none' : '';
+        // First pass: Calculate screen position for each unique target
+        this.activeWorldspaceUIs.forEach(popup => {
+            if (!targetScreenPositions.has(popup.target)) {
+                const position = new THREE.Vector3();
+                // Add a vertical offset to the target's world position
+                const targetPosition = popup.target.getWorldPosition(new THREE.Vector3());
+                targetPosition.y += 1.5; // Adjust this value to control hover height
+                
+                position.copy(targetPosition).project(camera);
+                
+                const x = (position.x * halfWidth) + halfWidth;
+                const y = -(position.y * halfHeight) + halfHeight;
+                
+                targetScreenPositions.set(popup.target, { x, y, stackCount: 0, isBehind: position.z > 1 });
+            }
+        });
+
+        // Second pass: Position and stack the popups
+        this.activeWorldspaceUIs.forEach(popup => {
+            const posData = targetScreenPositions.get(popup.target);
+            if (!posData) return;
+
+            const yOffset = posData.stackCount * -40; // 40px vertical spacing for each stacked item
+            
+            popup.element.style.left = `${posData.x}px`;
+            popup.element.style.top = `${posData.y + yOffset}px`;
+            popup.element.style.display = posData.isBehind ? 'none' : '';
+            
+            posData.stackCount++;
         });
     }
 
@@ -161,6 +176,7 @@ export class UIController {
 
     showProgress(label, duration, onComplete) {
         this.hide(); // Hide main UI during progress
+        this.hideAllWorldspaceUIs(); // Hide popups during progress
         const progressContainer = document.createElement('div');
         Object.assign(progressContainer.style, {
             position: 'absolute', bottom: '10px', left: '10px',
@@ -248,7 +264,7 @@ export class UIController {
     }
 
     showTrade(cityKey, prices) {
-        this.hideAllWorldspaceUIs(); // Hide popups when opening a full-screen UI
+        this.hideAllWorldspaceUIs();
         const headerIcon = UI_ICONS.trade ? `<img src="${UI_ICONS.trade}" class="icon"/>` : '';
         let html = `${headerIcon}<b>Village Market</b><br/>Gold: ${Math.floor(this.game.state.gold)}<br/><br/>`;
         Object.entries(prices).forEach(([id, price]) => {

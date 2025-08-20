@@ -19,10 +19,6 @@ const BLOCK_TEXTURES = {
     water: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAzUlEQVR4nH1SQQrEIAxMdUGseBDsa/rgvqiv8JBDKNJDYQ+zZK1bd05JcJKZmGnd9sqScz6uk4gqi0+RxjBElHOe5xn5n9eV5UNAby0RUbDul4BeBkkRRmmJCS0QKLSF6fqBiaDlqIqbpJGYFqbLWzKmYc4S09f0I1QPaEXYp1hZjCrpXKqZB0m6TY1VQItgnU9xWrd9aHA0YYTK0i5taFrN+BSxtGAdbmyJ6UZAj85usO64TtxFEX6hhOMrT8LanyH96SJchFVxt7d2428xx3BZ0Y//OwAAAABJRU5ErkJggg=='
 };
 
-// State for the contextual UI
-let contextualUIId = null;
-let activeContextualTarget = null;
-
 /**
  * The main Game class, responsible for orchestrating the entire application.
  */
@@ -121,7 +117,6 @@ class Game {
         this.world.assignBlocks();
         this.world.assignFeatures();
 
-        // MODIFIED: Get spawn point from world generation logic
         const spawnPoint = this.world.findPlayerSpawn();
 
         this.worldGroup = this.world.buildMesh(BLOCK_TEXTURES);
@@ -137,7 +132,6 @@ class Game {
 
         this.player = new Player(this.world, this.scene);
         
-        // MODIFIED: Set player's start position from the new method
         this.player.q = spawnPoint.q;
         this.player.r = spawnPoint.r;
         this.player.updatePosition();
@@ -398,73 +392,80 @@ class Game {
     }
     // ===== end smooth movement =====
 
+    // --- MODIFIED: Contextual UI logic to handle multiple, persistent popups ---
     updateContextualUIs() {
         const isOverlayUIActive = this.ui.activeUIMode && !['mine', 'harvest', 'trade'].includes(this.ui.activeUIMode);
         if (isOverlayUIActive || this.placementMode) {
-            if (contextualUIId) {
-                this.ui.hideWorldspaceUI(contextualUIId);
-                contextualUIId = null;
-                activeContextualTarget = null;
-            }
+            this.ui.hideAllWorldspaceUIs();
             return;
         }
 
-        const { mode: newMode, params } = this.contextSystem.determine();
+        const availableContexts = this.contextSystem.determine();
 
-        const getTargetKey = (mode, params) => {
-            if (!mode) return null;
-            if (mode === 'mine') return `mine-${params.q},${params.r}`;
-            if (mode === 'harvest') return `harvest-${params.q},${params.r}`;
-            if (mode === 'trade') return `trade-${params.cityQ},${params.cityR}`;
+        const getTargetKey = (ctx) => {
+            if (!ctx) return null;
+            if (ctx.mode === 'mine') return `mine-${ctx.params.q},${ctx.params.r}`;
+            if (ctx.mode === 'harvest') return `harvest-${ctx.params.treeMesh.uuid}`; // Use unique mesh ID
+            if (ctx.mode === 'trade') return `trade-${ctx.params.cityQ},${ctx.params.cityR}`;
             return null;
-        }
+        };
 
-        const newTargetKey = getTargetKey(newMode, params);
+        const newKeys = new Set(availableContexts.map(getTargetKey));
+        const currentKeys = new Set(this.ui.activeWorldspaceUIs.map(ui => ui.key));
 
-        if (activeContextualTarget !== newTargetKey) {
-            if (contextualUIId) this.ui.hideWorldspaceUI(contextualUIId);
-            activeContextualTarget = newTargetKey;
+        // Remove UIs that are no longer relevant
+        this.ui.activeWorldspaceUIs.forEach(ui => {
+            if (!newKeys.has(ui.key)) {
+                this.ui.hideWorldspaceUI(ui.id);
+            }
+        });
 
-            let title = '';
-            let actions = [];
-            let targetObject = null;
+        // Add UIs for new contexts
+        availableContexts.forEach(ctx => {
+            const key = getTargetKey(ctx);
+            if (!currentKeys.has(key)) {
+                let title = '';
+                let actions = [];
+                let targetObject = null;
 
-            switch (newMode) {
-                case 'mine': {
-                    const { x, z } = axialToWorld(params.q - this.world.boardRadius, params.r - this.world.boardRadius, this.world.radius);
-                    const y = (this.world.getHeight(params.q, params.r)) * this.world.hScale;
-                    this.miningTarget.position.set(x, y, z);
-                    targetObject = this.miningTarget;
-                    title = 'Mine Cliff';
-                    actions = [{ label: 'Mine', callback: () => this.actions.startMining(params.q, params.r) }];
-                    break;
-                }
-                case 'harvest': {
-                    targetObject = params.treeMesh;
-                    title = 'Harvest Tree';
-                    actions = [
-                        { label: 'Chop', callback: () => this.actions.startHarvest('chop', params.q, params.r, params.treeMesh) },
-                        { label: 'Gather', callback: () => this.actions.startHarvest('branch', params.q, params.r, params.treeMesh) }
-                    ];
-                    break;
-                }
-                case 'trade': {
-                    const cityKey = `${params.cityQ},${params.cityR}`;
-                    this.initializeCityPrices(cityKey);
-                    targetObject = this.propsGroup.children.find(c => c.userData.q === params.cityQ && c.userData.r === params.cityR);
-                    if (targetObject) {
-                        title = 'Village Market';
-                        actions = [{ label: 'Trade', callback: () => this.ui.showTrade(cityKey, this.state.prices[cityKey]) }];
+                switch (ctx.mode) {
+                    case 'mine': {
+                        const { x, z } = axialToWorld(ctx.params.q - this.world.boardRadius, ctx.params.r - this.world.boardRadius, this.world.radius);
+                        const y = (this.world.getHeight(ctx.params.q, ctx.params.r)) * this.world.hScale;
+                        this.miningTarget.position.set(x, y + this.world.hScale, z); // Position target slightly higher
+                        targetObject = this.miningTarget;
+                        title = 'Mine Cliff';
+                        actions = [{ label: 'Mine', callback: () => this.actions.startMining(ctx.params.q, ctx.params.r) }];
+                        break;
                     }
-                    break;
+                    case 'harvest': {
+                        targetObject = ctx.params.treeMesh;
+                        title = 'Harvest Tree';
+                        actions = [
+                            { label: 'Chop', callback: () => this.actions.startHarvest('chop', ctx.params.q, ctx.params.r, ctx.params.treeMesh) },
+                            { label: 'Gather', callback: () => this.actions.startHarvest('branch', ctx.params.q, ctx.params.r, ctx.params.treeMesh) }
+                        ];
+                        break;
+                    }
+                    case 'trade': {
+                        const cityKey = `${ctx.params.cityQ},${ctx.params.cityR}`;
+                        this.initializeCityPrices(cityKey);
+                        targetObject = this.propsGroup.children.find(c => c.userData.type === 'city' && c.userData.q === ctx.params.cityQ && c.userData.r === ctx.params.cityR);
+                        if (targetObject) {
+                            title = 'Village Market';
+                            actions = [{ label: 'Trade', callback: () => this.ui.showTrade(cityKey, this.state.prices[cityKey]) }];
+                        }
+                        break;
+                    }
+                }
+
+                if (targetObject && title) {
+                    this.ui.showWorldspaceUI(targetObject, title, actions, key);
                 }
             }
-
-            if (targetObject && title) {
-                contextualUIId = this.ui.showWorldspaceUI(targetObject, title, actions);
-            }
-        }
+        });
     }
+
 
     initializeCityPrices(cityKey) {
         if (this.state.prices[cityKey]) return;

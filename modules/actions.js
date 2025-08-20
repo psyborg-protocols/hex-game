@@ -147,10 +147,29 @@ export class Actions {
     }
 
     finishHarvest(action, q, r, treeMesh) {
-        let id = (action === 'chop') ? 'rough_log' : 'branch';
-        let qty = (action === 'chop') ? 1 : 2;
-        this.addItem(id, qty);
-        this.game.ui.showNotification(`You obtained ${qty} x ${ITEMS[id].name}!`);
+        // MODIFIED: Handle tree consumption
+        if (action === 'chop') {
+            const feat = this.game.world.featureMap[r]?.[q];
+            if (feat && feat.trees > 0) {
+                feat.trees--;
+
+                // Remove the visual tree from the scene
+                if (treeMesh && treeMesh.parent) {
+                    treeMesh.parent.remove(treeMesh);
+                }
+
+                if (feat.trees === 0) {
+                    // No trees left, this hex is no longer a forest
+                    feat.type = 'none';
+                }
+
+                this.addItem('rough_log', 1);
+                this.game.ui.showNotification(`You obtained 1 x ${ITEMS['rough_log'].name}!`);
+            }
+        } else { // 'branch' action
+            this.addItem('branch', 2);
+            this.game.ui.showNotification(`You obtained 2 x ${ITEMS['branch'].name}!`);
+        }
     }
 
     startMining(q, r) {

@@ -90,14 +90,14 @@
           display: flex;
         }
       }
-      /* Added for world-space UI */
+      /* MODIFIED for world-space UI */
       #worldspace-ui {
           position: absolute;
           top: 0;
           left: 0;
           width: 100%;
           height: 100%;
-          pointer-events: none; /* Allows clicks to pass through */
+          pointer-events: none;
           overflow: hidden;
       }
       .world-popup {
@@ -109,11 +109,13 @@
           border: 1px solid #5a5a7a;
           font-family: 'Arial', sans-serif;
           font-size: 14px;
-          transform: translate(-50%, -120%); /* Center horizontally, position above the target */
+          /* MODIFIED: transform for better positioning */
+          transform: translate(-50%, -100%); 
           white-space: nowrap;
-          pointer-events: all; /* Re-enable pointer events for buttons inside */
-          transition: opacity 0.2s;
+          pointer-events: all;
+          transition: opacity 0.2s, transform 0.2s;
           opacity: 0;
+          z-index: 1;
       }
       .world-popup.visible {
           opacity: 1;
