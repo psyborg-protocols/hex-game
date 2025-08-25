@@ -257,7 +257,7 @@ export class UIController {
 
         const infrastructure = ['oven', 'forge', 'whetstone'];
         if (cityData.rentableTools && cityData.rentableTools.length > 0) {
-            content += `<br/><b>Workshops for Rent:</b><br/>`;
+            content += `<br/><b>Workshop Tools:</b><br/>`;
             cityData.rentableTools.forEach(toolId => {
                 const item = ITEMS[toolId];
                 const icon = item.icon ? `<img src="${item.icon}" class="icon"/>` : '';

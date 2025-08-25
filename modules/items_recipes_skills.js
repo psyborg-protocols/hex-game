@@ -84,8 +84,8 @@ export const RECIPES = {
 export const SKILL_INFO = {
   woodworking: {
     1: ['Harvest Branches from trees.', 'Craft Baskets from Branches.'],
-    2: ['Chop trees for Rough Logs (requires Axe).', 'Work Rough Logs into Logs (requires Axe).', 'Whittle Beams from Branches (less efficient, requires Knife).'],
-    3: ['Saw high-yield Beams from Logs (more efficient, requires Saw).', 'Saw Planks from Logs (requires Saw).', 'Build Wood Fences from Beams.'],
+    2: ['Chop trees for Rough Logs (requires Axe).', 'Work Rough Logs into Logs (requires Axe).', 'Whittle Beams from Branches (requires Knife).'],
+    3: ['Saw Beams from Logs ( requires Saw).', 'Saw Planks from Logs (requires Saw).', 'Build Wood Fences from Beams.'],
     4: ['Craft a Fishing Rod (requires Knife).', 'Build Ladders to climb cliffs (requires Axe).'],
     5: ['Build a Log Cabin (requires Axe and Hammer).'],
     6: ['Build Bridges over water (requires Hammer).'],

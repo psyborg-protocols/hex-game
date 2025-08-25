@@ -458,6 +458,7 @@ class Game {
         if (this.state.cities[cityKey]) return;
 
         const allIds = Object.keys(ITEM_BASE_PRICES);
+        // TODO: centralize untradeable item list in items_recipes_skills.js
         const untradeable = ['cabin', 'stone_wall', 'wood_fence', 'ladder', 'bridge', 'oven', 'forge', 'whetstone'];
         const tradeable = allIds.filter((id) => !untradeable.includes(id));
         const count = 5 + Math.floor(Math.random() * 3);
