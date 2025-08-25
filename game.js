@@ -30,7 +30,6 @@ class Game {
         this.world = null;
         this.player = null;
         
-        // Initialize modules
         this.ui = new UIController(this);
         this.actions = new Actions(this);
         this.contextSystem = new ContextSystem(this);
@@ -41,7 +40,6 @@ class Game {
         this.cameraController = null;
         this.clock = new THREE.Clock();
 
-        // Game state
         this.state = {
             inventory: new Array(20).fill(null),
             gold: 50,
@@ -50,23 +48,19 @@ class Game {
                 stoneworking: { level: 1, xp: 0 },
                 metalworking: { level: 1, xp: 0 }
             },
-            prices: {}
+            cities: {}
         };
 
-        // Path & Smooth Movement State
         this.path = [];
         this.movingAlongPath = false;
         this.currentSegment = null;
         this.speedTilesPerSec = 2.8;
 
-        // Placement Mode State
         this.placementMode = null;
         this.placementHighlights = new THREE.Group();
         
-        // A helper object for positioning mining UI
         this.miningTarget = new THREE.Object3D();
 
-        // Mobile touch state
         this.touchState = {
             isDragging: false,
             isPinching: false,
@@ -153,12 +147,10 @@ class Game {
         this.renderer.domElement.addEventListener('mousedown', (e) => this.onMouseDown(e));
         this.renderer.domElement.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
 
-        // Mobile Touch Events
         this.renderer.domElement.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
         this.renderer.domElement.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
         this.renderer.domElement.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });
 
-        // Mobile UI Buttons
         const byId = (id) => document.getElementById(id);
         byId('inventory-btn')?.addEventListener('click', () => this.ui.toggle('inventory', () => this.ui.showInventory()));
         byId('craft-btn')?.addEventListener('click', () => this.ui.toggle('craft', () => this.ui.showCrafting()));
@@ -324,7 +316,6 @@ class Game {
         this.renderer.render(this.scene, this.camera);
     }
 
-    // ===== Smooth movement helpers =====
     startPath(path) {
         this.path = path.slice();
         this.movingAlongPath = this.path.length > 0;
@@ -390,9 +381,7 @@ class Game {
             }
         }
     }
-    // ===== end smooth movement =====
-
-    // --- MODIFIED: Contextual UI logic to handle multiple, persistent popups ---
+    
     updateContextualUIs() {
         const isOverlayUIActive = this.ui.activeUIMode && !['mine', 'harvest', 'trade'].includes(this.ui.activeUIMode);
         if (isOverlayUIActive || this.placementMode) {
@@ -405,7 +394,7 @@ class Game {
         const getTargetKey = (ctx) => {
             if (!ctx) return null;
             if (ctx.mode === 'mine') return `mine-${ctx.params.q},${ctx.params.r}`;
-            if (ctx.mode === 'harvest') return `harvest-${ctx.params.treeMesh.uuid}`; // Use unique mesh ID
+            if (ctx.mode === 'harvest') return `harvest-${ctx.params.treeMesh.uuid}`;
             if (ctx.mode === 'trade') return `trade-${ctx.params.cityQ},${ctx.params.cityR}`;
             return null;
         };
@@ -413,14 +402,12 @@ class Game {
         const newKeys = new Set(availableContexts.map(getTargetKey));
         const currentKeys = new Set(this.ui.activeWorldspaceUIs.map(ui => ui.key));
 
-        // Remove UIs that are no longer relevant
         this.ui.activeWorldspaceUIs.forEach(ui => {
             if (!newKeys.has(ui.key)) {
                 this.ui.hideWorldspaceUI(ui.id);
             }
         });
 
-        // Add UIs for new contexts
         availableContexts.forEach(ctx => {
             const key = getTargetKey(ctx);
             if (!currentKeys.has(key)) {
@@ -432,10 +419,11 @@ class Game {
                     case 'mine': {
                         const { x, z } = axialToWorld(ctx.params.q - this.world.boardRadius, ctx.params.r - this.world.boardRadius, this.world.radius);
                         const y = (this.world.getHeight(ctx.params.q, ctx.params.r)) * this.world.hScale;
-                        this.miningTarget.position.set(x, y + this.world.hScale, z); // Position target slightly higher
+                        this.miningTarget.position.set(x, y + this.world.hScale, z);
                         targetObject = this.miningTarget;
-                        title = 'Mine Cliff';
-                        actions = [{ label: 'Mine', callback: () => this.actions.startMining(ctx.params.q, ctx.params.r) }];
+                        const actionLabel = ctx.params.tool === 'pickaxe' ? 'Mine' : 'Quarry';
+                        title = `${actionLabel} Cliff`;
+                        actions = [{ label: actionLabel, callback: () => this.actions.startMining(ctx.params.q, ctx.params.r, ctx.params.tool) }];
                         break;
                     }
                     case 'harvest': {
@@ -449,11 +437,11 @@ class Game {
                     }
                     case 'trade': {
                         const cityKey = `${ctx.params.cityQ},${ctx.params.cityR}`;
-                        this.initializeCityPrices(cityKey);
+                        this.initializeCityData(cityKey);
                         targetObject = this.propsGroup.children.find(c => c.userData.type === 'city' && c.userData.q === ctx.params.cityQ && c.userData.r === ctx.params.cityR);
                         if (targetObject) {
                             title = 'Village Market';
-                            actions = [{ label: 'Trade', callback: () => this.ui.showTrade(cityKey, this.state.prices[cityKey]) }];
+                            actions = [{ label: 'Trade', callback: () => this.ui.showTrade(cityKey) }];
                         }
                         break;
                     }
@@ -466,11 +454,11 @@ class Game {
         });
     }
 
+    initializeCityData(cityKey) {
+        if (this.state.cities[cityKey]) return;
 
-    initializeCityPrices(cityKey) {
-        if (this.state.prices[cityKey]) return;
         const allIds = Object.keys(ITEM_BASE_PRICES);
-        const untradeable = ['cabin', 'stone_wall', 'wood_fence', 'ladder', 'bridge'];
+        const untradeable = ['cabin', 'stone_wall', 'wood_fence', 'ladder', 'bridge', 'oven', 'forge', 'whetstone'];
         const tradeable = allIds.filter((id) => !untradeable.includes(id));
         const count = 5 + Math.floor(Math.random() * 3);
         const shuffled = tradeable.slice().sort(() => Math.random() - 0.5);
@@ -481,13 +469,31 @@ class Game {
             const factor = 0.8 + Math.random() * 0.4;
             prices[id] = Math.max(1, Math.round(base * factor));
         });
-        this.state.prices[cityKey] = prices;
+
+        const potentialTools = ['saw', 'whetstone', 'forge', 'tongs', 'axe', 'chisel'];
+        const numTools = 2 + Math.floor(Math.random() * 2);
+        const rentableTools = potentialTools.slice().sort(() => 0.5 - Math.random()).slice(0, numTools);
+
+        this.state.cities[cityKey] = {
+            prices: prices,
+            rentableTools: rentableTools
+        };
+    }
+    
+    getPlayerCurrentCity() {
+        const q = this.player.q;
+        const r = this.player.r;
+        const feature = this.world.featureMap[r]?.[q];
+        if (feature?.type === 'city') {
+            const cityKey = `${q},${r}`;
+            this.initializeCityData(cityKey);
+            return { key: cityKey, data: this.state.cities[cityKey] };
+        }
+        return null;
     }
 
-    // --- NEW PLACEMENT LOGIC ---
-
     enterPlacementMode(recipeId) {
-        if (!this.actions.canCraft(recipeId)) {
+        if (!this.actions.canCraft(recipeId).canCraft) {
             this.ui.showNotification("You don't have the resources or skill.");
             return;
         }
@@ -634,6 +640,8 @@ class Game {
 
     buildStructure(recId, placementData) {
         let mesh;
+        const infrastructure = ['oven', 'forge', 'whetstone'];
+
         if (recId === 'ladder') {
             mesh = new THREE.Group();
             const mat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
@@ -717,7 +725,7 @@ class Game {
                 mesh.add(post);
             });
 
-        } else if (recId === 'cabin') {
+        } else if (recId === 'cabin' || recId === 'stone_house') {
             mesh = new THREE.Group();
             const wallMat = new THREE.MeshLambertMaterial({ color: 0xb0b0b5 });
             [{ pos: [0.0, 0.0], scale: 1.2 }, { pos: [0.6, 0.4], scale: 0.8 }].forEach(({ pos, scale }) => {
@@ -727,6 +735,14 @@ class Game {
                 baseMesh.position.set(hx, 0.3 * scale, hz);
                 mesh.add(baseMesh);
             });
+        } else if (infrastructure.includes(recId)) {
+            mesh = new THREE.Group();
+            const color = recId === 'oven' ? 0x666666 : recId === 'forge' ? 0x444444 : 0xAAAAAA;
+            const mat = new THREE.MeshLambertMaterial({ color: color });
+            const baseGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+            const base = new THREE.Mesh(baseGeo, mat);
+            base.position.y = 0.3;
+            mesh.add(base);
         }
 
         if (mesh) {
@@ -734,8 +750,21 @@ class Game {
                 const { q, r } = placementData.at;
                 const { x, z } = axialToWorld(q - this.world.boardRadius, r - this.world.boardRadius, this.world.radius);
                 const h = this.world.getHeight(q, r);
-                mesh.position.set(x, (h + 1) * this.world.hScale, z);
-                mesh.userData = { type: 'building', recId: recId, q: q, r: r };
+                mesh.position.set(x, (h + 1) * this.hScale, z);
+                
+                const structureData = { type: 'building', recId: recId, q: q, r: r };
+                mesh.userData = structureData;
+                this.world.addStructure(q, r, structureData);
+
+                const feature = this.world.featureMap[r]?.[q];
+                if (infrastructure.includes(recId) && feature?.type === 'city') {
+                    const cityKey = `${q},${r}`;
+                    this.initializeCityData(cityKey);
+                    const city = this.state.cities[cityKey];
+                    if (!city.rentableTools.includes(recId)) {
+                        city.rentableTools.push(recId);
+                    }
+                }
             } else {
                 const targetCoords = placementData.currentTile || placementData.across || placementData.from;
                 mesh.userData = { type: 'building', recId: recId, q: targetCoords.q, r: targetCoords.r };
@@ -760,8 +789,8 @@ class Game {
         {
             const trunk = new THREE.CylinderGeometry(0.15, 0.15, 1.0, 8);
             const leaves = new THREE.ConeGeometry(0.6, 1.5, 8);
-            const mTrunk = new THREE.MeshLambertMaterial({ color: 0x5D4037 }); // Darker brown
-            const mLeaves = new THREE.MeshLambertMaterial({ color: 0x1B5E20 }); // Darker green
+            const mTrunk = new THREE.MeshLambertMaterial({ color: 0x5D4037 });
+            const mLeaves = new THREE.MeshLambertMaterial({ color: 0x1B5E20 });
             const trunkMesh = new THREE.Mesh(trunk, mTrunk); trunkMesh.position.y = 0.5;
             const leavesMesh = new THREE.Mesh(leaves, mLeaves); leavesMesh.position.y = 1.4;
             darkTreeFallback.add(trunkMesh, leavesMesh);

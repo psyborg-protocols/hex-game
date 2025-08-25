@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { ITEMS, RECIPES, SKILL_INFO } from './items_recipes_skills.js';
+import { ITEMS, RECIPES, SKILL_INFO, ITEM_BASE_PRICES } from './items_recipes_skills.js';
 
-// A mapping of UI modes to their icons for consistent headers
 const UI_ICONS = {
     inventory: ITEMS['chest'].icon,
     craft: ITEMS['saw'].icon,
@@ -12,22 +11,14 @@ const UI_ICONS = {
     skills: ITEMS['ingot'].icon,
 };
 
-/**
- * Manages all DOM interactions, including UI panels, notifications, and progress bars.
- */
 export class UIController {
-    /**
-     * @param {Game} game A reference to the main game instance.
-     */
     constructor(game) {
-        this.game = game; // Reference to the main game object to access state and methods
+        this.game = game;
         this.uiEl = document.getElementById('ui');
         this.worldspaceUIContainer = document.getElementById('worldspace-ui');
         this.activeUIMode = null;
-        this.activeWorldspaceUIs = []; // To track pop-ups
+        this.activeWorldspaceUIs = [];
     }
-
-    // --- Core UI Management ---
 
     show(mode, html) {
         this.activeUIMode = mode;
@@ -49,16 +40,6 @@ export class UIController {
         }
     }
 
-    // --- MODIFIED: World-space UI Methods for stacking and persistence ---
-
-    /**
-     * Displays a UI element in world space, attached to a 3D object.
-     * @param {THREE.Object3D} targetObject The object to follow.
-     * @param {string} title The title text for the popup.
-     * @param {Array<{label: string, callback: function}>} actions Array of button actions.
-     * @param {string} key A unique key to identify this contextual action.
-     * @returns {string} The ID of the created UI element.
-     */
     showWorldspaceUI(targetObject, title, actions = [], key) {
         const element = document.createElement('div');
         element.className = 'world-popup';
@@ -112,23 +93,17 @@ export class UIController {
         }
     }
 
-    /**
-     * Updates the screen position of all active world-space UI elements, handling stacking.
-     * @param {THREE.Camera} camera The main game camera.
-     */
     update(camera) {
         const halfWidth = window.innerWidth / 2;
         const halfHeight = window.innerHeight / 2;
         
         const targetScreenPositions = new Map();
 
-        // First pass: Calculate screen position for each unique target
         this.activeWorldspaceUIs.forEach(popup => {
             if (!targetScreenPositions.has(popup.target)) {
                 const position = new THREE.Vector3();
-                // Add a vertical offset to the target's world position
                 const targetPosition = popup.target.getWorldPosition(new THREE.Vector3());
-                targetPosition.y += 1.5; // Adjust this value to control hover height
+                targetPosition.y += 1.5;
                 
                 position.copy(targetPosition).project(camera);
                 
@@ -139,12 +114,11 @@ export class UIController {
             }
         });
 
-        // Second pass: Position and stack the popups
         this.activeWorldspaceUIs.forEach(popup => {
             const posData = targetScreenPositions.get(popup.target);
             if (!posData) return;
 
-            const yOffset = posData.stackCount * -40; // 40px vertical spacing for each stacked item
+            const yOffset = posData.stackCount * -40;
             
             popup.element.style.left = `${posData.x}px`;
             popup.element.style.top = `${posData.y + yOffset}px`;
@@ -153,8 +127,6 @@ export class UIController {
             posData.stackCount++;
         });
     }
-
-    // --- General Purpose UI Components ---
 
     showNotification(message, duration = 3000) {
         const notification = document.createElement('div');
@@ -175,8 +147,8 @@ export class UIController {
     }
 
     showProgress(label, duration, onComplete) {
-        this.hide(); // Hide main UI during progress
-        this.hideAllWorldspaceUIs(); // Hide popups during progress
+        this.hide();
+        this.hideAllWorldspaceUIs();
         const progressContainer = document.createElement('div');
         Object.assign(progressContainer.style, {
             position: 'absolute', bottom: '10px', left: '10px',
@@ -201,8 +173,6 @@ export class UIController {
         requestAnimationFrame(update);
     }
 
-    // --- Specific UI Panels ---
-
     showInventory() {
         const headerIcon = UI_ICONS.inventory ? `<img src="${UI_ICONS.inventory}" class="icon"/>` : '';
         let html = `${headerIcon}<b>Inventory</b> (Gold: ${Math.floor(this.game.state.gold)})<br/>`;
@@ -222,9 +192,12 @@ export class UIController {
     showCrafting() {
         const headerIcon = UI_ICONS.craft ? `<img src="${UI_ICONS.craft}" class="icon"/>` : '';
         let html = `${headerIcon}<b>Crafting</b><br/>`;
+        
+        const playerCity = this.game.getPlayerCurrentCity();
+
         Object.values(RECIPES).forEach((rec) => {
             if (rec.category === 'build') return;
-            html += this.getRecipeHTML(rec, 'craft');
+            html += this.getRecipeHTML(rec, 'craft', playerCity);
         });
         html += `<br/><button id="close-btn">Close</button>`;
         this.show('craft', html);
@@ -234,9 +207,12 @@ export class UIController {
     showBuilding() {
         const headerIcon = UI_ICONS.build ? `<img src="${UI_ICONS.build}" class="icon"/>` : '';
         let html = `${headerIcon}<b>Building</b><br/>`;
+
+        const playerCity = this.game.getPlayerCurrentCity();
+
         Object.values(RECIPES).forEach((rec) => {
             if (rec.category !== 'build') return;
-            html += this.getRecipeHTML(rec, 'build');
+            html += this.getRecipeHTML(rec, 'build', playerCity);
         });
         html += `<br/><button id="close-btn">Close</button>`;
         this.show('build', html);
@@ -250,7 +226,7 @@ export class UIController {
             const skillState = this.game.state.skills[skillName];
             html += `<br/><u>${skillName.charAt(0).toUpperCase() + skillName.slice(1)}</u> (Level ${skillState.level}, XP: ${skillState.xp.toFixed(0)})<br/>`;
             const info = SKILL_INFO[skillName] || {};
-            for (let lvl = 1; lvl <= Math.min(skillState.level + 1, 4); lvl++) {
+            for (let lvl = 1; lvl <= 10; lvl++) { // Check up to a higher level
                 const entries = info[lvl] || [];
                 if (entries.length > 0) {
                     html += `Level ${lvl}:<br/>`;
@@ -263,17 +239,36 @@ export class UIController {
         this.addCloseListener();
     }
 
-    showTrade(cityKey, prices) {
+    showTrade(cityKey) {
         this.hideAllWorldspaceUIs();
+        this.game.initializeCityData(cityKey);
+        const cityData = this.game.state.cities[cityKey];
+        if (!cityData) return;
+
         const headerIcon = UI_ICONS.trade ? `<img src="${UI_ICONS.trade}" class="icon"/>` : '';
         let html = `${headerIcon}<b>Village Market</b><br/>Gold: ${Math.floor(this.game.state.gold)}<br/><br/>`;
-        Object.entries(prices).forEach(([id, price]) => {
+        
+        html += `<b>For Sale:</b><br/>`;
+        Object.entries(cityData.prices).forEach(([id, price]) => {
             const item = ITEMS[id];
             const icon = item.icon ? `<img src="${item.icon}" class="icon"/>` : '';
             html += `${icon}${item.name} — ${price} gold`;
             html += ` <button data-action="buy" data-id="${id}">Buy</button>`;
             html += ` <button data-action="sell" data-id="${id}">Sell</button><br/>`;
         });
+
+        const infrastructure = ['oven', 'forge', 'whetstone'];
+        if (cityData.rentableTools && cityData.rentableTools.length > 0) {
+            html += `<br/><b>Workshops for Rent:</b><br/>`;
+            cityData.rentableTools.forEach(toolId => {
+                const item = ITEMS[toolId];
+                const icon = item.icon ? `<img src="${item.icon}" class="icon"/>` : '';
+                const rentalFee = infrastructure.includes(toolId) ? 0 : Math.max(5, Math.floor(ITEM_BASE_PRICES[toolId] * 0.2)); 
+                const feeText = rentalFee > 0 ? `(Fee: ${rentalFee} gold)` : `(Free to use)`;
+                html += `${icon}${item.name} ${feeText}<br/>`;
+            });
+        }
+
         html += `<br/><b>Your Inventory</b><br/>`;
         this.game.state.inventory.forEach((slot) => {
             if (slot) {
@@ -287,21 +282,30 @@ export class UIController {
         this.addTradeListeners(cityKey);
     }
 
-    // --- UI Helpers and Listeners ---
-
-    getRecipeHTML(rec, type) {
-        const inputStr = Object.entries(rec.inputs).map(([id, qty]) => `${ITEMS[id].name} x${qty}`).join(', ');
-        const outputStr = Object.entries(rec.output).map(([id, qty]) => `${ITEMS[id].name} x${qty}`).join(', ');
-        const toolStr = rec.tools ? ' (requires ' + Object.keys(rec.tools).map(tid => ITEMS[tid].name).join(', ') + ')' : '';
-        
-        const canCraft = this.game.actions.canCraft(rec.id);
+    getRecipeHTML(rec, type, playerCity = null) {
+        const { canCraft, rentalTool } = this.game.actions.canCraft(rec.id, playerCity);
         const disabledAttr = canCraft ? '' : 'disabled';
 
         const outId = Object.keys(rec.output)[0];
         const recIcon = outId && ITEMS[outId].icon ? `<img src="${ITEMS[outId].icon}" class="icon"/>` : '';
 
-        let html = `<div style="margin-bottom:4px;">${recIcon}${rec.name} (requires ${rec.skill} lvl ${rec.level}${toolStr})<br/>`;
-        html += `Inputs: ${inputStr} → Outputs: ${outputStr}<br/>`;
+        let html = `<div style="margin-bottom:4px;">${recIcon}<b>${rec.name}</b><br/>`;
+        
+        const inputStr = Object.entries(rec.inputs).map(([id, qty]) => `${ITEMS[id].name} x${qty}`).join(', ');
+        html += `<i>Inputs:</i> ${inputStr}<br/>`;
+
+        if (rec.tools) {
+            const toolStr = Object.keys(rec.tools).map(tid => {
+                const toolName = ITEMS[tid].name;
+                if (rentalTool && rentalTool.id === tid) {
+                    const feeText = rentalTool.fee > 0 ? `Rent: ${rentalTool.fee}g` : `Use Village Tool`;
+                    return `${toolName} (${feeText})`;
+                }
+                return toolName;
+            }).join(', ');
+            html += `<i>Requires:</i> ${toolStr}<br/>`;
+        }
+
         html += `<button data-id="${rec.id}" ${disabledAttr}>${type.charAt(0).toUpperCase() + type.slice(1)}</button></div>`;
         return html;
     }

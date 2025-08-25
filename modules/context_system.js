@@ -19,13 +19,20 @@ export class ContextSystem {
     const currentHeight = this.game.world.getHeight(q, r);
     const dirs = [ {dq:1,dr:0},{dq:-1,dr:0},{dq:0,dr:1},{dq:0,dr:-1},{dq:1,dr:-1},{dq:-1,dr:1} ];
 
-    // Check for mining opportunities (steep cliffs)
-    for (const {dq, dr} of dirs) {
-      const nq = q + dq;
-      const nr = r + dr;
-      const h = this.game.world.getHeight(nq, nr);
-      if (h !== -Infinity && h - currentHeight >= 3) {
-        contexts.push({ mode: 'mine', params: { q: nq, r: nr } });
+    // MODIFIED: Check for mining/quarrying opportunities
+    const hasPickaxe = this.game.actions.hasItem('pickaxe');
+    const hasHammer = this.game.actions.hasItem('hammer');
+
+    if (hasPickaxe || hasHammer) {
+      for (const {dq, dr} of dirs) {
+        const nq = q + dq;
+        const nr = r + dr;
+        const h = this.game.world.getHeight(nq, nr);
+        if (h !== -Infinity && h - currentHeight >= 3) {
+          // Player can mine if they have a pickaxe, otherwise they can only quarry with a hammer.
+          const tool = hasPickaxe ? 'pickaxe' : 'hammer';
+          contexts.push({ mode: 'mine', params: { q: nq, r: nr, tool: tool } });
+        }
       }
     }
 
