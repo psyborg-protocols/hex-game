@@ -23,7 +23,7 @@ export class UIController {
     show(mode, html) {
         this.activeUIMode = mode;
         this.uiEl.innerHTML = html;
-        this.uiEl.style.display = 'block';
+        this.uiEl.style.display = 'flex';
     }
 
     hide() {
@@ -174,69 +174,67 @@ export class UIController {
     }
 
     showInventory() {
-        const headerIcon = UI_ICONS.inventory ? `<img src="${UI_ICONS.inventory}" class="icon"/>` : '';
-        let html = `${headerIcon}<b>Inventory</b> (Gold: ${Math.floor(this.game.state.gold)})<br/>`;
-        this.game.state.inventory.forEach((slot, idx) => {
+        let content = `<div id="inventory-grid">`;
+        this.game.state.inventory.forEach(slot => {
             if (slot) {
                 const item = ITEMS[slot.id];
-                const icon = item.icon ? `<img src="${item.icon}" class="icon"/>` : '';
-                html += `${idx + 1}: ${icon}${item.name} x${slot.qty}<br/>`;
+                content += `
+                    <div class="inventory-slot">
+                        <img src="${item.icon}" alt="${item.name}">
+                        <div class="item-name">${item.name} x${slot.qty}</div>
+                    </div>
+                `;
             } else {
-                html += `${idx + 1}: (empty)<br/>`;
+                content += `<div class="inventory-slot"></div>`;
             }
         });
-        html += `<br/>Press I to close.`;
-        this.show('inventory', html);
+        content += `</div>`;
+        this.createModal('inventory', 'Inventory', content);
     }
 
     showCrafting() {
-        const headerIcon = UI_ICONS.craft ? `<img src="${UI_ICONS.craft}" class="icon"/>` : '';
-        let html = `${headerIcon}<b>Crafting</b><br/>`;
-        
-        const playerCity = this.game.getPlayerCurrentCity();
-
-        Object.values(RECIPES).forEach((rec) => {
-            if (rec.category === 'build') return;
-            html += this.getRecipeHTML(rec, 'craft', playerCity);
+        const skills = ['woodworking', 'stoneworking', 'metalworking'];
+        this.createTabbedModal('craft', 'Crafting', skills, (skill) => {
+            let content = '';
+            const recipes = Object.values(RECIPES).filter(rec => rec.skill === skill && rec.category !== 'build');
+            if (recipes.length === 0) return 'No recipes available for this skill.';
+            recipes.forEach(rec => {
+                content += this.getRecipeHTML(rec, 'craft');
+            });
+            return content;
         });
-        html += `<br/><button id="close-btn">Close</button>`;
-        this.show('craft', html);
-        this.addRecipeListeners('craft');
     }
-    
+
     showBuilding() {
-        const headerIcon = UI_ICONS.build ? `<img src="${UI_ICONS.build}" class="icon"/>` : '';
-        let html = `${headerIcon}<b>Building</b><br/>`;
-
-        const playerCity = this.game.getPlayerCurrentCity();
-
-        Object.values(RECIPES).forEach((rec) => {
-            if (rec.category !== 'build') return;
-            html += this.getRecipeHTML(rec, 'build', playerCity);
+        let content = '';
+        const recipes = Object.values(RECIPES).filter(rec => rec.category === 'build');
+        if (recipes.length === 0) return 'No building plans available.';
+        recipes.forEach(rec => {
+            content += this.getRecipeHTML(rec, 'build');
         });
-        html += `<br/><button id="close-btn">Close</button>`;
-        this.show('build', html);
-        this.addRecipeListeners('build');
+        this.createModal('build', 'Building', content);
     }
 
     showSkills() {
-        const headerIcon = UI_ICONS.skills ? `<img src="${UI_ICONS.skills}" class="icon"/>` : '';
-        let html = `${headerIcon}<b>Skills Overview</b><br/>`;
-        Object.keys(this.game.state.skills).forEach((skillName) => {
+        const skills = Object.keys(this.game.state.skills);
+        this.createTabbedModal('skills', 'Skills', skills, (skillName) => {
             const skillState = this.game.state.skills[skillName];
-            html += `<br/><u>${skillName.charAt(0).toUpperCase() + skillName.slice(1)}</u> (Level ${skillState.level}, XP: ${skillState.xp.toFixed(0)})<br/>`;
+            let content = `
+                <div style="text-align:center; margin-bottom: 15px;">
+                    <strong>Level: ${skillState.level} | XP: ${skillState.xp.toFixed(0)}</strong>
+                </div>
+            `;
             const info = SKILL_INFO[skillName] || {};
-            for (let lvl = 1; lvl <= 10; lvl++) { // Check up to a higher level
+            for (let lvl = 1; lvl <= 7; lvl++) {
                 const entries = info[lvl] || [];
                 if (entries.length > 0) {
-                    html += `Level ${lvl}:<br/>`;
-                    entries.forEach((line) => html += `&nbsp;&nbsp;- ${line}<br/>`);
+                    content += `<h4>Level ${lvl} Unlocks</h4><ul>`;
+                    entries.forEach(line => content += `<li>${line}</li>`);
+                    content += `</ul>`;
                 }
             }
+            return content;
         });
-        html += `<br/><button id="close-btn">Close</button>`;
-        this.show('skills', html);
-        this.addCloseListener();
     }
 
     showTrade(cityKey) {
@@ -245,79 +243,140 @@ export class UIController {
         const cityData = this.game.state.cities[cityKey];
         if (!cityData) return;
 
-        const headerIcon = UI_ICONS.trade ? `<img src="${UI_ICONS.trade}" class="icon"/>` : '';
-        let html = `${headerIcon}<b>Village Market</b><br/>Gold: ${Math.floor(this.game.state.gold)}<br/><br/>`;
+        let content = `<div class="trade-container">`;
+        content += `<strong>Gold: ${Math.floor(this.game.state.gold)}</strong><hr>`;
+        content += `<h4>Market Goods</h4>`;
         
-        html += `<b>For Sale:</b><br/>`;
         Object.entries(cityData.prices).forEach(([id, price]) => {
             const item = ITEMS[id];
             const icon = item.icon ? `<img src="${item.icon}" class="icon"/>` : '';
-            html += `${icon}${item.name} — ${price} gold`;
-            html += ` <button data-action="buy" data-id="${id}">Buy</button>`;
-            html += ` <button data-action="sell" data-id="${id}">Sell</button><br/>`;
+            content += `<div class="recipe">${icon}<div>${item.name} — ${price} gold</div><div>`;
+            content += ` <button data-action="buy" data-id="${id}">Buy</button>`;
+            content += ` <button data-action="sell" data-id="${id}">Sell</button></div></div>`;
         });
 
         const infrastructure = ['oven', 'forge', 'whetstone'];
         if (cityData.rentableTools && cityData.rentableTools.length > 0) {
-            html += `<br/><b>Workshops for Rent:</b><br/>`;
+            content += `<br/><b>Workshops for Rent:</b><br/>`;
             cityData.rentableTools.forEach(toolId => {
                 const item = ITEMS[toolId];
                 const icon = item.icon ? `<img src="${item.icon}" class="icon"/>` : '';
                 const rentalFee = infrastructure.includes(toolId) ? 0 : Math.max(5, Math.floor(ITEM_BASE_PRICES[toolId] * 0.2)); 
                 const feeText = rentalFee > 0 ? `(Fee: ${rentalFee} gold)` : `(Free to use)`;
-                html += `${icon}${item.name} ${feeText}<br/>`;
+                content += `${icon}${item.name} ${feeText}<br/>`;
             });
         }
 
-        html += `<br/><b>Your Inventory</b><br/>`;
+        content += `<hr><h4>Your Wares</h4>`;
         this.game.state.inventory.forEach((slot) => {
             if (slot) {
                 const invItem = ITEMS[slot.id];
                 const invIcon = invItem.icon ? `<img src="${invItem.icon}" class="icon"/>` : '';
-                html += `${invIcon}${invItem.name} x${slot.qty}<br/>`;
+                content += `<div>${invIcon}${invItem.name} x${slot.qty}</div>`;
             }
         });
-        html += `<br/><button id="close-btn">Close</button>`;
-        this.show('trade', html);
+        content += `</div>`;
+        this.createModal('trade', 'Village Market', content);
         this.addTradeListeners(cityKey);
     }
+    
+    createModal(mode, title, content) {
+        const icon = UI_ICONS[mode] ? `<img src="${UI_ICONS[mode]}" class="icon modal-title-icon"/>` : '';
+        const html = `
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 class="modal-title">${icon} ${title}</h2>
+                </div>
+                <div class="modal-close" title="Close">&times;</div>
+                <div class="modal-content">
+                    ${content}
+                </div>
+            </div>
+        `;
+        this.show(mode, html);
+        this.uiEl.querySelector('.modal-close').onclick = () => this.hide();
+        this.addRecipeListeners('build');
+    }
 
-    getRecipeHTML(rec, type, playerCity = null) {
+    createTabbedModal(mode, title, tabsData, contentGenerator) {
+        const icon = UI_ICONS[mode] ? `<img src="${UI_ICONS[mode]}" class="icon modal-title-icon"/>` : '';
+        let tabs = '';
+        let tabContents = '';
+
+        tabsData.forEach((tabName, index) => {
+            const active = index === 0 ? 'active' : '';
+            tabs += `<div class="tab ${active}" data-tab="${tabName}">${tabName.charAt(0).toUpperCase() + tabName.slice(1)}</div>`;
+            tabContents += `<div class="tab-content ${active}" data-tab-content="${tabName}">${contentGenerator(tabName)}</div>`;
+        });
+
+        const html = `
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 class="modal-title">${icon} ${title}</h2>
+                </div>
+                <div class="modal-close" title="Close">&times;</div>
+                <div class="tabs">${tabs}</div>
+                <div class="modal-content">
+                    ${tabContents}
+                </div>
+            </div>
+        `;
+        this.show(mode, html);
+
+        this.uiEl.querySelector('.modal-close').onclick = () => this.hide();
+        this.uiEl.querySelectorAll('.tab').forEach(tab => {
+            tab.onclick = () => {
+                this.uiEl.querySelectorAll('.tab, .tab-content').forEach(el => el.classList.remove('active'));
+                tab.classList.add('active');
+                this.uiEl.querySelector(`.tab-content[data-tab-content="${tab.dataset.tab}"]`).classList.add('active');
+            };
+        });
+
+        if (mode === 'craft') {
+            this.addRecipeListeners('craft');
+        }
+    }
+
+    getRecipeHTML(rec, type) {
+        const playerCity = this.game.getPlayerCurrentCity();
         const { canCraft, rentalTool } = this.game.actions.canCraft(rec.id, playerCity);
         const disabledAttr = canCraft ? '' : 'disabled';
 
         const outId = Object.keys(rec.output)[0];
         const recIcon = outId && ITEMS[outId].icon ? `<img src="${ITEMS[outId].icon}" class="icon"/>` : '';
-
-        let html = `<div style="margin-bottom:4px;">${recIcon}<b>${rec.name}</b><br/>`;
         
         const inputStr = Object.entries(rec.inputs).map(([id, qty]) => `${ITEMS[id].name} x${qty}`).join(', ');
-        html += `<i>Inputs:</i> ${inputStr}<br/>`;
-
+        
+        let toolStr = '';
         if (rec.tools) {
-            const toolStr = Object.keys(rec.tools).map(tid => {
+            toolStr = ' (req: ' + Object.keys(rec.tools).map(tid => {
                 const toolName = ITEMS[tid].name;
                 if (rentalTool && rentalTool.id === tid) {
                     const feeText = rentalTool.fee > 0 ? `Rent: ${rentalTool.fee}g` : `Use Village Tool`;
                     return `${toolName} (${feeText})`;
                 }
                 return toolName;
-            }).join(', ');
-            html += `<i>Requires:</i> ${toolStr}<br/>`;
+            }).join(', ') + ')';
         }
 
-        html += `<button data-id="${rec.id}" ${disabledAttr}>${type.charAt(0).toUpperCase() + type.slice(1)}</button></div>`;
-        return html;
+        return `
+            <div class="recipe">
+                <div>
+                    ${recIcon}<strong>${rec.name}</strong> (Lvl ${rec.level} ${rec.skill}${toolStr})<br/>
+                    <em>Requires:</em> ${inputStr}
+                </div>
+                <button data-id="${rec.id}" ${disabledAttr}>${type.charAt(0).toUpperCase() + type.slice(1)}</button>
+            </div>
+        `;
     }
 
     addRecipeListeners(type) {
-        this.uiEl.querySelectorAll(`button[data-id]`).forEach(btn => {
+        this.uiEl.querySelectorAll(`.recipe button[data-id]`).forEach(btn => {
             btn.onclick = () => {
                 if (type === 'craft') this.game.actions.handleCraft(btn.dataset.id);
                 if (type === 'build') this.game.actions.handleBuild(btn.dataset.id);
             };
         });
-        this.addCloseListener();
     }
 
     addTradeListeners(cityKey) {
@@ -327,13 +386,5 @@ export class UIController {
                 if (btn.dataset.action === 'sell') this.game.actions.handleSell(cityKey, btn.dataset.id);
             };
         });
-        this.addCloseListener();
-    }
-
-    addCloseListener() {
-        const closeBtn = this.uiEl.querySelector('#close-btn');
-        if (closeBtn) {
-            closeBtn.onclick = () => this.hide();
-        }
     }
 }

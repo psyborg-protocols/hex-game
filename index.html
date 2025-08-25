@@ -5,11 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Seeded Hex Terrain Game</title>
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
+
       body {
         margin: 0;
         overflow: hidden;
         background: #111;
-        font-family: Arial, sans-serif;
+        font-family: 'Cinzel', serif;
       }
       #info {
         position: absolute;
@@ -21,46 +23,203 @@
         border-radius: 6px;
         font-size: 14px;
         z-index: 2;
+        font-family: Arial, sans-serif;
       }
       code {
         color: #9cf;
       }
       #ui {
-        position: absolute;
-        bottom: 10px;
-        left: 10px;
-        color: #eee;
-        background: rgba(18, 18, 18, 0.95);
-        padding: 10px 14px;
-        border: 2px solid #666;
-        border-radius: 6px;
-        font-size: 14px;
-        z-index: 3;
-        max-width: 360px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 100;
+        pointer-events: none;
         display: none;
-        line-height: 1.4;
-        font-family: monospace;
+        align-items: center;
+        justify-content: center;
       }
+
+      /* --- NEW FANTASY UI --- */
+
+      .modal {
+        background-color: #1e1a14;
+        background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFUlEQVQImWNgQAL/2j34H2kG6QAAyacbJIpLhZoAAAAASUVORK5CYII=');
+        color: #f0e6d2;
+        border: 20px solid;
+        border-image-slice: 40;
+        border-image-width: 20px;
+        border-image-outset: 0;
+        border-image-repeat: stretch;
+        border-image-source: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsSAAALEgHS3X78AAAEsklEQVR4nO1d25KrKhD1/eG2Ea+gXlG8RX2D+gb1DeoN8g3qDfIN6hE8gBfQjxAPwN5g/qCewJALBrJpwgRIe07KVCYzc/vB52eGSbIMGckCCZqMBE1GAiajgRFo8D+p6/peVFStVqvJ5XJdl4QQ244Q2uPxeLDrujGm13Vd/Xw+3/f7/aIoCpqmIZ/PN2OMcd7v92PM9+e42kQ4Ho/rNE3rNE1TlmVf13VT13Uxxk+MMQ7gOM4xxl9ijEul0uVyuVBV1V3X/bquS6vVWkEQBE3TwnGcPM+f83q9rlarpVwuvwN4nuflOE5RFIVpmtbj8XgY4x+MMXq93j8hpOd5n13XJScn5/f7/aqqmpZlfdd1cTwe/zHGeJ73ruu6r9c3QRCWZVnTNIsgCCGEpmnZbDZ/r9fbbrebaZpSSq/X63a7nclkEgp/v983TdPzPC+VSgUhhGEYlmVZFEXVarX6/X5d13VarVZVVZRSGoYhhBDGGNu2fd/3SikEQXie53Vd90iSJEmS/LOmaaqqynmeXddlWZZ+v9/v9/v5fJ7n+Yyx3W5XVVUulwtCiCzL5JycnJSU5LquarWaPM/vdrvdbrd3u91+v1+WZZRSzvk8z1dKaZqmzWYzTdO0LMsYc3JyslarURSFruvGGK/X63meP5RSWZb1+/3GGOf8OI6bz+c554wxjuO4ruvDw8OTk5MhhFqtVqvV+rquZVlCiCzLlmVZlmWaptfrtSRJURTFGBdFEWNMKaWU4zhFUfT5fJRSpmmyLMvzvFarVSgUCCGEEOLzeZ4QwnmeYwwRQoQQUophGDzPKaV+v59SCkJIaYbhnHN+vx/nfJ7nUkoIIYQQQogxxhhKaZqmUkoIIYQQ4vf7rutSSmOMKaVUlbIsW5bl9/slSRIA7LquZVkeDocIIURRNJfLQQgRQohSCkKYzWbTNE0p9Xq9SqXC87yUUs75ruvxeByGYYwxSRLGGKfVagRBkCRJlmV+vx9jzDjnrusyxlJKlmVZlt1ut9vtdrtdKaUUQohpmgohRBAEoVgsFovFNE0IIYQQQgiCIAzD+L5PKYVhmKZpKaWMMYQQQoiqqlqtFkVRlmWMMU3TNE1RFEXVarXRaBRjzDjnrusyxtu23W63yWRyv9/3PC+EkNvtZggyxlKK4ziO4/l8Pt/v91dX53k+SRLzfV8pZVmWNE273e6maZqm6Xa7nclkYowxxjTNAO73+6ZpqqrK87zZbJZSChHGGGMMYwxjDFmWBUEghBDGGDzPSymllCiKzvlFUVRV1e12U0rh9/vxeJzzPM9+v08p55xSSvN9n3Pe7/c555RSvu/zPG9d1wRBMMbYNE2O46RSqWAch2VZNE3L5/MURUHTNFmWBUEIIbIsK4pCCCEhxhiMMUIIbdsIIZRSgiCQJAnDMAzDPB6Pc34YhrIsY4w5HA5FUZRSKaUUQohhGHieRynzfd/3fRRFYRjGNE2r1SqllCRJlFKMMbIsS5IkY8x+vy+llCRJlmWMMfl8XimllCzLAADGGKUUQohz/gHAOI6UUniehxDCGHiehxACgOM4juPBYBCllCRJvu8bY2zbpmkaY4wxjuPBYBAhyxhjeZ6n6zpCiCzLjuPwPC8IAqZp8jyvVCpFUbTZbGaMAbBarVKpVCgUEkJkWRZF0WAwCCGEEHiehxACAHmePzw8zDjnOI7P53OMMWNMv9/3PC+EEEIIIYQQQogxxvM8z/P8dDqVUsoY0zSNaZrZbJbneSiEkCRJkiRZliGEyLKsXC4XQRBSSrZtG4YhhBDGmCRJNE1RFEXTNMvlcjabzefz+Xw+l8ulVCplWRZCiCRJNE1zOp36/f4syziOwxhzaGgETUYCv4B37A5P1i+P/wAAAABJRU5ErkJggg==");
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+        width: 90%;
+        max-width: 650px;
+        pointer-events: all;
+        font-size: 16px;
+        line-height: 1.6;
+        padding: 20px 30px;
+      }
+
+      .modal-header {
+        text-align: center;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #5a442a;
+        padding-bottom: 15px;
+        position: relative;
+      }
+      .modal-header::after {
+        content: '';
+        position: absolute;
+        bottom: -9px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 30px;
+        height: 15px;
+        background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjUwIiB2aWV3Qm94PSIwIDAgMTAwIDUwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0wIDI1IEMxMCAtNSw0MCAtNSw1MCAyNSBTOTAgLTUsMTAwIDI1IFYgNTBIOTVWMjVDODUgNSw2MCA1LDUwIDI1UzE1IDUsNSAyNVY1MEgwWiIgZmlsbD0iIzVhNDQyYSIvPjwvc3ZnPg==');
+        background-size: contain;
+        background-repeat: no-repeat;
+      }
+
+      .modal-title {
+        font-size: 2.2em;
+        font-weight: 700;
+        color: #f0e6d2;
+        text-shadow: 1px 1px 3px #000;
+      }
+      .modal-title .icon {
+        width: 32px;
+        height: 32px;
+        margin-right: 10px;
+        filter: drop-shadow(1px 1px 2px #000);
+      }
+
+      .modal-close {
+        position: absolute;
+        top: -15px;
+        right: -20px;
+        width: 40px;
+        height: 40px;
+        background: #ab2c2c;
+        color: #f0e6d2;
+        border: 3px solid #5a2e1c;
+        border-radius: 50%;
+        font-size: 24px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 10px #000;
+        transition: transform 0.2s;
+      }
+      .modal-close:hover {
+        transform: scale(1.1);
+      }
+
+      .modal-content {
+        height: 60vh;
+        max-height: 450px;
+        overflow-y: auto;
+        padding-right: 10px;
+      }
+      /* Custom Scrollbar */
+      .modal-content::-webkit-scrollbar { width: 10px; }
+      .modal-content::-webkit-scrollbar-track { background: #3a2e1e; border-radius: 5px; }
+      .modal-content::-webkit-scrollbar-thumb { background: #8a6a42; border-radius: 5px; border: 1px solid #3a2e1e; }
+      .modal-content::-webkit-scrollbar-thumb:hover { background: #a88a62; }
+
+      .tabs {
+        display: flex;
+        margin-bottom: 20px;
+        border-bottom: none;
+      }
+
+      .tab {
+        padding: 8px 18px;
+        cursor: pointer;
+        background-color: #5a442a;
+        color: #c8b89d;
+        border: 2px solid #3a2e1e;
+        border-bottom: 2px solid #3a2e1e;
+        margin-right: 5px;
+        transition: all 0.2s;
+        clip-path: polygon(10% 0, 90% 0, 100% 100%, 0% 100%);
+        font-weight: bold;
+      }
+      .tab.active {
+        background-color: #f0e6d2;
+        color: #3a2e1e;
+        transform: translateY(-2px);
+        border-bottom: 2px solid #f0e6d2;
+      }
+
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+
+      #inventory-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        gap: 15px;
+      }
+
+      .inventory-slot {
+        background: rgba(0,0,0,0.2);
+        border: 2px solid #5a442a;
+        aspect-ratio: 1 / 1.2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 5px;
+      }
+      .inventory-slot img {
+        width: 48px;
+        height: 48px;
+        object-fit: contain;
+        filter: drop-shadow(1px 1px 2px #000);
+      }
+      .inventory-slot .item-name {
+        font-size: 12px;
+        margin-top: 5px;
+        text-align: center;
+      }
+      
+      .recipe {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: rgba(0,0,0,0.1);
+        border-left: 3px solid #8a6a42;
+      }
+      .recipe button, .world-popup button {
+        background: #7a5a32;
+        color: #f0e6d2;
+        border: 2px solid;
+        border-color: #a88a62 #5a442a #5a442a #a88a62;
+        padding: 2px 6px;
+        font-size: 13px;
+        margin-left: 5px;
+        font-family: 'Cinzel', serif;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.2s;
+        text-shadow: 1px 1px 1px #000;
+      }
+      .recipe button:hover { background: #8a6a42; }
+      .recipe button:disabled {
+        background: #555;
+        color: #888;
+        cursor: not-allowed;
+        border-color: #777 #333 #333 #777;
+      }
+      
       .icon {
         width: 20px;
         height: 20px;
         vertical-align: middle;
         margin-right: 4px;
       }
-      #ui button {
-        background: #444;
-        color: #eee;
-        border: 1px solid #888;
-        padding: 2px 6px;
-        margin-top: 2px;
-        font-family: monospace;
-        font-size: 13px;
-        cursor: pointer;
-      }
-      #ui button:disabled {
-        opacity: 0.5;
-        cursor: default;
-      }
+      
       #mobile-controls {
         position: absolute;
         bottom: 20px;
@@ -85,12 +244,6 @@
         cursor: pointer;
         user-select: none;
       }
-      @media (max-width: 768px) {
-        #mobile-controls {
-          display: flex;
-        }
-      }
-      /* MODIFIED for world-space UI */
       #worldspace-ui {
           position: absolute;
           top: 0;
@@ -109,7 +262,6 @@
           border: 1px solid #5a5a7a;
           font-family: 'Arial', sans-serif;
           font-size: 14px;
-          /* MODIFIED: transform for better positioning */
           transform: translate(-50%, -100%); 
           white-space: nowrap;
           pointer-events: all;
@@ -120,14 +272,13 @@
       .world-popup.visible {
           opacity: 1;
       }
-      .world-popup button {
-          background: #4a4a6a;
-          color: #eee;
-          border: 1px solid #888;
-          padding: 4px 8px;
-          margin-left: 5px;
-          font-size: 13px;
-          cursor: pointer;
+      
+      @media (max-width: 768px) {
+        #mobile-controls { display: flex; }
+        .modal { width: 95%; padding: 10px 15px; border-width: 15px;}
+        .modal-content { height: 65vh; }
+        .modal-title { font-size: 1.8em; }
+        .modal-close { top: -10px; right: -10px; width: 30px; height: 30px; font-size: 18px; }
       }
     </style>
     <script type="importmap">
@@ -146,8 +297,7 @@
       <span id="seed-display"></span>
     </div>
     <div id="ui"></div>
-    <div id="worldspace-ui"></div> <!-- Container for popups -->
-    <div id="mobile-controls">
+    <div id="worldspace-ui"></div> <div id="mobile-controls">
       <div id="inventory-btn" class="mobile-btn">Inv</div>
       <div id="craft-btn" class="mobile-btn">Craft</div>
       <div id="skills-btn" class="mobile-btn">Skills</div>
