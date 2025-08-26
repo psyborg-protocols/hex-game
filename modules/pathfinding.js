@@ -22,6 +22,13 @@ export function findPath(world, player, q1, r1) {
   const canTraverse = (fromQ, fromR, toQ, toR) => {
     if (!world.isInside(toQ, toR)) return false;
 
+    // Prevent moving into water unless there's a bridge
+    const isTargetWater = world.blockMap[toR]?.[toQ] === 'water';
+    const structureAtTarget = world.getStructure(toQ, toR);
+    if (isTargetWater && (!structureAtTarget || structureAtTarget.type !== 'bridge')) {
+        return false;
+    }
+
     // First, check for special structures that override normal movement rules
     const structure = world.getStructure(toQ, toR) || world.getStructure(fromQ, fromR);
     if (structure) {
