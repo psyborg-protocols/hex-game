@@ -126,13 +126,13 @@ export class HexWorld {
     this.depth = this.boardRadius * 2 + 1;
 
     this.perlin = new SeededPerlin(this.seed + '-perlin');
-    this.forestPerlin = new SeededPerlin(this.seed + '-forests'); // MODIFIED: For forest clustering
+    this.forestPerlin = new SeededPerlin(this.seed + '-forests');
     this.rng = new Rng(this.seed + '-rng');
 
     this.heightMap = [];
     this.blockMap = [];
-    this.featureMap = []; // MODIFIED: Now stores objects {type, trees}
-    this.propSpawns = []; // list of prop spawn instructions
+    this.featureMap = [];
+    this.propSpawns = [];
     
     this.riverPath = new Array(this.depth).fill(this.boardRadius);
 
@@ -145,8 +145,7 @@ export class HexWorld {
       for (let q = 0; q < this.width; q++) {
         this.heightMap[r][q] = 0;
         this.blockMap[r][q] = 'stone';
-        // MODIFIED: Initialize feature map with objects
-        this.featureMap[r][q] = { type: 'none', trees: 0 };
+        this.featureMap[r][q] = { type: 'none', trees: 0, grass: 0 };
       }
     }
   }
@@ -223,7 +222,6 @@ export class HexWorld {
     });
   }
   carveRiver() {
-    // MODIFIED: More natural river path and variable width
     const phase1 = this.rng.range(0, Math.PI * 2);
     const freq1 = this.rng.range(0.08, 0.15);
     const amp1 = this.rng.range(this.boardRadius * 0.3, this.boardRadius * 0.5);
@@ -245,10 +243,9 @@ export class HexWorld {
         let baseWidth = 2;
         let widthTiles = Math.floor(baseWidth + widthNoise * 3);
 
-        // Create a wider "lake" area
         if (r >= lakeR && r < lakeR + lakeLength) {
             const t = (r - lakeR) / lakeLength;
-            const lakeWidth = Math.sin(t * Math.PI) * 7; // Swells in the middle
+            const lakeWidth = Math.sin(t * Math.PI) * 7;
             widthTiles += Math.floor(lakeWidth);
         }
         
@@ -308,18 +305,15 @@ export class HexWorld {
     }
   }
   assignFeatures() {
-      // --- REVISED: Feature assignment logic for more distinct biomes ---
-
       const forestNoiseScale = this.noiseScale * 15;
 
-      // 1. Place dense, clustered forests on the wilderness side.
-      const wildernessThreshold = 0.35; // Lower threshold = more forest
+      const wildernessThreshold = 0.35;
       for (let r = 0; r < this.depth; r++) {
           for (let q = 0; q < this.width; q++) {
               if (!this.isInside(q, r) || this.blockMap[r][q] === 'water') continue;
 
               const riverQ = this.riverPath[r];
-              if (q > riverQ) { // Wilderness side
+              if (q > riverQ) {
                   const h = this.heightMap[r][q];
                   const nx = (q - this.boardRadius) / this.boardRadius;
                   const ny = (r - this.boardRadius) / this.boardRadius;
@@ -327,22 +321,21 @@ export class HexWorld {
 
                   if (noiseVal > wildernessThreshold && h >= 1 && h < this.maxHeight * 0.85) {
                       const treeCount = this.rng.irange(2, 5);
-                      this.featureMap[r][q] = { type: 'dark_forest', trees: treeCount };
+                      this.featureMap[r][q] = { type: 'dark_forest', trees: treeCount, grass: 0 };
                   }
               }
           }
       }
 
-      // 2. Place small patches and sparse trees on the village side.
-      const patchThreshold = 0.8; // High threshold for rare patches
-      const sparseTreeChance = 0.08; // Chance for individual trees
+      const patchThreshold = 0.8;
+      const sparseTreeChance = 0.08;
 
       for (let r = 0; r < this.depth; r++) {
           for (let q = 0; q < this.width; q++) {
               if (!this.isInside(q, r) || this.blockMap[r][q] === 'water' || this.featureMap[r][q].type !== 'none') continue;
               
               const riverQ = this.riverPath[r];
-              if (q < riverQ) { // Village side
+              if (q < riverQ) {
                   const h = this.heightMap[r][q];
                   if (h < 2 || h > Math.floor(this.maxHeight * 0.6)) continue;
 
@@ -350,20 +343,17 @@ export class HexWorld {
                   const ny = (r - this.boardRadius) / this.boardRadius;
                   const noiseVal = (this.forestPerlin.noise(nx * forestNoiseScale, ny * forestNoiseScale) + 1) / 2;
 
-                  // Check for a small patch seed
                   if (noiseVal > patchThreshold) {
                       const patchSize = this.rng.irange(4, 8);
                       this.growPatch(q, r, patchSize);
                   } 
-                  // Else, check for a sparse individual tree
                   else if (this.rng.next() < sparseTreeChance) {
-                      this.featureMap[r][q] = { type: 'forest', trees: 1 };
+                      this.featureMap[r][q] = { type: 'forest', trees: 1, grass: 0 };
                   }
               }
           }
       }
 
-      // 3. Place villages in suitable, non-forest locations on the village side.
       const isFlatNeighborhood = (q, r, tol = 1) => {
           const h0 = this.heightMap[r][q];
           for (let dr = -1; dr <= 1; dr++) {
@@ -407,17 +397,28 @@ export class HexWorld {
 
           if (!tooClose) {
               villageLocations.push(candidate);
-              this.featureMap[candidate.r][candidate.q] = { type: 'city', trees: 0 };
+              this.featureMap[candidate.r][candidate.q] = { type: 'city', trees: 0, grass: 0 };
           }
           attempts++;
       }
       
-      // 4. Generate prop spawn data from the final feature map.
+      const grassChance = 0.20;
+      for (let r = 0; r < this.depth; r++) {
+          for (let q = 0; q < this.width; q++) {
+              if (this.isInside(q, r) && this.blockMap[r][q] !== 'water' && this.featureMap[r][q].type !== 'city') {
+                  if (this.rng.next() < grassChance) {
+                      const grassCount = this.rng.irange(1, 4);
+                      this.featureMap[r][q].grass = grassCount;
+                  }
+              }
+          }
+      }
+
       this.propSpawns.length = 0;
       for (let r = 0; r < this.depth; r++) {
           for (let q = 0; q < this.width; q++) {
               const feat = this.featureMap[r][q];
-              if (feat.type === 'none') continue;
+              if (feat.type === 'none' && feat.grass === 0) continue;
               
               const h = this.heightMap[r][q];
               const { x, z } = axialToWorld(q - this.boardRadius, r - this.boardRadius, this.radius);
@@ -438,11 +439,22 @@ export class HexWorld {
                       y: (h + 1) * this.hScale, scale: this.rng.range(0.9, 1.1), rotY: this.rng.range(0, Math.PI * 2),
                   });
               }
+
+              if (feat.grass > 0) {
+                  const count = feat.grass;
+                  for (let i = 0; i < count; i++) {
+                      const jx = this.rng.range(-0.4, 0.4);
+                      const jz = this.rng.range(-0.4, 0.4);
+                      this.propSpawns.push({
+                          type: 'tall_grass', q, r, x: x + jx, z: z + jz, y: (h + 1) * this.hScale,
+                          scale: this.rng.range(0.7, 1.1), rotY: this.rng.range(0, Math.PI * 2),
+                      });
+                  }
+              }
           }
       }
   }
 
-  // Helper function to grow a small patch of trees
   growPatch(q, r, maxSize) {
       const queue = [{q, r}];
       const visited = new Set([`${q},${r}`]);
@@ -451,13 +463,11 @@ export class HexWorld {
       while (queue.length > 0 && patchCount < maxSize) {
           const current = queue.shift();
           
-          // Check if this tile is valid for a patch
           const riverQ = this.riverPath[current.r];
           if (current.q < riverQ && this.featureMap[current.r][current.q].type === 'none') {
-              this.featureMap[current.r][current.q] = { type: 'forest', trees: 1 };
+              this.featureMap[current.r][current.q] = { type: 'forest', trees: 1, grass: 0 };
               patchCount++;
 
-              // Add valid neighbors to the queue
               const dirs = [ {dq:1,dr:0},{dq:-1,dr:0},{dq:0,dr:1},{dq:0,dr:-1},{dq:1,dr:-1},{dq:-1,dr:1} ];
               for (const dir of dirs) {
                   const nq = current.q + dir.dq;
@@ -488,7 +498,6 @@ export class HexWorld {
 
     const DIRS = [ {dq:1,dr:0},{dq:-1,dr:0},{dq:0,dr:1},{dq:0,dr:-1},{dq:1,dr:-1},{dq:-1,dr:1} ];
 
-    // --- OPTIMIZATION: Pre-calculate the exact number of visible faces ---
     for (let r = 0; r < this.depth; r++) {
         for (let q = 0; q < this.width; q++) {
             if (!this.isInside(q, r)) continue;
@@ -499,10 +508,8 @@ export class HexWorld {
             if (type === 'water') {
                 instanceCounts['water'] = (instanceCounts['water'] || 0) + 1;
             } else {
-                // Always count the top grass cap
                 instanceCounts['grass'] = (instanceCounts['grass'] || 0) + 1;
 
-                // Count visible side faces by checking neighbors
                 for (const dir of DIRS) {
                     const nq = q + dir.dq;
                     const nr = r + dir.dr;
@@ -538,7 +545,6 @@ export class HexWorld {
         instancedMeshes[key] = { mesh, index: 0 };
     }
 
-    // --- OPTIMIZATION: Place instances only for visible faces ---
     for (let r = 0; r < this.depth; r++) {
         for (let q = 0; q < this.width; q++) {
             if (!this.isInside(q, r)) continue;
@@ -555,7 +561,6 @@ export class HexWorld {
                     imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
                 }
             } else {
-                // Place the top grass cap
                 const topMesh = instancedMeshes['grass'];
                 if (topMesh) {
                     dummy.position.set(x, (h + 1) * this.hScale + 0.001, z);
@@ -563,7 +568,6 @@ export class HexWorld {
                     topMesh.mesh.setMatrixAt(topMesh.index++, dummy.matrix);
                 }
 
-                // Place visible side faces
                 const sideMesh = instancedMeshes[type];
                 if (sideMesh) {
                     for (const dir of DIRS) {
@@ -580,7 +584,6 @@ export class HexWorld {
                         const effectiveNh = neighborIsWater ? -1 : nh;
 
                         if (h > effectiveNh) {
-                            // Stack instances for the height difference
                             for (let y = effectiveNh + 1; y <= h; y++) {
                                 dummy.position.set(x, y * this.hScale, z);
                                 dummy.updateMatrix();
@@ -591,7 +594,6 @@ export class HexWorld {
                 }
             }
             
-            // Build the pickable mesh (for mouse interaction)
             const topLayer = type === 'water' ? 0 : h;
             const pickRadius = this.radius;
             const pickGeo = new THREE.CylinderGeometry(pickRadius, pickRadius, 0.05, 6);
@@ -678,6 +680,8 @@ export class HexWorld {
               tpl = models.dark_forest;
           } else if (spawn.type === 'city') {
               tpl = models.city;
+          } else if (spawn.type === 'tall_grass') {
+              tpl = models.tall_grass;
           }
 
           if (!tpl) continue;
@@ -686,7 +690,6 @@ export class HexWorld {
           inst.position.set(spawn.x, spawn.y, spawn.z);
           inst.rotation.y = spawn.rotY;
           inst.scale.setScalar(spawn.scale);
-          // MODIFIED: Correctly assign userData type from spawn data
           inst.userData = { type: spawn.type, q: spawn.q, r: spawn.r };
 
           group.add(inst);
@@ -694,16 +697,13 @@ export class HexWorld {
       return group;
   }
   
-  // ADDED: New function to find a safe starting spot for the player
   findPlayerSpawn() {
       const centerR = this.boardRadius;
       const searchRadius = Math.floor(this.boardRadius * 0.5);
 
-      // Search for an ideal spot near the center, on the village side
       for (let r = centerR - searchRadius; r < centerR + searchRadius; r++) {
           if(r < 0 || r >= this.depth) continue;
           const riverQ = this.riverPath[r];
-          // Search from the river outwards into the village side
           for (let q = riverQ - 1; q > riverQ - 25; q--) {
                if (this.isInside(q, r) &&
                    this.blockMap[r][q] !== 'water' &&
@@ -715,7 +715,6 @@ export class HexWorld {
           }
       }
 
-      // Fallback if no ideal spot is found (should be rare)
       console.warn("Could not find ideal player spawn, using fallback.");
       return { q: this.boardRadius - 5, r: this.boardRadius };
   }

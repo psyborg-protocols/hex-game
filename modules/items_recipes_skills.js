@@ -3,6 +3,8 @@
 
 export const ITEMS = {
   berries: { id: 'berries', name: 'Berries', stack: 20, icon: 'icons/berries.png', food: 1 },
+  seeds: { id: 'seeds', name: 'Seeds', stack: 50, icon: 'icons/seeds.png', food: 1 },
+  rabbit: { id: 'rabbit', name: 'Rabbit', stack: 10, icon: 'icons/rabbit.png', food: 0 },
   wood:  { id: 'wood',  name: 'Wood',  stack: 99, icon: 'icons/wood.png' },
   stone: { id: 'stone', name: 'Stone', stack: 99, icon: 'icons/stone.png' },
   ore:   { id: 'ore',   name: 'Ore',   stack: 99, icon: 'icons/ore.png' },
@@ -40,11 +42,12 @@ export const ITEMS = {
 
 export const ITEM_BASE_PRICES = {
   berries: 1,
+  seeds: 0.5,
+  rabbit: 2,
   wood: 1, stone: 1, ore: 3, plank: 3, brick: 4, ingot: 5, pickaxe: 25,
   branch: 0.5, axe: 18, rough_log: 1, log: 2, beam: 3, chest: 8, chair: 5,
   table: 6, cabin: 20, saw: 15, stone_wall: 8, wood_fence: 6, ladder: 8,
   bridge: 12, knife: 8, hammer: 20, basket: 4, fishing_rod: 10, bow: 15,
-  sharpening_stone: 18,
   chisel: 12, stone_block: 3, oven: 15, whetstone: 30, forge: 50, tongs: 22, sword: 45,
 };
 

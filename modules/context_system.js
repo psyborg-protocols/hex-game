@@ -18,8 +18,9 @@ export class ContextSystem {
     const r = this.game.player.r;
     const currentHeight = this.game.world.getHeight(q, r);
     const dirs = [ {dq:1,dr:0},{dq:-1,dr:0},{dq:0,dr:1},{dq:0,dr:-1},{dq:1,dr:-1},{dq:-1,dr:1} ];
+    const feat = (this.game.world.featureMap[r] && this.game.world.featureMap[r][q]) || { type: 'none', trees: 0, grass: 0 };
 
-    // MODIFIED: Check for mining/quarrying opportunities
+    // Check for mining/quarrying opportunities
     const hasPickaxe = this.game.actions.hasItem('pickaxe');
     const hasHammer = this.game.actions.hasItem('hammer');
 
@@ -29,15 +30,21 @@ export class ContextSystem {
         const nr = r + dr;
         const h = this.game.world.getHeight(nq, nr);
         if (h !== -Infinity && h - currentHeight >= 3) {
-          // Player can mine if they have a pickaxe, otherwise they can only quarry with a hammer.
           const tool = hasPickaxe ? 'pickaxe' : 'hammer';
           contexts.push({ mode: 'mine', params: { q: nq, r: nr, tool: tool } });
         }
       }
     }
 
-    // Check for harvesting opportunities (all trees on the current tile)
-    const feat = (this.game.world.featureMap[r] && this.game.world.featureMap[r][q]) || { type: 'none', trees: 0 };
+    // Check for foraging
+    if (feat.grass > 0) {
+        const grassProp = this.game.propsGroup.children.find(ch => ch.userData?.type === 'tall_grass' && ch.userData.q === q && ch.userData.r === r);
+        if (grassProp) {
+            contexts.push({ mode: 'forage', params: { q, r, grassMesh: grassProp } });
+        }
+    }
+
+    // Check for harvesting opportunities
     if ((feat.type === 'forest' || feat.type === 'dark_forest') && feat.trees > 0 && this.game.propsGroup) {
       this.game.propsGroup.children.forEach(ch => {
         if ((ch.userData?.type === 'forest' || ch.userData?.type === 'dark_forest') && ch.userData.q === q && ch.userData.r === r) {
@@ -46,7 +53,7 @@ export class ContextSystem {
       });
     }
 
-    // Check for trading opportunities (standing near or in a city)
+    // Check for trading opportunities
     const checkedCities = new Set();
     for (const {dq, dr} of [{dq:0, dr:0}, ...dirs]) {
       const nq = q + dq;

@@ -273,7 +273,6 @@ export class Actions {
             }
         }
 
-        // If no food was found and consumed
         if (this.game.state.energy > 1) {
             this.game.state.energy--;
             this.game.ui.showNotification('You are hungry and lose some energy.');
@@ -293,5 +292,35 @@ export class Actions {
             }
         });
         this.game.state.energy = Math.min(this.game.state.maxEnergy, totalFoodValue);
+    }
+
+    startForaging(q, r) {
+        this.game.ui.hideAllWorldspaceUIs();
+        this.game.ui.showProgress('Foraging', 1500, () => this.finishForaging(q, r));
+    }
+
+    finishForaging(q, r) {
+        const rand = Math.random();
+        if (rand < 0.75) { // 75% chance of nothing
+            this.game.ui.showNotification('You found nothing of interest.');
+        } else if (rand < 0.9) { // 15% chance of berries
+            this.addItem('berries', 1);
+            this.game.ui.showNotification(`You found some ${ITEMS['berries'].name}!`);
+        } else if (rand < 0.95) { // 5% chance of seeds
+            this.addItem('seeds', 1);
+            this.game.ui.showNotification(`You found some ${ITEMS['seeds'].name}!`);
+        } else { // 5% chance of a rabbit
+            this.addItem('rabbit', 1);
+            this.game.ui.showNotification(`You startled a ${ITEMS['rabbit'].name} and caught it!`);
+        }
+
+        const feat = this.game.world.featureMap[r]?.[q];
+        if (feat && feat.grass > 0) {
+            feat.grass--;
+            const grassProp = this.game.propsGroup.children.find(ch => ch.userData?.type === 'tall_grass' && ch.userData.q === q && ch.userData.r === r);
+            if (grassProp) {
+                grassProp.parent.remove(grassProp);
+            }
+        }
     }
 }

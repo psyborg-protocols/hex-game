@@ -15,7 +15,7 @@ const BLOCK_TEXTURES = {
     dirt: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAA4UlEQVR4nG1SMQrDMAxURcdksIeYQihky5y5b+pTO3cLlECJh2hwyNKlwxVV2NYkn6XTnezT/XbtB0dFdK59Pt8+NBnO/eC2dccBSedaIoqSsmrgvMyiFyWfrY6SOtdyqSdKKhsARklc5VtmqQ4hovMyC2wcx0f9lGOV4ow7HxpvbECxrQaXDw2jdVt33RURPR6vrFq5WFvH8YKKbd3trjN5rK2qAUe74s61cExErFk1MCdKUjpGZg3YqHwNTPChsbvXvHwQjpKA9oNTedN0rTr+mVZUhVZ/x7/BRqbB7gfxBdbGem2n0UtmAAAAAElFTSuQmCC',
     stone: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAA60lEQVR4nH1SIQ7DMBC7RiMFAZFutFJBQWkf0a8MDOynpQEBkUpbKSAgdMCTVyXTDjmJz+ez0j1eTxERkejDsiypZB7HeZKmTPQBaJwnsnGsqPlIImKqB9dbPhOj7N2JiKl4HHKeJzCESfg07PvuepuPdHVI4egDhQxvU8n27sCDXvQBQFXrCdVm0FNVChPcoEQb2IxjXW8xmZe3yjEzgOQ16K+lNvKW922gH7hvcd0wzhMCpVFgRvTD0nUt19thGPCRUskYRRfSxppK3rZNVUGF0DhP0Qe0deu6wlUqmeH8KUNhuYTz0z0mvAG9zpGjSheQXwAAAABJRU5ErkJggg==',
     marble: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAA20lEQVR4nH1SOxaDIBAceXai1soFvP9J0iTPIo3F2qRRwT7FmA0BXrZQFmeZj1SP+w1/6/C+a1ttTY4YnVMogBhdHtj3nYsEyqpj6lzMMAwAzhB+GGJqPXV0rmvbM4QYfQ0QRHM00Fi7iuScAKpleZ4hNNYqddHr1wNBfF75iIzOrSLFAUMBbFYRxXE4V2UA9H2f7K4i8zzH9njE4X2lf7qxNgmkuG+KUcSlaIo00zTpB70UdKUtPkEDMHxRnzrmqWwp4QyBi1pd5sFrehebyOF9tW2vPPLkSsf1BvCUjjq0MPN9AAAAAElFTSuQmCC',
-    ore: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAA90lEQVR4nHVSMWrDQBAcH8EBwS0n0Bv8iFSpDan8Ej8jVb7kP6RLebVAxx4IrCrF2OvNJtlCSOzM7Oysdse3EwDVLpLxs/b75227+ieAxB7Rql21G4GIbbuWMpID4MnafkgpI4DWFr63tqh2EQBIJunRrS0ElTKu6+q7aZqmYJ3CBLW2zPPMgTcCjXJF37Ai7UEgFMAwDNb4eP3yy/jaMdZQFuLvSuGbkv+h/yB4u7hfhp7jDmwHvkhmjLZM8nZFshdjvb98+jxSsOs/qXq+HGqtuEf3sGTaNr3WymPzzOfLQbUnuJ/McOSI5HA1kRxTgjstMwiTvwFhM42vBmjMyQAAAABJRU5ErkJggg==',
+    ore: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAA90lEQVR4nHVSMWrDQBAcH8EBwS0n0Bv8iFSpDan8Ej8jVb7kP6RLebVAxx4IrCrF2OvNJtlCSOzM7Oysdse3EwDVLpLxs/b75227+ieAxB7Rql21G4GIbbuWMpID4MnafkgpI4DWFr63tqh2EQBIJunRrS0ElTKu6+q7aZqmYJ3CBLW2zPPMgTcCjXJF3T/Ai7UEgFMAwDNb4eP3yy/jaMdZQFuLvSuGbkv+h/yB4u7hfhp7jDmwHvkhmjLZM8nZFshdjvb98+jxSsOs/qXq+HGqtuEf3sGTaNr3WymPzzOfLQbUnuJ/McOSI5HA1kRxTgjstMwiTvwFhM42vBmjMyQAAAABJRU5ErkJggg==',
     water: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAzUlEQVR4nH1SQQrEIAxMdUGseBDsa/rgvqiv8JBDKNJDYQ+zZK1bd05JcJKZmGnd9sqScz6uk4gqi0+RxjBElHOe5xn5n9eV5UNAby0RUbDul4BeBkkRRmmJCS0QKLSF6fqBiaDlqIqbpJGYFqbLWzKmYc4S09f0I1QPaEXYp1hZjCrpXKqZB0m6TY1VQItgnU9xWrd9aHA0YYTK0i5taFrN+BSxtGAdbmyJ6UZAj85usO64TtxFEX6hhOMrT8LanyH96SJchFVxt7d2428xx3BZ0Y//OwAAAABJRU5ErkJggg=='
 };
 
@@ -323,7 +323,6 @@ class Game {
         if (path.length === 0) return;
         if (path.length > this.state.energy) {
             this.ui.showNotification("Not enough energy to move that far.");
-            // Optionally, slice the path to the max distance
             path = path.slice(0, this.state.energy);
         }
         
@@ -412,6 +411,7 @@ class Game {
             if (ctx.mode === 'mine') return `mine-${ctx.params.q},${ctx.params.r}`;
             if (ctx.mode === 'harvest') return `harvest-${ctx.params.treeMesh.uuid}`;
             if (ctx.mode === 'trade') return `trade-${ctx.params.cityQ},${ctx.params.cityR}`;
+            if (ctx.mode === 'forage') return `forage-${ctx.params.q},${ctx.params.r}`;
             return null;
         };
 
@@ -461,6 +461,12 @@ class Game {
                         }
                         break;
                     }
+                    case 'forage': {
+                        targetObject = ctx.params.grassMesh;
+                        title = 'Forage';
+                        actions = [{ label: 'Search Grass', callback: () => this.actions.startForaging(ctx.params.q, ctx.params.r) }];
+                        break;
+                    }
                 }
 
                 if (targetObject && title) {
@@ -474,7 +480,6 @@ class Game {
         if (this.state.cities[cityKey]) return;
 
         const allIds = Object.keys(ITEM_BASE_PRICES);
-        // TODO: centralize untradeable item list in items_recipes_skills.js
         const untradeable = ['cabin', 'stone_wall', 'wood_fence', 'ladder', 'bridge', 'oven', 'forge', 'whetstone'];
         const tradeable = allIds.filter((id) => !untradeable.includes(id));
         const count = 5 + Math.floor(Math.random() * 3);
@@ -841,7 +846,25 @@ class Game {
                 buildingFallback.add(hut);
             });
         }
-        return { forest: treeFallback, city: buildingFallback, dark_forest: darkTreeFallback };
+        
+        const tallGrassFallback = new THREE.Group();
+        {
+            const mat = new THREE.MeshLambertMaterial({ color: 0x559022, side: THREE.DoubleSide });
+            const geo = new THREE.PlaneGeometry(0.1, 0.6);
+            for(let i=0; i<3; i++) {
+                const blade = new THREE.Mesh(geo, mat);
+                blade.rotation.y = (i * Math.PI * 2) / 3;
+                blade.position.y = 0.3;
+                tallGrassFallback.add(blade);
+            }
+        }
+
+        return { 
+            forest: treeFallback, 
+            city: buildingFallback, 
+            dark_forest: darkTreeFallback,
+            tall_grass: tallGrassFallback 
+        };
     }
 }
 
