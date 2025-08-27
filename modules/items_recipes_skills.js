@@ -2,6 +2,7 @@
 // Defines items, base prices and crafting recipes for the hex world game.
 
 export const ITEMS = {
+  berries: { id: 'berries', name: 'Berries', stack: 20, icon: 'icons/berries.png', food: 1 },
   wood:  { id: 'wood',  name: 'Wood',  stack: 99, icon: 'icons/wood.png' },
   stone: { id: 'stone', name: 'Stone', stack: 99, icon: 'icons/stone.png' },
   ore:   { id: 'ore',   name: 'Ore',   stack: 99, icon: 'icons/ore.png' },
@@ -28,7 +29,6 @@ export const ITEMS = {
   basket: { id: 'basket', name: 'Basket', stack: 5, icon: 'icons/basket.png' },
   fishing_rod: { id: 'fishing_rod', name: 'Fishing Rod', stack: 1, icon: 'icons/fishing_rod.png' },
   bow: { id: 'bow', name: 'Bow', stack: 1, icon: 'icons/bow.png' },
-  sharpening_stone: { id: 'sharpening_stone', name: 'Sharpening Stone', stack: 10, icon: 'icons/sharpening_stone.png' },
   chisel: { id: 'chisel', name: 'Chisel', stack: 1, icon: 'icons/chisel.png' },
   stone_block: { id: 'stone_block', name: 'Stone Block', stack: 99, icon: 'icons/stone_block.png' },
   oven: { id: 'oven', name: 'Oven', stack: 1, icon: 'icons/oven.png' },
@@ -39,6 +39,7 @@ export const ITEMS = {
 };
 
 export const ITEM_BASE_PRICES = {
+  berries: 1,
   wood: 1, stone: 1, ore: 3, plank: 3, brick: 4, ingot: 5, pickaxe: 25,
   branch: 0.5, axe: 18, rough_log: 1, log: 2, beam: 3, chest: 8, chair: 5,
   table: 6, cabin: 20, saw: 15, stone_wall: 8, wood_fence: 6, ladder: 8,

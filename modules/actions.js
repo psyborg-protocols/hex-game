@@ -28,6 +28,9 @@ export class Actions {
                 remaining -= add;
             }
         }
+        if (item.food) {
+            this.updateEnergyFromFood();
+        }
     }
 
     removeItem(id, qty = 1) {
@@ -40,6 +43,10 @@ export class Actions {
                 remaining -= take;
                 if (slot.qty <= 0) this.game.state.inventory[i] = null;
             }
+        }
+        const item = ITEMS[id];
+        if (item.food) {
+            this.updateEnergyFromFood();
         }
         return remaining === 0;
     }
@@ -71,6 +78,7 @@ export class Actions {
         const skill = this.game.state.skills[rec.skill];
         const hasSkill = skill && skill.level >= rec.level;
         const hasMats = Object.entries(rec.inputs).every(([id, qty]) => this.hasItem(id, qty));
+        const hasEnergy = this.game.state.energy >= rec.level;
         
         let hasTools = true;
         let rentalTool = null;
@@ -97,7 +105,7 @@ export class Actions {
         }
         
         return {
-            canCraft: hasSkill && hasMats && hasTools,
+            canCraft: hasSkill && hasMats && hasTools && hasEnergy,
             rentalTool: rentalTool
         };
     }
@@ -107,7 +115,12 @@ export class Actions {
         const { canCraft, rentalTool } = this.canCraft(recId, playerCity);
 
         if (!canCraft) {
-            this.game.ui.showNotification("You can't craft this yet.");
+            const rec = RECIPES[recId];
+            if (this.game.state.energy < rec.level) {
+                 this.game.ui.showNotification("Not enough energy to craft this.");
+            } else {
+                 this.game.ui.showNotification("You can't craft this yet.");
+            }
             return;
         }
 
@@ -245,5 +258,40 @@ export class Actions {
             this.addXP('stoneworking', 1);
             this.game.ui.showNotification('You quarried 1 Stone.');
         }
+    }
+
+    consumeFoodOrLoseEnergy() {
+        for (let i = 0; i < this.game.state.inventory.length; i++) {
+            const slot = this.game.state.inventory[i];
+            if (slot) {
+                const item = ITEMS[slot.id];
+                if (item && item.food) {
+                    this.removeItem(slot.id, 1);
+                    this.game.ui.showNotification(`You eat some ${item.name}.`);
+                    return;
+                }
+            }
+        }
+
+        // If no food was found and consumed
+        if (this.game.state.energy > 1) {
+            this.game.state.energy--;
+            this.game.ui.showNotification('You are hungry and lose some energy.');
+        } else {
+            this.game.ui.showNotification('You are exhausted and starving!');
+        }
+    }
+
+    updateEnergyFromFood() {
+        let totalFoodValue = 0;
+        this.game.state.inventory.forEach(slot => {
+            if (slot) {
+                const item = ITEMS[slot.id];
+                if (item && item.food) {
+                    totalFoodValue += item.food * slot.qty;
+                }
+            }
+        });
+        this.game.state.energy = Math.min(this.game.state.maxEnergy, totalFoodValue);
     }
 }
