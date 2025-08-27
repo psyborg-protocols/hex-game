@@ -474,7 +474,7 @@ export class HexWorld {
 
   buildMesh(textures) {
     const group = new THREE.Group();
-    const pickGroup = new THREE.Group();
+    this.pickGroup = new THREE.Group();
 
     const baseGeo = new THREE.CylinderGeometry(this.radius, this.radius, this.hScale, 6);
     baseGeo.translate(0, this.hScale / 2, 0);
@@ -484,87 +484,129 @@ export class HexWorld {
     capGeo.rotateX(-Math.PI / 2);
 
     const materialCache = this.createMaterialCache(textures);
-
     const instanceCounts = {};
-    for (let r = 0; r < this.depth; r++) {
-      for (let q = 0; q < this.width; q++) {
-        if (!this.isInside(q, r)) continue;
-        const h = this.heightMap[r][q];
-        const type = this.blockMap[r][q];
 
-        if (type === 'water') {
-            instanceCounts['water'] = (instanceCounts['water'] || 0) + 1;
-        } else {
-            instanceCounts[type] = (instanceCounts[type] || 0) + (h + 1);
-            instanceCounts['grass'] = (instanceCounts['grass'] || 0) + 1;
+    const DIRS = [ {dq:1,dr:0},{dq:-1,dr:0},{dq:0,dr:1},{dq:0,dr:-1},{dq:1,dr:-1},{dq:-1,dr:1} ];
+
+    // --- OPTIMIZATION: Pre-calculate the exact number of visible faces ---
+    for (let r = 0; r < this.depth; r++) {
+        for (let q = 0; q < this.width; q++) {
+            if (!this.isInside(q, r)) continue;
+
+            const h = this.heightMap[r][q];
+            const type = this.blockMap[r][q];
+
+            if (type === 'water') {
+                instanceCounts['water'] = (instanceCounts['water'] || 0) + 1;
+            } else {
+                // Always count the top grass cap
+                instanceCounts['grass'] = (instanceCounts['grass'] || 0) + 1;
+
+                // Count visible side faces by checking neighbors
+                for (const dir of DIRS) {
+                    const nq = q + dir.dq;
+                    const nr = r + dir.dr;
+                    
+                    let nh = -1;
+                    let neighborIsWater = false;
+                    if (this.isInside(nq, nr)) {
+                        nh = this.getHeight(nq, nr);
+                        neighborIsWater = this.blockMap[nr][nq] === 'water';
+                    }
+
+                    const effectiveNh = neighborIsWater ? -1 : nh;
+                    
+                    if (h > effectiveNh) {
+                        const diff = h - effectiveNh;
+                        instanceCounts[type] = (instanceCounts[type] || 0) + diff;
+                    }
+                }
+            }
         }
-      }
     }
 
     const instancedMeshes = {};
     const dummy = new THREE.Object3D();
     for (const key in instanceCounts) {
-      const count = instanceCounts[key];
-      const mat = materialCache[key] || new THREE.MeshLambertMaterial({ color: this.getColorForType(key) });
-      const geo = key === 'grass' ? capGeo : baseGeo;
-      const mesh = new THREE.InstancedMesh(geo, mat, count);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      group.add(mesh);
-      instancedMeshes[key] = { mesh, index: 0 };
+        const count = instanceCounts[key];
+        if (count === 0) continue;
+        const mat = materialCache[key] || new THREE.MeshLambertMaterial({ color: this.getColorForType(key) });
+        const geo = key === 'grass' ? capGeo : baseGeo;
+        const mesh = new THREE.InstancedMesh(geo, mat, count);
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        group.add(mesh);
+        instancedMeshes[key] = { mesh, index: 0 };
     }
 
+    // --- OPTIMIZATION: Place instances only for visible faces ---
     for (let r = 0; r < this.depth; r++) {
-      for (let q = 0; q < this.width; q++) {
-        if (!this.isInside(q, r)) continue;
-        
-        const h = this.heightMap[r][q];
-        const type = this.blockMap[r][q];
-        const { x, z } = axialToWorld(q - this.boardRadius, r - this.boardRadius, this.radius);
+        for (let q = 0; q < this.width; q++) {
+            if (!this.isInside(q, r)) continue;
 
-        if (type === 'water') {
-            const imesh = instancedMeshes['water'];
-            if (imesh) {
-                dummy.position.set(x, 0, z);
-                dummy.updateMatrix();
-                imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
-            }
-        } else {
-            const sideMesh = instancedMeshes[type];
-            if (sideMesh) {
-                for (let y = 0; y <= h; y++) {
-                    dummy.position.set(x, y * this.hScale, z);
+            const h = this.heightMap[r][q];
+            const type = this.blockMap[r][q];
+            const { x, z } = axialToWorld(q - this.boardRadius, r - this.boardRadius, this.radius);
+
+            if (type === 'water') {
+                const imesh = instancedMeshes['water'];
+                if (imesh) {
+                    dummy.position.set(x, 0, z);
                     dummy.updateMatrix();
-                    sideMesh.mesh.setMatrixAt(sideMesh.index++, dummy.matrix);
+                    imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
+                }
+            } else {
+                // Place the top grass cap
+                const topMesh = instancedMeshes['grass'];
+                if (topMesh) {
+                    dummy.position.set(x, (h + 1) * this.hScale + 0.001, z);
+                    dummy.updateMatrix();
+                    topMesh.mesh.setMatrixAt(topMesh.index++, dummy.matrix);
+                }
+
+                // Place visible side faces
+                const sideMesh = instancedMeshes[type];
+                if (sideMesh) {
+                    for (const dir of DIRS) {
+                        const nq = q + dir.dq;
+                        const nr = r + dir.dr;
+                        
+                        let nh = -1;
+                        let neighborIsWater = false;
+                        if (this.isInside(nq, nr)) {
+                            nh = this.getHeight(nq, nr);
+                            neighborIsWater = this.blockMap[nr][nq] === 'water';
+                        }
+                        
+                        const effectiveNh = neighborIsWater ? -1 : nh;
+
+                        if (h > effectiveNh) {
+                            // Stack instances for the height difference
+                            for (let y = effectiveNh + 1; y <= h; y++) {
+                                dummy.position.set(x, y * this.hScale, z);
+                                dummy.updateMatrix();
+                                sideMesh.mesh.setMatrixAt(sideMesh.index++, dummy.matrix);
+                            }
+                        }
+                    }
                 }
             }
-
-            const topMesh = instancedMeshes['grass'];
-            if (topMesh) {
-                 const stickerScale = STICKER_SCALE;
-                 dummy.position.set(x, (h + 1) * this.hScale + 0.001, z);
-                 dummy.scale.set(stickerScale, stickerScale, stickerScale);
-                 dummy.updateMatrix();
-                 topMesh.mesh.setMatrixAt(topMesh.index++, dummy.matrix);
-                 dummy.scale.set(1, 1, 1);
-            }
+            
+            // Build the pickable mesh (for mouse interaction)
+            const topLayer = type === 'water' ? 0 : h;
+            const pickRadius = this.radius;
+            const pickGeo = new THREE.CylinderGeometry(pickRadius, pickRadius, 0.05, 6);
+            pickGeo.translate(0, 0.025, 0);
+            pickGeo.rotateY(Math.PI / 6);
+            const pickMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0, transparent: true });
+            const pickMesh = new THREE.Mesh(pickGeo, pickMat);
+            pickMesh.position.set(x, (topLayer + 1) * this.hScale + 0.001, z);
+            pickMesh.userData = { qIndex: q, rIndex: r };
+            this.pickGroup.add(pickMesh);
         }
-        
-        const topLayer = type === 'water' ? 0 : h;
-        const pickRadius = this.radius;
-        const pickGeo = new THREE.CylinderGeometry(pickRadius, pickRadius, 0.05, 6);
-        pickGeo.translate(0, 0.025, 0);
-        pickGeo.rotateY(Math.PI / 6);
-        const pickMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0, transparent: true });
-        const pickMesh = new THREE.Mesh(pickGeo, pickMat);
-        pickMesh.position.set(x, (topLayer + 1) * this.hScale + 0.001, z);
-        pickMesh.userData = { qIndex: q, rIndex: r };
-        pickGroup.add(pickMesh);
-      }
     }
-    
+
     Object.values(instancedMeshes).forEach(im => im.mesh.instanceMatrix.needsUpdate = true);
 
-    this.pickGroup = pickGroup;
     return group;
   }
 

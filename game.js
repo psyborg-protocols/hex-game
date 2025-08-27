@@ -54,7 +54,7 @@ class Game {
         this.path = [];
         this.movingAlongPath = false;
         this.currentSegment = null;
-        this.speedTilesPerSec = 2.8;
+        this.speedTilesPerSec = 3;
 
         this.placementMode = null;
         this.placementHighlights = new THREE.Group();
@@ -100,7 +100,7 @@ class Game {
         if (seedEl) seedEl.textContent = `Seed: ${seed}`;
 
         this.world = new HexWorld({
-            boardRadius: 40, radius: 0.85, hScale: 0.5,
+            boardRadius: 35, radius: 0.85, hScale: 0.5,
             maxHeight: 20, noiseScale: 0.08, seed: seed,
         });
 
