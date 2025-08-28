@@ -1,4 +1,5 @@
 // modules/actions.js
+import * as THREE from 'three';
 import { ITEMS, RECIPES, ITEM_BASE_PRICES } from './items_recipes_skills.js';
 
 export class Actions {
@@ -222,8 +223,12 @@ export class Actions {
             const feat = this.game.world.featureMap[r]?.[q];
             if (feat && feat.trees > 0) {
                 feat.trees--;
-                if (treeMesh && treeMesh.parent) {
-                    treeMesh.parent.remove(treeMesh);
+                if (treeMesh.userData.instancedMesh) {
+                    const matrix = new THREE.Matrix4();
+                    treeMesh.userData.instancedMesh.getMatrixAt(treeMesh.userData.instanceId, matrix);
+                    matrix.scale(new THREE.Vector3(0,0,0));
+                    treeMesh.userData.instancedMesh.setMatrixAt(treeMesh.userData.instanceId, matrix);
+                    treeMesh.userData.instancedMesh.instanceMatrix.needsUpdate = true;
                 }
                 if (feat.trees === 0) {
                     feat.type = 'none';
@@ -294,12 +299,12 @@ export class Actions {
         this.game.state.energy = Math.min(this.game.state.maxEnergy, totalFoodValue);
     }
 
-    startForaging(q, r) {
+    startForaging(q, r, grassMesh) {
         this.game.ui.hideAllWorldspaceUIs();
-        this.game.ui.showProgress('Foraging', 1500, () => this.finishForaging(q, r));
+        this.game.ui.showProgress('Foraging', 1500, () => this.finishForaging(q, r, grassMesh));
     }
 
-    finishForaging(q, r) {
+    finishForaging(q, r, grassMesh) {
         const rand = Math.random();
         if (rand < 0.75) { // 75% chance of nothing
             this.game.ui.showNotification('You found nothing of interest.');
@@ -317,9 +322,13 @@ export class Actions {
         const feat = this.game.world.featureMap[r]?.[q];
         if (feat && feat.grass > 0) {
             feat.grass--;
-            const grassProp = this.game.propsGroup.children.find(ch => ch.userData?.type === 'tall_grass' && ch.userData.q === q && ch.userData.r === r);
-            if (grassProp) {
-                grassProp.parent.remove(grassProp);
+            
+            if (grassMesh && grassMesh.userData.instancedMesh) {
+                const matrix = new THREE.Matrix4();
+                grassMesh.userData.instancedMesh.getMatrixAt(grassMesh.userData.instanceId, matrix);
+                matrix.scale(new THREE.Vector3(0, 0, 0));
+                grassMesh.userData.instancedMesh.setMatrixAt(grassMesh.userData.instanceId, matrix);
+                grassMesh.userData.instancedMesh.instanceMatrix.needsUpdate = true;
             }
         }
     }

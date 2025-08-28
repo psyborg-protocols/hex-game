@@ -665,35 +665,42 @@ export class HexWorld {
     return this.heightMap[r][q];
   }
 
-  buildProps(models) {
+buildProps(models) {
       const group = new THREE.Group();
-      const makeInstance = (tpl) => {
-          if (!tpl) return null;
-          return tpl.clone(true);
-      };
+      const dummy = new THREE.Object3D();
+
+      const propCounts = {};
+      for (const spawn of this.propSpawns) {
+          propCounts[spawn.type] = (propCounts[spawn.type] || 0) + 1;
+      }
+
+      const instancedMeshes = {};
+      for (const type in propCounts) {
+          if (models[type]) {
+              const count = propCounts[type];
+              const mesh = new THREE.InstancedMesh(models[type].geometry, models[type].material, count);
+              mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+              mesh.userData.type = type;
+              group.add(mesh);
+              instancedMeshes[type] = { mesh, index: 0 };
+          }
+      }
 
       for (const spawn of this.propSpawns) {
-          let tpl;
-          if (spawn.type === 'forest') {
-              tpl = models.forest;
-          } else if (spawn.type === 'dark_forest') {
-              tpl = models.dark_forest;
-          } else if (spawn.type === 'city') {
-              tpl = models.city;
-          } else if (spawn.type === 'tall_grass') {
-              tpl = models.tall_grass;
+          const imesh = instancedMeshes[spawn.type];
+          if (imesh) {
+              dummy.position.set(spawn.x, spawn.y, spawn.z);
+              dummy.rotation.y = spawn.rotY;
+              dummy.scale.setScalar(spawn.scale);
+              dummy.updateMatrix();
+              imesh.mesh.setMatrixAt(imesh.index++, dummy.matrix);
+              // We need to store spawn data for interaction, but on the mesh, not the instance
+              if (!imesh.mesh.userData.spawns) imesh.mesh.userData.spawns = [];
+              imesh.mesh.userData.spawns.push(spawn);
           }
-
-          if (!tpl) continue;
-          
-          const inst = makeInstance(tpl);
-          inst.position.set(spawn.x, spawn.y, spawn.z);
-          inst.rotation.y = spawn.rotY;
-          inst.scale.setScalar(spawn.scale);
-          inst.userData = { type: spawn.type, q: spawn.q, r: spawn.r };
-
-          group.add(inst);
       }
+
+      Object.values(instancedMeshes).forEach(im => im.mesh.instanceMatrix.needsUpdate = true);
       return group;
   }
   

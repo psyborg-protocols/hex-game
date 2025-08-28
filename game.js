@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CameraController } from './modules/camera_controller.js';
 import { findPath } from './modules/pathfinding.js';
 import { Actions } from './modules/actions.js';
@@ -411,7 +412,7 @@ class Game {
             if (ctx.mode === 'mine') return `mine-${ctx.params.q},${ctx.params.r}`;
             if (ctx.mode === 'harvest') return `harvest-${ctx.params.treeMesh.uuid}`;
             if (ctx.mode === 'trade') return `trade-${ctx.params.cityQ},${ctx.params.cityR}`;
-            if (ctx.mode === 'forage') return `forage-${ctx.params.q},${ctx.params.r}`;
+            if (ctx.mode === 'forage') return `forage-${ctx.params.grassMesh.uuid}`;
             return null;
         };
 
@@ -454,7 +455,7 @@ class Game {
                     case 'trade': {
                         const cityKey = `${ctx.params.cityQ},${ctx.params.cityR}`;
                         this.initializeCityData(cityKey);
-                        targetObject = this.propsGroup.children.find(c => c.userData.type === 'city' && c.userData.q === ctx.params.cityQ && c.userData.r === ctx.params.cityR);
+                        targetObject = ctx.params.target;
                         if (targetObject) {
                             title = 'Village Market';
                             actions = [{ label: 'Trade', callback: () => this.ui.showTrade(cityKey) }];
@@ -464,7 +465,7 @@ class Game {
                     case 'forage': {
                         targetObject = ctx.params.grassMesh;
                         title = 'Forage';
-                        actions = [{ label: 'Search Grass', callback: () => this.actions.startForaging(ctx.params.q, ctx.params.r) }];
+                        actions = [{ label: 'Search Grass', callback: () => this.actions.startForaging(ctx.params.q, ctx.params.r, ctx.params.grassMesh) }];
                         break;
                     }
                 }
@@ -796,74 +797,46 @@ class Game {
     }
 
     async loadPropModels() {
-        const treeFallback = new THREE.Group();
-        {
-            const trunk = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 8);
-            const leaves = new THREE.ConeGeometry(0.5, 1.0, 8);
-            const mTrunk = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
-            const mLeaves = new THREE.MeshLambertMaterial({ color: 0x2a9d3e });
-            const trunkMesh = new THREE.Mesh(trunk, mTrunk); trunkMesh.position.y = 0.3;
-            const leavesMesh = new THREE.Mesh(leaves, mLeaves); leavesMesh.position.y = 0.9;
-            treeFallback.add(trunkMesh, leavesMesh);
-        }
-        
-        const darkTreeFallback = new THREE.Group();
-        {
-            const trunk = new THREE.CylinderGeometry(0.15, 0.15, 1.0, 8);
-            const leaves = new THREE.ConeGeometry(0.6, 1.5, 8);
-            const mTrunk = new THREE.MeshLambertMaterial({ color: 0x5D4037 });
-            const mLeaves = new THREE.MeshLambertMaterial({ color: 0x1B5E20 });
-            const trunkMesh = new THREE.Mesh(trunk, mTrunk); trunkMesh.position.y = 0.5;
-            const leavesMesh = new THREE.Mesh(leaves, mLeaves); leavesMesh.position.y = 1.4;
-            darkTreeFallback.add(trunkMesh, leavesMesh);
-        }
+        // Tree Model
+        const trunkGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 8);
+        trunkGeo.translate(0, 0.3, 0);
+        const leavesGeo = new THREE.ConeGeometry(0.5, 1.0, 8);
+        leavesGeo.translate(0, 0.9, 0);
+        const treeGeo = mergeGeometries([trunkGeo, leavesGeo]);
+
+        // Dark Tree Model
+        const darkTrunkGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.0, 8);
+        darkTrunkGeo.translate(0, 0.5, 0);
+        const darkLeavesGeo = new THREE.ConeGeometry(0.6, 1.5, 8);
+        darkLeavesGeo.translate(0, 1.4, 0);
+        const darkTreeGeo = mergeGeometries([darkTrunkGeo, darkLeavesGeo]);
+
+        // Building Model
+        const buildingGeo = new THREE.BoxGeometry(0.8, 0.6, 0.9);
+        buildingGeo.translate(0, 0.3, 0);
+
+        // Tall Grass Model
+        const tallGrassGeo = new THREE.PlaneGeometry(0.1, 0.6);
+        tallGrassGeo.translate(0, 0.3, 0);
 
 
-        const buildingFallback = new THREE.Group();
-        {
-            const wallMat = new THREE.MeshLambertMaterial({ color: 0xd2b48c });
-            const roofMat = new THREE.MeshLambertMaterial({ color: 0x8b4513 });
-            const hutConfigs = [
-                { pos: [-0.3, 0.3], scale: 0.5, rot: 0.3 },
-                { pos: [0.4, 0.4], scale: 0.6, rot: -0.2 },
-                { pos: [0.1, -0.35], scale: 0.55, rot: 0.8 },
-            ];
-            hutConfigs.forEach(({ pos, scale, rot }) => {
-                const hut = new THREE.Group();
-                const [hx, hz] = pos;
-                const baseHeight = 0.5 * scale;
-                const baseGeo = new THREE.BoxGeometry(0.8 * scale, baseHeight, 0.9 * scale);
-                const baseMesh = new THREE.Mesh(baseGeo, wallMat);
-                baseMesh.position.y = baseHeight / 2;
-                const roofHeight = 0.6 * scale;
-                const roofGeo = new THREE.CylinderGeometry(0, 0.7 * scale, roofHeight, 4);
-                const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-                roofMesh.position.y = baseHeight + roofHeight / 2;
-                roofMesh.rotation.y = Math.PI / 4;
-                hut.add(baseMesh, roofMesh);
-                hut.position.set(hx, 0, hz);
-                hut.rotation.y = rot;
-                buildingFallback.add(hut);
-            });
-        }
-        
-        const tallGrassFallback = new THREE.Group();
-        {
-            const mat = new THREE.MeshLambertMaterial({ color: 0x559022, side: THREE.DoubleSide });
-            const geo = new THREE.PlaneGeometry(0.1, 0.6);
-            for(let i=0; i<3; i++) {
-                const blade = new THREE.Mesh(geo, mat);
-                blade.rotation.y = (i * Math.PI * 2) / 3;
-                blade.position.y = 0.3;
-                tallGrassFallback.add(blade);
-            }
-        }
-
-        return { 
-            forest: treeFallback, 
-            city: buildingFallback, 
-            dark_forest: darkTreeFallback,
-            tall_grass: tallGrassFallback 
+        return {
+            forest: {
+                geometry: treeGeo,
+                material: new THREE.MeshLambertMaterial({ color: 0x2a9d3e })
+            },
+            dark_forest: {
+                geometry: darkTreeGeo,
+                material: new THREE.MeshLambertMaterial({ color: 0x1B5E20 })
+            },
+            city: {
+                geometry: buildingGeo,
+                material: new THREE.MeshLambertMaterial({ color: 0xd2b48c })
+            },
+            tall_grass: {
+                geometry: tallGrassGeo,
+                material: new THREE.MeshLambertMaterial({ color: 0x559022, side: THREE.DoubleSide })
+            },
         };
     }
 }
