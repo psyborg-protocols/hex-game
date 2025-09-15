@@ -399,7 +399,11 @@ class Game {
     }
     
     updateContextualUIs() {
-        const isOverlayUIActive = this.ui.activeUIMode && !['mine', 'harvest', 'trade'].includes(this.ui.activeUIMode);
+        const MODAL_UI_MODES = ['inventory', 'craft', 'skills', 'build', 'trade'];
+
+        const isOverlayUIActive = MODAL_UI_MODES.includes(this.ui.activeUIMode);
+
+
         if (isOverlayUIActive || this.placementMode) {
             this.ui.hideAllWorldspaceUIs();
             return;
@@ -410,21 +414,24 @@ class Game {
         const getTargetKey = (ctx) => {
             if (!ctx) return null;
             if (ctx.mode === 'mine') return `mine-${ctx.params.q},${ctx.params.r}`;
-            if (ctx.mode === 'harvest') return `harvest-${ctx.params.treeMesh.uuid}`;
+            // Use the player's position for tile-based group actions
+            if (ctx.mode === 'harvest') return `harvest-${this.player.q},${this.player.r}`;
+            if (ctx.mode === 'forage') return `forage-${this.player.q},${this.player.r}`;
             if (ctx.mode === 'trade') return `trade-${ctx.params.cityQ},${ctx.params.cityR}`;
-            if (ctx.mode === 'forage') return `forage-${ctx.params.grassMesh.uuid}`;
             return null;
         };
 
         const newKeys = new Set(availableContexts.map(getTargetKey));
         const currentKeys = new Set(this.ui.activeWorldspaceUIs.map(ui => ui.key));
 
+        // Hide UIs that are no longer relevant
         this.ui.activeWorldspaceUIs.forEach(ui => {
             if (!newKeys.has(ui.key)) {
                 this.ui.hideWorldspaceUI(ui.id);
             }
         });
 
+        // Show new UIs
         availableContexts.forEach(ctx => {
             const key = getTargetKey(ctx);
             if (!currentKeys.has(key)) {
@@ -444,12 +451,19 @@ class Game {
                         break;
                     }
                     case 'harvest': {
-                        targetObject = ctx.params.treeMesh;
+                        // Target the player mesh for tile-based actions
+                        targetObject = this.player.mesh;
                         title = 'Harvest Tree';
                         actions = [
-                            { label: 'Chop', callback: () => this.actions.startHarvest('chop', ctx.params.q, ctx.params.r, ctx.params.treeMesh) },
-                            { label: 'Gather', callback: () => this.actions.startHarvest('branch', ctx.params.q, ctx.params.r, ctx.params.treeMesh) }
+                            { label: 'Chop', callback: () => this.actions.startHarvest('chop', ctx.params.q, ctx.params.r, ctx.params.treeMeshes[0]) },
+                            { label: 'Gather', callback: () => this.actions.startHarvest('branch', ctx.params.q, ctx.params.r, ctx.params.treeMeshes[0]) }
                         ];
+                        break;
+                    }
+                     case 'forage': {
+                        targetObject = this.player.mesh; // Target player for this tile-based action
+                        title = 'Forage';
+                        actions = [{ label: 'Search Grass', callback: () => this.actions.startForaging(ctx.params.q, ctx.params.r, ctx.params.grassMeshes[0]) }];
                         break;
                     }
                     case 'trade': {
@@ -460,12 +474,6 @@ class Game {
                             title = 'Village Market';
                             actions = [{ label: 'Trade', callback: () => this.ui.showTrade(cityKey) }];
                         }
-                        break;
-                    }
-                    case 'forage': {
-                        targetObject = ctx.params.grassMesh;
-                        title = 'Forage';
-                        actions = [{ label: 'Search Grass', callback: () => this.actions.startForaging(ctx.params.q, ctx.params.r, ctx.params.grassMesh) }];
                         break;
                     }
                 }

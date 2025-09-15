@@ -97,32 +97,34 @@ export class UIController {
         const halfWidth = window.innerWidth / 2;
         const halfHeight = window.innerHeight / 2;
         
+        // This map will store screen positions and how many popups are already at that position.
         const targetScreenPositions = new Map();
 
         this.activeWorldspaceUIs.forEach(popup => {
-            if (!targetScreenPositions.has(popup.target)) {
+            const targetKey = popup.target.uuid; // Use UUID to uniquely identify targets
+            let posData = targetScreenPositions.get(targetKey);
+
+            if (!posData) {
                 const position = new THREE.Vector3();
                 const targetPosition = popup.target.getWorldPosition(new THREE.Vector3());
-                targetPosition.y += 1.5;
+                targetPosition.y += 1.5; // Base y-offset
                 
                 position.copy(targetPosition).project(camera);
                 
                 const x = (position.x * halfWidth) + halfWidth;
                 const y = -(position.y * halfHeight) + halfHeight;
                 
-                targetScreenPositions.set(popup.target, { x, y, stackCount: 0, isBehind: position.z > 1 });
+                posData = { x, y, stackCount: 0, isBehind: position.z > 1 };
+                targetScreenPositions.set(targetKey, posData);
             }
-        });
-
-        this.activeWorldspaceUIs.forEach(popup => {
-            const posData = targetScreenPositions.get(popup.target);
-            if (!posData) return;
-
-            const yOffset = posData.stackCount * -40;
+            
+            // Apply stacking offset
+            const yOffset = posData.stackCount * -45; // Increase space between stacked popups
             
             popup.element.style.left = `${posData.x}px`;
             popup.element.style.top = `${posData.y + yOffset}px`;
             popup.element.style.display = posData.isBehind ? 'none' : '';
+            popup.element.style.zIndex = 1000 - posData.stackCount; // Ensure proper stacking order
             
             posData.stackCount++;
         });

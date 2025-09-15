@@ -37,13 +37,17 @@ export class ContextSystem {
     }
 
     // --- 2. Prop-based Contexts on Player's Tile (Harvest, Forage) ---
+    const propsOnTile = {
+      'forest': [],
+      'dark_forest': [],
+      'tall_grass': []
+    };
+
     if (this.game.propsGroup) {
       this.game.propsGroup.children.forEach(instancedMesh => {
         if (instancedMesh.isInstancedMesh && instancedMesh.userData.spawns) {
           instancedMesh.userData.spawns.forEach((spawn, instanceId) => {
-            // Only check props on the player's current tile
             if (spawn.q === q && spawn.r === r) {
-              // Create a temporary object to be the UI target
               const targetObject = new THREE.Object3D();
               targetObject.position.set(spawn.x, spawn.y, spawn.z);
               targetObject.userData.q = spawn.q;
@@ -51,16 +55,23 @@ export class ContextSystem {
               targetObject.userData.instancedMesh = instancedMesh;
               targetObject.userData.instanceId = instanceId;
 
-              if (spawn.type === 'forest' || spawn.type === 'dark_forest') {
-                contexts.push({ mode: 'harvest', params: { q, r, treeMesh: targetObject } });
-              } else if (spawn.type === 'tall_grass') {
-                contexts.push({ mode: 'forage', params: { q, r, grassMesh: targetObject } });
+              if (propsOnTile[spawn.type]) {
+                propsOnTile[spawn.type].push(targetObject);
               }
             }
           });
         }
       });
     }
+
+    if (propsOnTile['forest'].length > 0 || propsOnTile['dark_forest'].length > 0) {
+      const allTrees = [...propsOnTile['forest'], ...propsOnTile['dark_forest']];
+      contexts.push({ mode: 'harvest', params: { q, r, treeMeshes: allTrees } });
+    }
+    if (propsOnTile['tall_grass'].length > 0) {
+      contexts.push({ mode: 'forage', params: { q, r, grassMeshes: propsOnTile['tall_grass'] } });
+    }
+
 
     // --- 3. Trade Context (Player or Adjacent Tile Check) ---
     const checkedCities = new Set();
