@@ -7,6 +7,7 @@
 
 import { GEOM, columnBaseY, tileCenter, traceTopFace } from '../world/hexgrid.js';
 import { drawColumn, columnPixelHeight } from './columns.js';
+import { pixelScale } from '../core/camera.js';
 
 export class Renderer {
   constructor(canvas, res) {
@@ -24,7 +25,7 @@ export class Renderer {
   /** Size the backing store to the element, accounting for device pixel ratio. */
   resize(camera) {
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = pixelScale();
     const w = Math.max(1, Math.round(rect.width * dpr));
     const h = Math.max(1, Math.round(rect.height * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) {

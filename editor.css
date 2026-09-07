@@ -109,3 +109,23 @@ canvas {
     height: 100%;
     image-rendering: pixelated;
 }
+
+/* The palette swatch is the terrain's own first frame at native size, shifted
+   up so the top face fills the box rather than the empty headroom. */
+.palette-icon {
+    width: 32px;
+    height: 32px;
+    background-repeat: no-repeat;
+    background-size: 192px 48px;
+    background-position: 0 -14px;
+    background-color: #1d1f26;
+    image-rendering: pixelated;
+    border: 1px solid #555;
+    flex: none;
+}
+
+#canvas-container { flex: 1; position: relative; }
+#view { width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: crosshair; }
+
+.instructions { font-size: 12px; line-height: 1.7; color: #aaa; }
+#info { margin-top: auto; font-variant-numeric: tabular-nums; }

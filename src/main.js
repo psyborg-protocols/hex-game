@@ -6,7 +6,7 @@ import { drawStructure, drawVillage } from './render/structures.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath } from './world/pathfinding.js';
 import { Renderer } from './render/renderer.js';
-import { Camera } from './core/camera.js';
+import { Camera, pixelScale } from './core/camera.js';
 import { Rng } from './core/rng.js';
 import { Player } from './game/player.js';
 import { pickHex, tileCenter, traceTopFace, distance } from './world/hexgrid.js';
@@ -26,7 +26,6 @@ import { skillsPanel } from './ui/panels/skills.js';
 import { tradePanel } from './ui/panels/trade.js';
 import { buildPanel } from './ui/panels/build.js';
 
-const DPR = () => Math.min(window.devicePixelRatio || 1, 2);
 
 async function boot() {
   const canvas = document.getElementById('view');
@@ -243,7 +242,7 @@ async function boot() {
 
   const worldAt = e => {
     const rect = canvas.getBoundingClientRect();
-    const d = DPR();
+    const d = pixelScale();
     return camera.screenToWorld((e.clientX - rect.left) * d, (e.clientY - rect.top) * d);
   };
   const hexAt = e => {
@@ -265,7 +264,7 @@ async function boot() {
       const dy = e.clientY - drag.y;
       drag.moved += Math.abs(dx) + Math.abs(dy);
       if (drag.moved > 4) {
-        camera.panBy(-dx * DPR() / camera.scale, -dy * DPR() / camera.scale);
+        camera.panBy(-dx * pixelScale() / camera.scale, -dy * pixelScale() / camera.scale);
         follow = false;
       }
       drag.x = e.clientX;
@@ -312,7 +311,7 @@ async function boot() {
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    const d = DPR();
+    const d = pixelScale();
     if (camera.zoom(e.deltaY > 0 ? -1 : 1,
       (e.clientX - rect.left) * d, (e.clientY - rect.top) * d, canvas.width, canvas.height)) {
       renderer.resize(camera);
@@ -353,7 +352,7 @@ async function boot() {
       overlays: [drawOverlays],
     });
 
-    game.ui.positionAnchors(camera, map, DPR());
+    game.ui.positionAnchors(camera, map, pixelScale());
 
     if (hudTerrain) {
       const col = hover && map.get(hover.q, hover.r);

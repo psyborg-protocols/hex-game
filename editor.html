@@ -20,11 +20,13 @@
                 <!-- Palette items injected by JS -->
             </div>
             <p class="instructions">
-                <strong>Left Click:</strong> Place tile<br>
-                <strong>Right Click:</strong> Remove top tile<br>
-                <strong>Middle Click / Drag:</strong> Pan camera<br>
-                <strong>Scroll Wheel:</strong> Zoom in/out
+                <strong>Left drag</strong> paint the selected terrain<br>
+                <strong>Shift + left</strong> raise a level<br>
+                <strong>Right drag</strong> lower a level, and away at zero<br>
+                <strong>Middle drag / Alt</strong> pan<br>
+                <strong>Wheel</strong> zoom, whole steps only
             </p>
+            <p id="info" class="instructions"></p>
         </div>
         <div id="canvas-container">
             <canvas id="view"></canvas>

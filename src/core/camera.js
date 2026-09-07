@@ -8,6 +8,18 @@
 
 export const ZOOM_STEPS = [2, 3, 4, 5, 6];
 
+/**
+ * Backing-store scale for the canvas — the device pixel ratio, floored.
+ *
+ * A ratio of 1.5 is common, and honouring it exactly would put a fractional
+ * factor between the buffer and the screen, which is precisely what
+ * docs/new_tiles.md says makes the hex diagonals and the 1px wall highlight
+ * crawl. Rounding down loses a little sharpness on such displays and keeps every
+ * step of the chain a whole number, which matters more for this art.
+ */
+export const pixelScale = () =>
+  Math.max(1, Math.min(3, Math.floor(window.devicePixelRatio || 1)));
+
 export class Camera {
   constructor({ scale = 3 } = {}) {
     this.x = 0;             // world px at the viewport's left edge
