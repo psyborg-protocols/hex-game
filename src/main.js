@@ -18,6 +18,7 @@ import { ensureVillage, buy, sell } from './game/economy.js';
 import { determineContext } from './game/context.js';
 import { harvest, prospect, build, placementSpots, growCrops, eat, refreshArt } from './game/actions.js';
 import { harvestSpec } from './game/harvests.js';
+import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile } from './game/save.js';
 
 import { UI } from './ui/ui.js';
 import { inventoryPanel } from './ui/panels/inventory.js';
@@ -25,6 +26,7 @@ import { craftingPanel } from './ui/panels/crafting.js';
 import { skillsPanel } from './ui/panels/skills.js';
 import { tradePanel } from './ui/panels/trade.js';
 import { buildPanel } from './ui/panels/build.js';
+import { menuPanel } from './ui/panels/menu.js';
 
 
 async function boot() {
@@ -37,17 +39,22 @@ async function boot() {
     index: tileset.index,
   };
 
-  const seed = new URLSearchParams(location.search).get('seed') || String(Date.now());
-  const map = generateWorld({ seed, resolvers: res.resolvers });
+  // A saved game is restored whole rather than regenerated: by the time you
+  // save it, the world is no longer the one its seed produced.
+  const params = new URLSearchParams(location.search);
+  const restored = params.get('load') === '1' ? loadLocal() : null;
+
+  const seed = restored?.seed || params.get('seed') || String(Date.now());
+  const map = restored ? restored.map : generateWorld({ seed, resolvers: res.resolvers });
   const world = { map, resolvers: res.resolvers, seed };
   const rng = new Rng(`${seed}:play`);
 
-  const state = createState();
+  const state = restored ? restored.state : createState();
   const camera = new Camera({ scale: 3 });
   const renderer = new Renderer(canvas, res);
   renderer.resize(camera);
 
-  const player = new Player(map, map.spawn);
+  const player = new Player(map, restored?.player || map.spawn);
   const start = player.restingPos;
   camera.centerOn(start.cx, start.cy);
 
@@ -69,6 +76,7 @@ async function boot() {
       skills: skillsPanel,
       trade: tradePanel,
       build: buildPanel,
+      menu: menuPanel,
     },
 
     /** What crafting needs to know about where the player is standing. */
@@ -154,6 +162,33 @@ async function boot() {
     doEat(itemId) {
       game.ui.notify(eat(state, itemId).message);
       game.ui.refreshPanel();
+    },
+
+    doSave() {
+      game.ui.notify(saveLocal(world, state, player)
+        ? 'Game saved.'
+        : 'Could not save — this browser is blocking storage.');
+      game.ui.refreshPanel();
+    },
+
+    // Loading and world changes go through a reload rather than swapping the
+    // map, state and player out from under everything that closed over them.
+    doLoad() { location.search = '?load=1'; },
+    doNewWorld(newSeed) {
+      location.search = `?seed=${encodeURIComponent(newSeed || Date.now())}`;
+    },
+    doExport() { downloadSave(world, state, player); },
+
+    async doImport(file) {
+      try {
+        const data = await readSaveFile(file);
+        // Park it in the local slot and come back up through the same path a
+        // normal load takes, so there is only one way a game gets restored.
+        writeLocal(data);
+        location.search = '?load=1';
+      } catch (err) {
+        game.ui.notify(`That is not a save file: ${err.message}`);
+      }
     },
   };
 
@@ -366,6 +401,13 @@ async function boot() {
   requestAnimationFrame(frame);
 
   refreshContext();
+
+  // Autosave, so a closed tab does not cost an evening. Quiet on failure — the
+  // Game panel is where saving is meant to be confirmed.
+  setInterval(() => saveLocal(world, state, player), 45000);
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveLocal(world, state, player);
+  });
 
   // A handle for poking at a running game from the console.
   game.renderer = renderer;

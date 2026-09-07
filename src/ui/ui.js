@@ -41,6 +41,7 @@ export class UI {
       ['crafting', 'Craft'],
       ['build', 'Build'],
       ['skills', 'Skills'],
+      ['menu', 'Game'],
     ];
     this.taskbar.innerHTML = '';
     for (const [name, label] of buttons) {

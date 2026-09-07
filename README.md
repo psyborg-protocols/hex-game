@@ -1,106 +1,149 @@
-# Game Assets — Discovery-Path Crafting Game
+# Hex World
 
-Data + art for a hex-world survival/crafting game built on **real anthropological
-discovery sequences**: true scarcity (worlds gate you), redundancy (multiple routes
-to every gated achievement), non-linear progression (skills unlock gates in both
+A 2.5D hex survival/crafting game built on **real anthropological discovery
+sequences**: true scarcity (worlds gate you), redundancy (multiple routes to
+every gated achievement), non-linear progression (skills unlock gates in both
 directions), and maximum interdependence between five skill domains.
+
+Plain ES modules and canvas 2D. No build step, no dependencies.
+
+```
+node tools/serve.js          # then open http://localhost:8080
+node tests/all.mjs           # 102 tests, ~1.5s
+```
+
+`http://localhost:8080/?seed=alpha` generates a named world;
+`?load=1` restores the saved game; `/editor.html` is the map editor.
 
 ## Layout
 
 ```
-research/discovery_paths.md   Anthropological research: real discovery chronology per
-                              skill (Acheulean→atlatl→bow→pottery→farming→metallurgy,
-                              smiths-as-priests, Dunbar numbers, gift economies,
-                              meditation/ritual evidence) + 10 design laws.
-skill_map.md                  Skill/dependency map: bootstrap path, circular gates
-                              (tongs→tongs), cross-skill gates, redundancy pairs.
-data/game_data.js             Source of truth (ES module).
-data/game_data.json           Generated export (node tools/to_json.js).
-tools/pcanvas.js              16x16 pixel-canvas authoring helper (auto-outline).
-tools/preview.js              Renders icons to a PNG contact sheet (no deps) for review.
-tools/hexcanvas.js            Hex tile geometry, lattice and seam-free drawing canvas.
-tools/tiles.js                8 terrain tile draw functions.
-tools/generate_tiles.js       Validates tiles -> writes tiles/*.svg + tileset.json.
-tools/tile_preview.js         Lays tiles on the lattice; --verify proves the tiling.
-tools/pixel_art_1.js          27 gathering/food icons (draw functions).
-tools/pixel_art_2.js          37 wood/stone/oven icons (draw functions).
-tools/pixel_art_3.js          33 home/metal/metal/mind icons + 5 skill glyphs.
-tools/generate_icons.js       Validates grids → writes all SVGs.
-tools/to_json.js              Exports game_data.json from game_data.js.
-icons/*.svg                   91 item icons (16x16, SWEETIE-16, one <path> per color).
-icons/skills/*.svg            5 skill glyphs.
-icons/abilities/*.svg         35 ability icons (glyph + level pips, lvl 1–7).
-tiles/*.svg                   8 terrain hex tiles x 4 variants (32x37, pointy-top).
-tiles/tileset.json            Hex size + lattice steps an engine needs to lay them out.
+index.html            the game
+editor.html/.css/.js  the map editor
+
+src/
+  main.js             bootstrap, frame loop, and the wiring between world and UI
+  core/
+    camera.js         pan, integer zoom, follow, and the device-pixel rule
+    rng.js            seeded noise and hashes (carried over from the old game)
+  world/
+    hexgrid.js        THE lattice — flat-top, odd-q. Everything imports this.
+    tileset.js        terrain vocabulary and the autotile resolvers
+    mapformat.js      one map format, read and written by game and editor
+    worldgen.js       seeded worlds: elevation, mountains, river, woods, villages
+    pathfinding.js    A* with the climb/drop rules, ladders and bridges
+  render/
+    renderer.js       1x buffer, one integer upscale, back-to-front draw order
+    columns.js        stacks drawn as cliffs (see "Cliffs" below)
+    structures.js     placeholder art for buildings
+  game/
+    state.js  inventory.js  skills.js  crafting.js  economy.js
+    harvests.js  context.js  actions.js  player.js  save.js
+  ui/
+    ui.js  panels/{inventory,crafting,build,skills,trade,menu}.js
+
+data/                 the economy: 93 items, 85 recipes, 5 skills x 7 levels
+new_tiles/            27 tile sheets + index.json (lattice + autotile tables)
+icons/                93 item icons, 5 skill glyphs, 35 ability icons
+tools/                the art pipeline, and serve.js
+tests/                node test suites, no framework
+docs/ research/       how the art was made, and the design research behind it
 ```
 
-## Data model
+`skill_map.md` is the design spine — read it before changing the economy.
 
-- **91 items** with id, name, stack size, icon, category, and base price.
-- **~70 recipes**: inputs (item → count), output (item → count), skill, level, xp,
-  `tools` (item id or `[id, ...]` = any-of), and `needs` (buildings/structures that
-  must exist — the world-scarcity gates).
-- **SKILL_INFO**: 5 skills × 7 levels of ability descriptions.
-- **SKILL_DEPS / CIRCULAR_DEPS / CROSS_SKILL_GATES**: the non-linear graph,
-  including intentional circular dependencies (e.g. forging tongs needs tongs —
-  you improvise with the previous tier or a bone set).
+## How it works
 
-### Skills
-| Skill | Covers |
+**The lattice.** `src/world/hexgrid.js` is the single source of truth: flat-top
+hexes in odd-q offset coordinates, `stepX 26`, `stepY 24`, odd columns pushed
+down 12. Game and editor both import it, so they cannot drift.
+`tests/hexgrid.test.mjs` proves the plane tiles with zero gaps and zero overlaps.
+
+**Cliffs.** A tile frame is a flat-top hexagon in rows 16-39 extruded straight
+down by its 8px wall, which is why rows 27-36 are the full 32px wide. So a column
+of height *h* is that hexagon extruded 8(h+1)px, and its sides are full width
+from row 27 down to row 36+8h. Stacking whole frames leaves 16px of grass showing
+per level; repeating the wall strip leaves a notch down each side, because the
+wall tapers to 20px. `columns.js` instead bakes a cliff variant of every frame —
+the whole silhouette filled with that tile's own wall texture — and stacks it
+under one real tile.
+
+**Scale.** Everything is drawn at 1x into an offscreen buffer and upscaled once
+by a whole number, with smoothing off. Fractional device pixel ratios are floored
+for the same reason. `docs/new_tiles.md` is explicit that this art crawls at
+fractional zoom.
+
+**The economy.** `data/game_data.js` is the source of truth. Recipes carry
+`tools` (a list of slots, each one item or an any-of) and `needs` (world gates:
+`skill:x:n` or `built:item`). A tool slot naming something with a `build` recipe
+means "stand at one", not "carry one". `checkRecipe` returns its reasons rather
+than a boolean — with this many gates, a list that only says no is unplayable.
+
+**Where things come from.** Ten raw materials are inputs to recipes and the
+output of none, so the world supplies them. `src/game/harvests.js` binds every
+harvest to terrain and is the one place that decides what a hex is worth walking
+to. Harvests spend the world: woods fell to bare floor, cliffs mine down until
+they can be climbed, veins run out.
+
+**The knowledge gate.** Ore exists in the map from generation but is invisible
+and unusable until Mind 4 (Lore) reveals it, a few hexes at a time, and each vein
+is finite. A world with no prospectable ore is a stone-age world with
+metalworking fully locked. That is the scarcity anchor, not a bug — and
+`tests/economy.test.mjs` proves the stone age stays fully playable inside it.
+
+**The river.** It divides the board and is meant to. The far bank waits on a
+bridge (woodworking 6) or a boat (woodworking 5). The generator therefore puts
+the spawn and every village on the near one, and only ramps *cliffs* when it
+guarantees the land is walkable.
+
+## Placeholder art
+
+The asset set covers terrain, paths, shorelines and crops. It has no characters
+and no buildings, so the player and every structure are drawn procedurally in the
+tile palette's idiom — dark outline, light from the top left. Swapping in real
+sprites means replacing `drawPawn` in `src/game/player.js` and `drawStructure` in
+`src/render/structures.js`, and nothing else.
+
+Item icons use SWEETIE-16, which shares no colours with the tiles, so they appear
+only on UI panels and never on the map.
+
+## Tests
+
+No framework — `tests/_harness.mjs` is thirty lines.
+
+| suite | what it pins down |
 |---|---|
-| stoneworking | knapping, grinding, walls, hearths/ovens, quarrying, smelting support |
-| woodworking | felling, beams, furniture, boats/bridges/carts, farming tools |
-| homesteading | planting→harvest, cooking tiers, houses, smokehouse, granary, water |
-| metalworking | ore prospecting (via lore), smelting, forging, tiered tools |
-| mind | prayer/meditation, nature attentiveness, resource awareness, trade & strangers |
+| `hexgrid` | the lattice tiles the plane, neighbours are reciprocal at both parities, picking prefers the column in front |
+| `autotile` | all 64 masks land on real art; path coverage matches what `docs/new_tiles.md` measured |
+| `worldgen` | determinism, no cliff strands anything, the near bank is a whole playable world, maps round-trip |
+| `pathfinding` | climb 1 / drop 2, ladders, bridges, and every returned step is legal |
+| `economy` | the graph is consistent, and the whole discovery path is walkable from an empty pack — by planning backwards, not by crafting greedily |
+| `world` | harvesting, felling, mining, prospecting and building change the map correctly |
+| `save` | a save restores the world you left, not the world the seed would generate |
 
-## Tiers (per real historical sequences)
-- Ovens: hearth → stone_oven → clay_oven → kiln → bakehouse (5)
-- Tongs: bone_tongs → tongs → fine_tongs (3)
-- Adze: stone_adze → bone_adze → axe (3)
-- Pots: pot → fine_pot (2) · Hoe: wood_hoe → hoe (2) · Plough: wood_plough → plough (2)
-- Arrows: arrow → fine_arrow (2)
-- Ores/ingots: deliberately **one** tier — no copper/bronze/steel split.
+## The art pipeline
 
-## Regenerating
+Unchanged, and still the way to regenerate the assets:
 
 ```
-node tools/generate_icons.js       # validate + write icons/
-node tools/generate_tiles.js       # validate + write tiles/
-node tools/tile_preview.js --verify # prove the hex tiling is gapless
-node tools/to_json.js              # rewrite data/game_data.json
+node tools/generate_icons.js          # validate + write icons/
+node tools/generate_tiles.js          # validate + write tiles/
+node tools/newtiles_index.js --json   # derive the autotile tables
+node tools/newtiles_gen.js            # generate matching extra terrain
+node tools/newtiles_map.js out.png mixed 4
+node tools/to_json.js                 # rewrite data/game_data.json
 ```
 
-Art is authored as draw-functions on the 16x16 canvas (`tools/pcanvas.js`), rendered
-with the SWEETIE-16 palette and an automatic 1px ink outline. Every object is shaded
-with a three-tone material ramp (wood `y-o-r`, stone `x-s-d`, metal `x`+`c` glint,
-bone `w-x-s`, foliage `g-G-t`, flesh `o-r-p`) lit from the top-left; tiered tools keep
-one silhouette and change only material and fixing. See `docs/icon_pipeline.md`.
+See `docs/icon_pipeline.md`, `docs/tile_pipeline.md` and `docs/new_tiles.md` —
+the last one is the reference for anything that touches how tiles are drawn.
 
-To look at the art:
+## Known gaps
 
-```
-node tools/preview.js sheet.png 8 6 all      # every icon, 8 columns, 6x scale
-node tools/preview.js one.png 1 10 stone_axe # a single icon, big
-```
-
-## Terrain tiles
-
-Eight hex terrains — meadow, grassland, steppes, stony, forest bed, pine forest
-bed, stream, deep water — as 32x37 pointy-top hexagons, regular to within a pixel
-(w/h 0.8649 vs 0.8660). The inset staircase is palindromic, which is what makes
-the hexagons interlock: one hex covers 896px and the lattice cell is 32x28 = 896px,
-so the plane is covered with no gaps or overlaps. Drawing folds across the border
-under the lattice, so texture flows unbroken between tiles. Four variants per
-terrain kill the repeat pattern. `tiles/tileset.json` carries the hex size and
-lattice steps an engine needs to lay them out. See `docs/tile_pipeline.md`.
-
-To look at the tiles (all three lay hexes on the real lattice and cycle variants
-per hex, so what you judge is what the game draws):
-
-```
-node tools/tile_preview.js sheet.png        # all eight, patches side by side
-node tools/tile_preview.js field.png meadow # one terrain over a field
-node tools/tile_preview.js map.png --map    # mixed map, terrains meeting
-node tools/tile_preview.js --verify         # prove the tiling is gapless
-```
+- **Path junction art.** 12 of 15 four-connection pieces and all six
+  five-connection ones do not exist. Roads are grown as a tree to avoid them;
+  unsupported masks fall back to the nearest supported one, preferring to drop a
+  connection rather than invent one.
+- **Non-contiguous shorelines** have no art either, and get the same treatment.
+- **No character or building sprites**, as above.
+- `Tiles_DecorNoTrees.png` has one semi-transparent pixel at (130, 22), harmless
+  under nearest-neighbour but worth flattening.
