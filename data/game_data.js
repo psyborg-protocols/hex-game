@@ -171,7 +171,7 @@ export const RECIPES = {
   // L3  (the container/cordage ladder unlocks craft)
   bone_adze:  { id: 'bone_adze',  name: 'Bone Adze',   inputs: { bone: 2, branch: 1, sinew: 2 }, output: { bone_adze: 1 }, skill: 'woodworking', level: 3, xp: 10, tools: [ ['stone_axe', 'axe'] ] },
   bone_saw:   { id: 'bone_saw',   name: 'Bone Saw',    inputs: { bone: 2, cord: 2, branch: 1 }, output: { bone_saw: 1 }, skill: 'woodworking', level: 3, xp: 10, tools: [ ['stone_chisel', 'chisel'] ] },
-  planks:     { id: 'planks',     name: 'Saw Planks',  inputs: { log: 1 }, output: { plank: 2 }, skill: 'woodworking', level: 3, xp: 6, tools: [ 'bone_saw', 'saw' ] },
+  planks:     { id: 'planks',     name: 'Saw Planks',  inputs: { log: 1 }, output: { plank: 2 }, skill: 'woodworking', level: 3, xp: 6, tools: [ [ 'bone_saw', 'saw' ] ] }, // either saw; as two slots this needed metalworking 3 and locked planks out of a stone-age world
   arrow:      { id: 'arrow',      name: 'Arrow',       inputs: { branch: 1, flint: 1, sinew: 1 }, output: { arrow: 2 }, skill: 'woodworking', level: 3, xp: 5, tools: [ ['stone_chisel', 'chisel'] ] },
   // L4
   wood_fence:  { id: 'wood_fence',  name: 'Wood Fence',   inputs: { beam: 4 }, output: { wood_fence: 1 }, skill: 'woodworking', level: 4, xp: 6, category: 'build' },

@@ -816,8 +816,10 @@
       "level": 3,
       "xp": 6,
       "tools": [
-        "bone_saw",
-        "saw"
+        [
+          "bone_saw",
+          "saw"
+        ]
       ]
     },
     "arrow": {
