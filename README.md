@@ -145,5 +145,3 @@ the last one is the reference for anything that touches how tiles are drawn.
   connection rather than invent one.
 - **Non-contiguous shorelines** have no art either, and get the same treatment.
 - **No character or building sprites**, as above.
-- `Tiles_DecorNoTrees.png` has one semi-transparent pixel at (130, 22), harmless
-  under nearest-neighbour but worth flattening.

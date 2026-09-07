@@ -8,9 +8,9 @@ read off a spec sheet.
 
 | | |
 |---|---|
-| sheets | 22 PNGs, each 192 x 48, RGBA |
+| sheets | 27 PNGs, each 192 x 48, RGBA — the original 22, plus the five generated terrains described at the end of this file, which now live in `new_tiles/` alongside them |
 | frames | 6 per sheet, **32 x 48** each, packed left to right, no gutters |
-| alpha | binary (0 or 255) — one stray pixel excepted, see Blemishes |
+| alpha | binary (0 or 255), with no exceptions |
 | resolution | native 1x (not a pre-scaled export) |
 | colours | 1276 distinct across the set; not an indexed palette |
 
@@ -126,9 +126,11 @@ nearest supported mask, or draw the missing pieces.
 
 ## Blemishes
 
-- One semi-transparent pixel: `Tiles_DecorNoTrees.png` at (130, 22), frame 4,
-  alpha 38. Harmless with nearest neighbour, but it will show as a faint dot if
-  anything ever premultiplies or filters it. Worth flattening to 0 or 255.
+- ~~One semi-transparent pixel: `Tiles_DecorNoTrees.png` at (130, 22), frame 4,
+  alpha 38.~~ **Fixed.** Flattened to 0, because that position is transparent in
+  all five other frames — it sits on the hexagon's upper-left diagonal, one pixel
+  outside the silhouette every frame otherwise shares. The alpha is now binary
+  across the whole set with no exceptions.
 - The palette carries a lot of near-duplicate colours — the grass base alone uses
   141 shades, many differing by 1-3 per channel and imperceptible. Fine as-is;
   quantise first if you ever want palette swaps or recolouring.
