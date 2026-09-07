@@ -122,4 +122,20 @@ export class SeededPerlin {
     }
     return (sum / norm + 1) / 2;
   }
+
+  /**
+   * Ridged fractal noise, normalised to [0, 1]. Folding the noise about zero
+   * turns smooth hills into sharp crests — what the old generator used to put
+   * ridgelines on its mountains.
+   */
+  ridged(x, y, octaves = 3, lacunarity = 2.1, gain = 0.55) {
+    let amp = 1, freq = 1, sum = 0, norm = 0;
+    for (let i = 0; i < octaves; i++) {
+      sum += amp * (1 - Math.abs(this.noise(x * freq, y * freq)));
+      norm += amp;
+      amp *= gain;
+      freq *= lacunarity;
+    }
+    return sum / norm;
+  }
 }

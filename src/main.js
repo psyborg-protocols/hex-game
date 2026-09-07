@@ -1,12 +1,8 @@
 // main.js — bootstrap.
-//
-// M1 scaffold: loads the tileset, builds a hand-made map exercising cliffs,
-// water and paths, and renders it with pan/zoom/hover. The test map is replaced
-// by the seeded generator in M2.
 
-import { loadTileset, makeResolvers } from './world/tileset.js';
+import { loadTileset } from './world/tileset.js';
 import { buildWallAtlas } from './render/columns.js';
-import { WorldMap } from './world/mapformat.js';
+import { generateWorld } from './world/worldgen.js';
 import { Renderer } from './render/renderer.js';
 import { Camera } from './core/camera.js';
 import { pickHex, tileCenter } from './world/hexgrid.js';
@@ -21,7 +17,8 @@ async function boot() {
     index: tileset.index,
   };
 
-  const map = buildTestMap(res);
+  const seed = new URLSearchParams(location.search).get('seed') || String(Date.now());
+  const map = generateWorld({ seed, resolvers: res.resolvers });
   const camera = new Camera({ scale: 3 });
   const renderer = new Renderer(canvas, res);
   renderer.resize(camera);
@@ -98,59 +95,6 @@ async function boot() {
 
   // Handy while building.
   window.game = { map, camera, renderer, res };
-}
-
-/**
- * A hand-made map that exercises the things M1 has to get right: a tall cliff, a
- * lake with a proper shoreline, a path that has to autotile, and a mix of
- * terrain variants.
- */
-function buildTestMap(res) {
-  const map = new WorldMap({ seed: 'm1-test', name: 'M1 test' });
-  const resolvers = res.resolvers || makeResolvers(res.index);
-
-  const W = 22, H = 18;
-  for (let q = 0; q < W; q++) {
-    for (let r = 0; r < H; r++) {
-      // A stepped plateau climbing to the right, so cliffs of every height show.
-      let h = 0;
-      if (q > 12) h = Math.min(5, Math.floor((q - 12) / 1.6));
-      let terrain = 'grass';
-      if (h >= 4) terrain = 'stony';
-      else if (h >= 2) terrain = 'steppes';
-      else if ((q * 7 + r * 3) % 11 === 0) terrain = 'meadow';
-      else if ((q * 5 + r * 11) % 13 === 0) terrain = 'oak_wood';
-      else if ((q * 3 + r * 7) % 17 === 0) terrain = 'pine_wood';
-      map.place(q, r, terrain, h);
-    }
-  }
-
-  // A lake in the low ground.
-  for (let q = 2; q <= 7; q++) {
-    for (let r = 4; r <= 9; r++) {
-      if ((q - 4.5) ** 2 + (r - 6.5) ** 2 < 7) map.place(q, r, 'water', 0);
-    }
-  }
-
-  // A path running across the flat ground into the cliffs.
-  for (let q = 1; q <= 13; q++) map.place(q, 12, 'path', map.heightAt(q, 12));
-  for (let r = 9; r <= 12; r++) map.place(9, r, 'path', map.heightAt(9, r));
-
-  // Resolve the two autotiled sets now that all the neighbours exist.
-  for (const col of map) {
-    if (col.terrain === 'water') {
-      const hit = resolvers.lake(map.landMask(col.q, col.r), col.q, col.r);
-      col.sprite = hit.sprite;
-      col.frame = hit.frame;
-    } else if (col.terrain === 'path') {
-      const hit = resolvers.path(map.pathMask(col.q, col.r));
-      col.sprite = hit.sprite;
-      col.frame = hit.frame;
-    }
-  }
-
-  map.spawn = { q: 10, r: 12 };
-  return map;
 }
 
 boot().catch(err => {
