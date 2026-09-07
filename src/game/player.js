@@ -20,6 +20,7 @@ export class Player {
     this.leg = null;       // { from, to, t, duration }
     this.facing = 1;       // +1 right, -1 left
     this.onArrive = null;
+    this.onStep = null;    // called with (q, r) each time a tile is reached
   }
 
   get h() { return Math.max(0, this.map.heightAt(this.q, this.r)); }
@@ -96,6 +97,9 @@ export class Player {
     if (this.leg.t >= 1) {
       this.q = this.leg.to.q;
       this.r = this.leg.to.r;
+      // One tile walked. Hunger, crop growth and anything else on the clock
+      // runs off this rather than off elapsed time, so standing still is free.
+      if (this.onStep) this.onStep(this.q, this.r);
       this.beginLeg();
     }
   }
@@ -127,7 +131,7 @@ function drawPawn(ctx, x, y, facing) {
 
   const ink = '#1b1420';
   const cloak = '#8c3f4b';
-  const cloakLit = '#b8566043';
+  const cloakLit = 'rgba(184, 86, 96, 0.26)';
   const skin = '#e8c9a0';
 
   // Body: a tapered cloak, outlined first so the fill sits inside the ink.

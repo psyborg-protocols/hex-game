@@ -1,20 +1,35 @@
-// main.js — bootstrap and the frame loop.
+// main.js — bootstrap, the frame loop, and the wiring between world and UI.
 
 import { loadTileset } from './world/tileset.js';
 import { buildCliffAtlas } from './render/columns.js';
+import { drawStructure, drawVillage } from './render/structures.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath } from './world/pathfinding.js';
 import { Renderer } from './render/renderer.js';
 import { Camera } from './core/camera.js';
+import { Rng } from './core/rng.js';
 import { Player } from './game/player.js';
-import { pickHex, tileCenter, traceTopFace } from './world/hexgrid.js';
+import { pickHex, tileCenter, traceTopFace, distance } from './world/hexgrid.js';
+
+import { createState, itemName, RECIPES } from './game/state.js';
+import { walkOneStep } from './game/inventory.js';
+import { craft } from './game/crafting.js';
+import { ensureVillage, buy, sell } from './game/economy.js';
+import { determineContext } from './game/context.js';
+import { harvest, prospect, build, placementSpots, growCrops, eat, refreshArt } from './game/actions.js';
+import { harvestSpec } from './game/harvests.js';
+
+import { UI } from './ui/ui.js';
+import { inventoryPanel } from './ui/panels/inventory.js';
+import { craftingPanel } from './ui/panels/crafting.js';
+import { skillsPanel } from './ui/panels/skills.js';
+import { tradePanel } from './ui/panels/trade.js';
+import { buildPanel } from './ui/panels/build.js';
 
 const DPR = () => Math.min(window.devicePixelRatio || 1, 2);
 
 async function boot() {
   const canvas = document.getElementById('view');
-  const hud = document.getElementById('hud-stats');
-
   const tileset = await loadTileset();
   const res = {
     images: tileset.images,
@@ -25,7 +40,10 @@ async function boot() {
 
   const seed = new URLSearchParams(location.search).get('seed') || String(Date.now());
   const map = generateWorld({ seed, resolvers: res.resolvers });
+  const world = { map, resolvers: res.resolvers, seed };
+  const rng = new Rng(`${seed}:play`);
 
+  const state = createState();
   const camera = new Camera({ scale: 3 });
   const renderer = new Renderer(canvas, res);
   renderer.resize(camera);
@@ -35,26 +53,202 @@ async function boot() {
   camera.centerOn(start.cx, start.cy);
 
   let hover = null;
-  let follow = true;          // camera keeps the player in view until you pan
-  let preview = null;          // the route the cursor is proposing
+  let follow = true;
+  let preview = null;
+  let placing = null;          // { recipeId, spots }
+  let features = [];           // columns carrying something to draw
   const drag = { active: false, x: 0, y: 0, moved: 0 };
+
+  // ------------------------------------------------------------- the game
+
+  const game = {
+    state, world, map, player, camera, rng,
+    tileCenter,
+    panels: {
+      inventory: inventoryPanel,
+      crafting: craftingPanel,
+      skills: skillsPanel,
+      trade: tradePanel,
+      build: buildPanel,
+    },
+
+    /** What crafting needs to know about where the player is standing. */
+    craftingContext() {
+      const ctx = determineContext(world, state, player);
+      const village = ctx.village
+        ? (ensureVillage(state, ctx.village.feature, ctx.village.q, ctx.village.r, seed),
+          ctx.village.feature)
+        : null;
+      return { at: { q: player.q, r: player.r }, village, distance };
+    },
+
+    doCraft(recipeId) {
+      // A build recipe is not made here — it is paid for when it is sited, so
+      // crafting it now and again on placement would charge for it twice.
+      if (RECIPES[recipeId]?.category === 'build') return game.beginPlacement(recipeId);
+
+      const result = craft(state, recipeId, game.craftingContext());
+      if (!result.ok) return game.ui.notify(result.reasons[0]);
+      const made = result.produced.map(p => `${p.qty} ${itemName(p.id)}`).join(', ');
+      game.ui.notify(`You made ${made}.`);
+      announceLevels(result.recipe.skill, result.levelsGained);
+      for (const r of result.rented) game.ui.notify(`Paid ${r.fee}g to borrow the ${itemName(r.id)}.`);
+      game.ui.refreshPanel();
+      refreshContext();
+    },
+
+    beginPlacement(recipeId) {
+      placing = { recipeId, spots: placementSpots(world, state, player, recipeId) };
+      game.ui.closePanel();
+      game.ui.clearContext();   // the next click sites the building, not a harvest
+      if (!placing.spots.length) {
+        placing = null;
+        return game.ui.notify('No level ground here to build on.');
+      }
+      game.ui.notify('Click a highlighted hex to site it. Escape to cancel.');
+    },
+
+    doHarvest(id) {
+      const spec = harvestSpec(id);
+      game.ui.clearContext();
+      game.ui.showProgress(spec.verb, 900, player).then(() => {
+        const result = harvest(world, state, player, id, rng);
+        game.ui.notify(result.message);
+        if (result.ok) {
+          announceLevels(spec.skill, result.levels);
+          if (result.changed?.length) {
+            refreshArt(world, result.changed.filter(c => c.terrain !== 'farm'));
+            rebuildFeatures();
+          }
+        }
+        refreshContext();
+        game.ui.updateHud();
+      });
+    },
+
+    doProspect() {
+      game.ui.clearContext();
+      game.ui.showProgress('Prospecting', 1400, player).then(() => {
+        const result = prospect(world, state, player, rng);
+        game.ui.notify(result.message);
+        rebuildFeatures();
+        refreshContext();
+        game.ui.updateHud();
+      });
+    },
+
+    doTrade(villageCol) {
+      ensureVillage(state, villageCol.feature, villageCol.q, villageCol.r, seed);
+      game.ui.openPanel('trade', { village: villageCol });
+    },
+
+    doBuy(col, itemId) {
+      game.ui.notify(buy(state, col.q, col.r, itemId).message);
+      game.ui.refreshPanel();
+    },
+
+    doSell(col, itemId) {
+      game.ui.notify(sell(state, col.q, col.r, itemId).message);
+      game.ui.refreshPanel();
+    },
+
+    doEat(itemId) {
+      game.ui.notify(eat(state, itemId).message);
+      game.ui.refreshPanel();
+    },
+  };
+
+  game.ui = new UI(game);
+  game.ui.updateHud();
+
+  function announceLevels(skill, levels) {
+    for (const l of levels || []) game.ui.notify(`Your ${skill} rises to ${l}.`);
+  }
+
+  // --------------------------------------------------------- world drawing
+
+  /** Columns with something standing on them, collected for the depth sort. */
+  function rebuildFeatures() {
+    features = [];
+    for (const col of map) {
+      const f = col.feature;
+      if (!f) continue;
+      if (f.type === 'village') {
+        features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawVillage(ctx, Math.round(cx), Math.round(cy)) });
+      } else if (f.type === 'structure') {
+        features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawStructure(ctx, Math.round(cx), Math.round(cy), f.item) });
+      } else if (f.type === 'ore' && f.known && f.remaining > 0) {
+        features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawVein(ctx, Math.round(cx), Math.round(cy)) });
+      }
+    }
+  }
+  rebuildFeatures();
+
+  function drawVein(ctx, x, y) {
+    // A found seam: a couple of bright flecks in the rock, so a revealed vein
+    // reads at a glance without needing an icon on the map.
+    ctx.fillStyle = '#1b1420';
+    ctx.fillRect(x - 4, y - 4, 9, 6);
+    ctx.fillStyle = '#c9a227';
+    ctx.fillRect(x - 3, y - 3, 3, 2);
+    ctx.fillRect(x + 1, y - 1, 3, 2);
+    ctx.fillStyle = '#f0dc8a';
+    ctx.fillRect(x - 3, y - 3, 1, 1);
+  }
+
+  const drawOverlays = ctx => {
+    if (placing) {
+      for (const spot of placing.spots) {
+        const { cx, cy } = tileCenter(spot.q, spot.r, spot.h);
+        traceTopFace(ctx, cx, cy);
+        ctx.fillStyle = 'rgba(217, 180, 91, 0.28)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(217, 180, 91, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      return;
+    }
+    if (!preview || preview.length < 2) return;
+    ctx.fillStyle = 'rgba(255, 248, 220, 0.5)';
+    for (let i = 1; i < preview.length; i++) {
+      const { cx, cy } = tileCenter(preview[i].q, preview[i].r, Math.max(0, map.heightAt(preview[i].q, preview[i].r)));
+      ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
+    }
+  };
+
+  // --------------------------------------------------------------- context
+
+  function refreshContext() {
+    if (player.moving || placing) return game.ui.clearContext();
+    const ctx = determineContext(world, state, player);
+    game.ui.setContext(ctx.offers, player, offer => {
+      if (offer.kind === 'harvest') game.doHarvest(offer.id);
+      else if (offer.kind === 'prospect') game.doProspect();
+      else if (offer.kind === 'trade') game.doTrade(offer.village);
+    });
+  }
+
+  player.onStep = () => {
+    const hunger = walkOneStep(state);
+    if (hunger.ate) game.ui.notify(`You eat some ${itemName(hunger.ate)}.`);
+    if (hunger.hungry) game.ui.notify('You are hungry.');
+    if (hunger.starving) game.ui.notify('You are starving.');
+    const grown = growCrops(world, state);
+    if (grown.length) rebuildFeatures();
+    game.ui.updateHud();
+  };
+
+  // ----------------------------------------------------------------- input
 
   const worldAt = e => {
     const rect = canvas.getBoundingClientRect();
     const d = DPR();
     return camera.screenToWorld((e.clientX - rect.left) * d, (e.clientY - rect.top) * d);
   };
-
-  const updateHover = e => {
+  const hexAt = e => {
     const w = worldAt(e);
-    const hit = pickHex(w.x, w.y, (q, r) => map.heightAt(q, r));
-    const changed = !hit !== !hover || (hit && hover && (hit.q !== hover.q || hit.r !== hover.r));
-    hover = hit;
-    if (changed) {
-      preview = hover && !player.moving
-        ? findPath(map, { q: player.q, r: player.r }, hover)
-        : null;
-    }
+    return pickHex(w.x, w.y, (q, r) => map.heightAt(q, r));
   };
 
   canvas.addEventListener('pointerdown', e => {
@@ -77,7 +271,12 @@ async function boot() {
       drag.x = e.clientX;
       drag.y = e.clientY;
     }
-    updateHover(e);
+    const hit = hexAt(e);
+    const moved = !hit !== !hover || (hit && hover && (hit.q !== hover.q || hit.r !== hover.r));
+    hover = hit;
+    if (moved && !placing) {
+      preview = hover && !player.moving ? findPath(map, player, hover) : null;
+    }
   });
 
   canvas.addEventListener('pointerup', e => {
@@ -86,20 +285,28 @@ async function boot() {
     drag.active = false;
     if (wasDrag) return;
 
-    // Resolve the target from the click itself rather than from the last hover:
-    // a tap has no preceding move, and neither does a touch.
-    const w = worldAt(e);
-    const target = pickHex(w.x, w.y, (q, r) => map.heightAt(q, r));
+    const target = hexAt(e);
     if (!target) return;
 
-    const route = findPath(map, { q: player.q, r: player.r }, target);
-    if (!route) {
-      notify('No way through.');
+    if (placing) {
+      const result = build(world, state, player, placing.recipeId, target, game.craftingContext());
+      game.ui.notify(result.message);
+      if (result.ok) {
+        announceLevels(RECIPES[placing.recipeId].skill, result.levels);
+        placing = null;
+        rebuildFeatures();
+        refreshContext();
+        game.ui.updateHud();
+      }
       return;
     }
+
+    const route = findPath(map, player, target);
+    if (!route) return game.ui.notify('No way through.');
     follow = true;
-    player.follow(route);
     preview = null;
+    game.ui.clearContext();
+    player.follow(route, refreshContext);
   });
 
   canvas.addEventListener('wheel', e => {
@@ -107,36 +314,28 @@ async function boot() {
     const rect = canvas.getBoundingClientRect();
     const d = DPR();
     if (camera.zoom(e.deltaY > 0 ? -1 : 1,
-      (e.clientX - rect.left) * d, (e.clientY - rect.top) * d,
-      canvas.width, canvas.height)) {
+      (e.clientX - rect.left) * d, (e.clientY - rect.top) * d, canvas.width, canvas.height)) {
       renderer.resize(camera);
     }
   }, { passive: false });
 
   window.addEventListener('resize', () => renderer.resize(camera));
   window.addEventListener('keydown', e => {
-    if (e.key === 'c') { follow = true; }
-    if (e.key === 'Escape') { player.stop(); }
+    if (e.key === 'Escape') {
+      if (placing) { placing = null; refreshContext(); }
+      else player.stop();
+    }
+    if (e.key === 'c') follow = true;
+    if (e.key === 'i') game.ui.togglePanel('inventory');
+    if (e.key === 'k') game.ui.togglePanel('crafting');
+    if (e.key === 'b') game.ui.togglePanel('build');
   });
 
-  /** Faint dots along the route the cursor is proposing. */
-  const drawPreview = ctx => {
-    if (!preview || preview.length < 2) return;
-    ctx.fillStyle = 'rgba(255, 248, 220, 0.5)';
-    for (let i = 1; i < preview.length; i++) {
-      const step = preview[i];
-      const { cx, cy } = tileCenter(step.q, step.r, Math.max(0, map.heightAt(step.q, step.r)));
-      ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
-    }
-    const last = preview[preview.length - 1];
-    const { cx, cy } = tileCenter(last.q, last.r, Math.max(0, map.heightAt(last.q, last.r)));
-    traceTopFace(ctx, cx, cy);
-    ctx.strokeStyle = 'rgba(217, 180, 91, 0.9)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  };
+  // ------------------------------------------------------------ frame loop
 
+  const hudTerrain = document.getElementById('hud-terrain');
   let last = performance.now();
+
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
@@ -149,42 +348,30 @@ async function boot() {
     camera.update(dt);
 
     renderer.render(map, camera, {
-      hover,
-      entities: [player],
-      overlays: [drawPreview],
+      hover: placing ? null : hover,
+      entities: [...features, player],
+      overlays: [drawOverlays],
     });
 
-    const col = hover && map.get(hover.q, hover.r);
-    hud.innerHTML = [
-      `<b>${col ? col.terrain.replace(/_/g, ' ') : '—'}</b>`,
-      col ? `<span class="dim">${hover.q}, ${hover.r} &middot; height ${col.h}</span>` : '',
-      col?.feature ? `<span class="dim">${describeFeature(col.feature)}</span>` : '',
-      `<span class="dim">seed ${seed} &middot; ${camera.scale}x</span>`,
-    ].filter(Boolean).join('<br>');
+    game.ui.positionAnchors(camera, map, DPR());
+
+    if (hudTerrain) {
+      const col = hover && map.get(hover.q, hover.r);
+      hudTerrain.textContent = col
+        ? `${col.terrain.replace(/_/g, ' ')} · height ${col.h}`
+        : '';
+    }
 
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
-  window.game = { map, camera, renderer, player, res, seed };
-}
+  refreshContext();
 
-function describeFeature(f) {
-  if (f.type === 'village') return `village of ${f.name}`;
-  if (f.type === 'trees') return `${f.remaining} ${f.kind} trees`;
-  if (f.type === 'ore') return f.known ? `ore vein (${f.remaining})` : 'stone';
-  return f.type;
-}
-
-let notifyTimer = null;
-function notify(message, ms = 2200) {
-  const root = document.getElementById('notifications');
-  const el = document.createElement('div');
-  el.className = 'notification';
-  el.textContent = message;
-  root.appendChild(el);
-  clearTimeout(notifyTimer);
-  notifyTimer = setTimeout(() => el.remove(), ms);
+  // A handle for poking at a running game from the console.
+  game.renderer = renderer;
+  game.getPlacing = () => placing;
+  window.game = game;
 }
 
 boot().catch(err => {
