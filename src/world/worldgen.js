@@ -352,11 +352,14 @@ class Generator {
         continue;
       }
 
+      // Bare stone is kept to the peaks. The cliff faces already read as rock
+      // wherever the ground steps, so spreading stony tops as well turns the
+      // whole map grey and leaves nowhere green to start.
       const moisture = this.moist.fbm(q * 0.09 + 100, r * 0.09 - 50, 3);
       let terrain;
-      if (h >= this.maxHeight - 2) terrain = 'stony';
-      else if (h >= this.maxHeight - 4) terrain = moisture > 0.55 ? 'steppes' : 'stony';
-      else if (h >= 2) terrain = moisture > 0.5 ? 'grass' : 'steppes';
+      if (h >= this.maxHeight - 1) terrain = 'stony';
+      else if (h >= this.maxHeight - 3) terrain = moisture > 0.5 ? 'steppes' : 'stony';
+      else if (h >= 2) terrain = moisture > 0.42 ? 'grass' : 'steppes';
       else terrain = moisture > 0.56 ? 'meadow' : 'grass';
 
       map.place(q, r, terrain, h);
