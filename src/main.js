@@ -1,7 +1,6 @@
 // main.js — bootstrap, the frame loop, and the wiring between world and UI.
 
 import { loadTileset } from './world/tileset.js';
-import { buildCliffAtlas } from './render/columns.js';
 import { drawStructure, drawVillage } from './render/structures.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath } from './world/pathfinding.js';
@@ -34,7 +33,6 @@ async function boot() {
   const tileset = await loadTileset();
   const res = {
     images: tileset.images,
-    cliffAtlas: buildCliffAtlas(tileset.images),
     resolvers: tileset.resolvers,
     index: tileset.index,
   };

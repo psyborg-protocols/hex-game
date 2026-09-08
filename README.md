@@ -60,13 +60,12 @@ down 12. Game and editor both import it, so they cannot drift.
 `tests/hexgrid.test.mjs` proves the plane tiles with zero gaps and zero overlaps.
 
 **Cliffs.** A tile frame is a flat-top hexagon in rows 16-39 extruded straight
-down by its 8px wall, which is why rows 27-36 are the full 32px wide. So a column
-of height *h* is that hexagon extruded 8(h+1)px, and its sides are full width
-from row 27 down to row 36+8h. Stacking whole frames leaves 16px of grass showing
-per level; repeating the wall strip leaves a notch down each side, because the
-wall tapers to 20px. `columns.js` instead bakes a cliff variant of every frame —
-the whole silhouette filled with that tile's own wall texture — and stacks it
-under one real tile.
+down by its 8px wall — every tile already carries its own side section. So
+`columns.js` just stacks whole frames, each lifted by exactly that wall height:
+each copy covers the face of the one below and leaves only its side showing, so
+an *h*-high column draws one surface over *h* bands of wall. On stone those bands
+read as bedding planes, on grass as a cut earth bank. Nothing is synthesised, and
+the game and the editor draw a column with the same function.
 
 **Scale.** Everything is drawn at 1x into an offscreen buffer and upscaled once
 by a whole number, with smoothing off. Fractional device pixel ratios are floored

@@ -13,7 +13,7 @@
 //   wheel               zoom, whole steps only
 
 import { loadTileset, TERRAIN, variantFor } from './src/world/tileset.js';
-import { buildCliffAtlas, drawColumn } from './src/render/columns.js';
+import { drawColumn } from './src/render/columns.js';
 import { WorldMap } from './src/world/mapformat.js';
 import { pixelScale } from './src/core/camera.js';
 import { resolveAutotiles } from './src/world/worldgen.js';
@@ -274,7 +274,6 @@ async function init() {
   const tileset = await loadTileset();
   res = {
     images: tileset.images,
-    cliffAtlas: buildCliffAtlas(tileset.images),
     resolvers: tileset.resolvers,
     index: tileset.index,
   };
