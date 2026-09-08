@@ -58,6 +58,9 @@ export class UI {
       `<b>${s.gold}</b> gold`,
       `<b>${s.energy}</b> / ${s.maxEnergy} energy`,
       `<span class="dim">${s.inventory.filter(Boolean).length} / ${s.inventory.length} slots</span>`,
+      // Say so loudly. Nothing is more confusing than wondering why a recipe you
+      // have no materials for is green.
+      ...(s.free ? ['<span class="free-badge">FREE RESOURCES</span>'] : []),
     ].join('<br>');
 
     this.hudSkills.innerHTML = SKILLS.map(skill => {

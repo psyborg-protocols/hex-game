@@ -359,3 +359,15 @@ html, body {
 
 .trade-row button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .trade-row button:disabled { opacity: 0.35; cursor: default; }
+
+/* Free-resource testing mode: unmissable on purpose. */
+.free-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border: 1px solid #d9a441;
+  border-radius: 3px;
+  color: #f0c46a;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}

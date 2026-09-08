@@ -20,7 +20,7 @@
 // The check returns its reasons rather than a bare boolean, because a crafting
 // list that says only "no" is unplayable in an economy with this many gates.
 
-import { RECIPES, isBuilding, BUILD_REACH, builtNear, hasBuilt, itemName } from './state.js';
+import { RECIPES, isBuilding, BUILD_REACH, builtNear, hasBuilt, itemName, isFree } from './state.js';
 import { ITEM_BASE_PRICES } from '../../data/game_data.js';
 import { countItem, hasRoomFor, addItem, removeItem } from './inventory.js';
 import { addXp, levelOf } from './skills.js';
@@ -93,6 +93,24 @@ export function checkRecipe(state, recipeId, ctx = {}) {
   if (!recipe) return { ok: false, recipe: null, reasons: ['No such recipe.'] };
 
   const reasons = [];
+  const free = isFree(state);
+
+  // In free mode every gate below is a cost — skill, materials, tools, world
+  // structures, energy, rental fees — so the only reason left is the pack being
+  // full, which is not a resource and would silently drop what you just made.
+  if (free) {
+    const out = Object.entries(recipe.output)[0];
+    const noRoom = out && !isBuilding(out[0]) && !hasRoomFor(state, out[0], out[1]);
+    return {
+      ok: !noRoom,
+      recipe,
+      reasons: noRoom ? ['No room to carry it.'] : [],
+      missingInputs: {},
+      toolPlan: [],
+      fees: 0,
+      energyNeeded: 0,
+    };
+  }
 
   const level = levelOf(state, recipe.skill);
   if (level < recipe.level) {
@@ -148,8 +166,10 @@ export function craft(state, recipeId, ctx = {}) {
   if (!check.ok) return { ok: false, reasons: check.reasons };
 
   const { recipe, toolPlan } = check;
-  for (const t of toolPlan) if (t.fee) state.gold -= t.fee;
-  for (const [id, qty] of Object.entries(recipe.inputs || {})) removeItem(state, id, qty);
+  if (!isFree(state)) {
+    for (const t of toolPlan) if (t.fee) state.gold -= t.fee;
+    for (const [id, qty] of Object.entries(recipe.inputs || {})) removeItem(state, id, qty);
+  }
 
   const produced = [];
   const isBuild = recipe.category === 'build';

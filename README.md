@@ -9,11 +9,12 @@ Plain ES modules and canvas 2D. No build step, no dependencies.
 
 ```
 node tools/serve.js          # then open http://localhost:8080
-node tests/all.mjs           # 115 tests, ~2s
+node tests/all.mjs           # 128 tests, ~2s
 ```
 
 `http://localhost:8080/?seed=alpha` generates a named world;
-`?load=1` restores the saved game; `/editor.html` is the map editor.
+`?load=1` restores the saved game; `?free=1` turns on free-resource mode for
+testing; `/editor.html` is the map editor.
 
 ## Layout
 
@@ -107,6 +108,23 @@ would throw away the reason to build one. Ramping therefore stops at
 `rampCeiling`, and `tests/worldgen.test.mjs` holds both halves of that: nothing
 low is ever walled off, and something high always is.
 
+## Free-resource mode
+
+A testing switch: `?free=1`, or the toggle under **Game → Testing**. It turns
+off every *cost* — materials, tools, skill levels, `needs` gates, energy, gold,
+rental fees — and not one *rule*. Harvests still only work on the terrain they
+belong to, buildings still need legal ground, cliffs still have to be climbed,
+the river still has to be crossed, and felling a wood still uses it up. XP is
+still awarded, so you level up as you go.
+
+It is one flag on the state, read through `isFree` in `src/game/state.js`, so it
+saves and loads with the game and there is exactly one thing to grep for. The
+HUD says `FREE RESOURCES` while it is on, because nothing is more confusing than
+wondering why a recipe you have no materials for is green.
+
+The one cost it keeps is a full pack: free mode would otherwise drop what you
+just made without saying so.
+
 ## Placeholder art
 
 The asset set covers terrain, paths, shorelines and crops. It has no characters
@@ -132,6 +150,7 @@ No framework — `tests/_harness.mjs` is thirty lines.
 | `economy` | the graph is consistent, and the whole discovery path is walkable from an empty pack — by planning backwards, not by crafting greedily |
 | `world` | harvesting, felling, mining, prospecting and building change the map correctly |
 | `save` | a save restores the world you left, not the world the seed would generate |
+| `freemode` | the testing switch lifts every cost and not one rule |
 
 ## The art pipeline
 

@@ -17,6 +17,7 @@ import { neighbors } from '../world/hexgrid.js';
 import { RECIPES } from '../../data/game_data.js';
 import { countItem } from './inventory.js';
 import { levelOf } from './skills.js';
+import { isFree } from './state.js';
 
 /** Terrain groups the harvest table refers to. */
 const OPEN = ['meadow', 'grass', 'steppes'];
@@ -192,6 +193,10 @@ export function availableHarvests(map, state, at) {
     if (!spec.where(col, map)) continue;
 
     const reasons = [];
+    // Free mode drops the costs, not the rules: `spec.where` above still decides
+    // whether this harvest belongs on this terrain at all.
+    if (isFree(state)) { out.push({ spec, ok: true, reasons, col }); continue; }
+
     if (levelOf(state, spec.skill) < spec.level) {
       reasons.push(`Needs ${spec.skill} level ${spec.level}.`);
     }

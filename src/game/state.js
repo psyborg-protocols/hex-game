@@ -26,9 +26,25 @@ export const BUILD_REACH = 1;
 export const isBuilding = id => BUILDINGS.has(id);
 export const itemName = id => ITEMS[id]?.name || id;
 
-export function createState({ gold = 15, maxEnergy = 10, slots = INVENTORY_SLOTS } = {}) {
+/**
+ * Free-resource mode: a testing switch that turns off every *cost* while leaving
+ * every *rule* in place.
+ *
+ * Recipes still need their tools to exist as concepts, harvests still only work
+ * on the terrain they belong to, cliffs still have to be climbed and the river
+ * still has to be crossed — what goes away is having to gather, pay, provision
+ * and level up first. So it is useful for testing the parts of the game that are
+ * hard to reach, and useless for testing the economy, which is the point.
+ *
+ * It is one flag on the state, read through `isFree`, so it saves and loads with
+ * the game and there is exactly one thing to search for.
+ */
+export const isFree = state => !!state?.free;
+
+export function createState({ gold = 15, maxEnergy = 10, slots = INVENTORY_SLOTS, free = false } = {}) {
   return {
     inventory: new Array(slots).fill(null),
+    free,
     gold,
     energy: 0,              // derived from carried food; see inventory.js
     maxEnergy,

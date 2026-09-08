@@ -4,6 +4,7 @@
 // on how much work you can do before you have to go and eat.
 
 import { ITEMS } from '../../data/game_data.js';
+import { isFree } from './state.js';
 
 export function countItem(state, id) {
   let n = 0;
@@ -91,7 +92,9 @@ export function foodValue(state) {
 
 /** Energy is the food you carry, capped. Called on every food change. */
 export function recomputeEnergy(state) {
-  state.energy = Math.min(state.maxEnergy, foodValue(state));
+  // Free mode keeps the tank full: energy here *is* carried food, so leaving it
+  // derived would make provisioning the one cost free mode did not lift.
+  state.energy = isFree(state) ? state.maxEnergy : Math.min(state.maxEnergy, foodValue(state));
   return state.energy;
 }
 
@@ -104,6 +107,7 @@ export const STEPS_PER_MEAL = 8;
 
 export function walkOneStep(state) {
   state.stepsWalked++;
+  if (isFree(state)) return {};
   if (state.stepsWalked % STEPS_PER_MEAL !== 0) return {};
 
   for (const slot of state.inventory) {

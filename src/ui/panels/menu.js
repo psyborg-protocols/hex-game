@@ -25,6 +25,15 @@ export const menuPanel = {
       <button class="line" data-act="export"><span></span><span>Download a save file</span></button>
       <button class="line" data-act="import"><span></span><span>Open a save file</span></button>
 
+      <h3>Testing</h3>
+      <button class="line" data-act="free">
+        <span></span><span>Free resources</span>
+        <span class="dim">${game.state.free ? 'on' : 'off'}</span>
+      </button>
+      <p class="dim">Crafting, harvesting, building and trade stop costing
+        anything. Terrain, cliffs and the river still work normally. Saved with
+        the game; <code>?free=1</code> also turns it on.</p>
+
       <h3>New world</h3>
       <p class="dim">Starting a new world does not touch your saved game.</p>
       <div class="trade-row">
@@ -44,6 +53,7 @@ export const menuPanel = {
       export: () => game.doExport(),
       import: () => file.click(),
       new: () => game.doNewWorld(body.querySelector('#seed-input').value.trim()),
+      free: () => game.doToggleFree(),
     };
     for (const btn of body.querySelectorAll('[data-act]')) {
       btn.addEventListener('click', () => actions[btn.dataset.act]());

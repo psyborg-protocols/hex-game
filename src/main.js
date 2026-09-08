@@ -12,7 +12,7 @@ import { Player } from './game/player.js';
 import { pickHex, tileCenter, traceTopFace, distance } from './world/hexgrid.js';
 
 import { createState, itemName, RECIPES } from './game/state.js';
-import { walkOneStep } from './game/inventory.js';
+import { walkOneStep, recomputeEnergy } from './game/inventory.js';
 import { craft } from './game/crafting.js';
 import { ensureVillage, buy, sell } from './game/economy.js';
 import { determineContext } from './game/context.js';
@@ -49,7 +49,12 @@ async function boot() {
   const world = { map, resolvers: res.resolvers, seed };
   const rng = new Rng(`${seed}:play`);
 
+  // ?free=1 turns on free-resource mode for testing. On a restored game the
+  // saved flag wins unless the URL asks for it, so a save made in free mode
+  // reloads in free mode and `?free=1` can switch an ordinary save into it.
   const state = restored ? restored.state : createState();
+  if (params.get('free') === '1') state.free = true;
+  recomputeEnergy(state);
   const camera = new Camera({ scale: 3 });
   const renderer = new Renderer(canvas, res);
   renderer.resize(camera);
@@ -162,6 +167,19 @@ async function boot() {
     doEat(itemId) {
       game.ui.notify(eat(state, itemId).message);
       game.ui.refreshPanel();
+    },
+
+    doToggleFree() {
+      state.free = !state.free;
+      // Energy is derived from carried food, so it has to be recomputed both
+      // ways: full while free, back to whatever you are actually carrying after.
+      recomputeEnergy(state);
+      game.ui.notify(state.free
+        ? 'Free resources on — nothing costs anything.'
+        : 'Free resources off.');
+      game.ui.refreshPanel();
+      game.ui.updateHud();
+      refreshContext();
     },
 
     doSave() {

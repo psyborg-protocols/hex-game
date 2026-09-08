@@ -9,7 +9,7 @@
 
 import { Rng } from '../core/rng.js';
 import { ITEM_BASE_PRICES, ITEMS } from '../../data/game_data.js';
-import { RECIPES, isBuilding, itemName } from './state.js';
+import { RECIPES, isBuilding, itemName, isFree } from './state.js';
 import { addItem, removeItem, hasItem, hasRoomFor } from './inventory.js';
 
 /** Structures and one-off goods are not market stock. */
@@ -56,10 +56,11 @@ export const stockOf = (state, q, r) => state.prices[villageKey(q, r)] || {};
 export function buy(state, q, r, itemId) {
   const price = stockOf(state, q, r)[itemId];
   if (price == null) return { ok: false, message: 'They do not sell that.' };
-  if (state.gold < price) return { ok: false, message: 'Not enough gold.' };
+  const free = isFree(state);
+  if (!free && state.gold < price) return { ok: false, message: 'Not enough gold.' };
   if (!hasRoomFor(state, itemId, 1)) return { ok: false, message: 'No room to carry it.' };
 
-  state.gold -= price;
+  if (!free) state.gold -= price;
   addItem(state, itemId, 1);
   return { ok: true, message: `Bought ${itemName(itemId)} for ${price}g.`, price };
 }
