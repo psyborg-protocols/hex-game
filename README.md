@@ -9,7 +9,7 @@ Plain ES modules and canvas 2D. No build step, no dependencies.
 
 ```
 node tools/serve.js          # then open http://localhost:8080
-node tests/all.mjs           # 102 tests, ~1.5s
+node tests/all.mjs           # 115 tests, ~2s
 ```
 
 `http://localhost:8080/?seed=alpha` generates a named world;
@@ -35,6 +35,7 @@ src/
   render/
     renderer.js       1x buffer, one integer upscale, back-to-front draw order
     columns.js        stacks drawn as cliffs (see "Cliffs" below)
+    decor.js          trees and props stood on tiles (see docs/decor.md)
     structures.js     placeholder art for buildings
   game/
     state.js  inventory.js  skills.js  crafting.js  economy.js
@@ -44,6 +45,7 @@ src/
 
 data/                 the economy: 93 items, 85 recipes, 5 skills x 7 levels
 new_tiles/            27 tile sheets + index.json (lattice + autotile tables)
+decor/                40-sprite prop sheet + index.json (trees, rocks, crops)
 icons/                93 item icons, 5 skill glyphs, 35 ability icons
 tools/                the art pipeline, and serve.js
 tests/                node test suites, no framework
@@ -92,8 +94,18 @@ metalworking fully locked. That is the scarcity anchor, not a bug — and
 
 **The river.** It divides the board and is meant to. The far bank waits on a
 bridge (woodworking 6) or a boat (woodworking 5). The generator therefore puts
-the spawn and every village on the near one, and only ramps *cliffs* when it
-guarantees the land is walkable.
+the spawn and every village on the near one.
+
+**The mountains.** Base terrain gets its own low ceiling (`baseHeight`) and the
+massifs get the rest, up to 20 levels — the split the old three.js generator used,
+and the reason its worlds were rolling country with real mountains in them rather
+than uniform noise nobody could cross. The two barriers that fall out of that are
+not treated alike. Low ground cut off by a step or two is an accident of the
+noise and gets a staircase; high ground ringed by a sheer face is left standing,
+because those plateaus are ladder country (woodworking 4) and carving a way up
+would throw away the reason to build one. Ramping therefore stops at
+`rampCeiling`, and `tests/worldgen.test.mjs` holds both halves of that: nothing
+low is ever walled off, and something high always is.
 
 ## Placeholder art
 
@@ -114,7 +126,8 @@ No framework — `tests/_harness.mjs` is thirty lines.
 |---|---|
 | `hexgrid` | the lattice tiles the plane, neighbours are reciprocal at both parities, picking prefers the column in front |
 | `autotile` | all 64 masks land on real art; path coverage matches what `docs/new_tiles.md` measured |
-| `worldgen` | determinism, no cliff strands anything, the near bank is a whole playable world, maps round-trip |
+| `decor` | the prop index still describes the sheet, and the game only asks for sprites it has |
+| `worldgen` | determinism, the low country is all walkable, the high ground stays gated, peaks reach 20 |
 | `pathfinding` | climb 1 / drop 2, ladders, bridges, and every returned step is legal |
 | `economy` | the graph is consistent, and the whole discovery path is walkable from an empty pack — by planning backwards, not by crafting greedily |
 | `world` | harvesting, felling, mining, prospecting and building change the map correctly |
@@ -130,11 +143,13 @@ node tools/generate_tiles.js          # validate + write tiles/
 node tools/newtiles_index.js --json   # derive the autotile tables
 node tools/newtiles_gen.js            # generate matching extra terrain
 node tools/newtiles_map.js out.png mixed 4
+node tools/decor_index.js --json      # derive the decor sprite boxes
 node tools/to_json.js                 # rewrite data/game_data.json
 ```
 
-See `docs/icon_pipeline.md`, `docs/tile_pipeline.md` and `docs/new_tiles.md` —
-the last one is the reference for anything that touches how tiles are drawn.
+See `docs/icon_pipeline.md`, `docs/tile_pipeline.md`, `docs/new_tiles.md` and
+`docs/decor.md` — `new_tiles.md` is the reference for anything that touches how
+tiles are drawn.
 
 ## Known gaps
 

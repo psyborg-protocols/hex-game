@@ -62,7 +62,10 @@ export function harvest(world, state, at, id, rng) {
   if (spec.depletes === 'trees' && col.feature) {
     col.feature.remaining--;
     if (col.feature.remaining <= 0) {
-      const floor = col.terrain === 'pine_wood' ? 'pine_floor' : 'forest_floor';
+      // What kind of wood it was, not what sheet drew it — a sparse pine stands
+      // on `pine_floor` already and must not fell into an oak one.
+      const pine = col.feature.kind === 'pine' || col.terrain.startsWith('pine');
+      const floor = pine ? 'pine_floor' : 'forest_floor';
       map.place(col.q, col.r, floor, col.h);
       changed.push(col);
     }

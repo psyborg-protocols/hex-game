@@ -1,6 +1,7 @@
 // main.js — bootstrap, the frame loop, and the wiring between world and UI.
 
 import { loadTileset } from './world/tileset.js';
+import { loadDecor } from './render/decor.js';
 import { drawStructure, drawVillage } from './render/structures.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath } from './world/pathfinding.js';
@@ -30,9 +31,10 @@ import { menuPanel } from './ui/panels/menu.js';
 
 async function boot() {
   const canvas = document.getElementById('view');
-  const tileset = await loadTileset();
+  const [tileset, decor] = await Promise.all([loadTileset(), loadDecor()]);
   const res = {
     images: tileset.images,
+    decor,
     resolvers: tileset.resolvers,
     index: tileset.index,
   };

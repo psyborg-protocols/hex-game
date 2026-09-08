@@ -61,7 +61,9 @@ export const HARVESTS = {
   },
   chop_rough_log: {
     id: 'chop_rough_log', recipe: 'chop_rough_log',
-    where: col => WOODED.includes(col.terrain) && (col.feature?.remaining ?? 0) > 0,
+    // Wherever trees are standing, which is both the dense sheets and the bare
+    // floors that grow their trees as decor props.
+    where: col => col.feature?.type === 'trees' && (col.feature.remaining ?? 0) > 0,
     yields: { rough_log: [1, 1] },
     depletes: 'trees',
     verb: 'Chopping',

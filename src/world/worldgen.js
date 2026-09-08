@@ -447,9 +447,15 @@ class Generator {
         : (pine ? 'pine_floor' : 'forest_floor');
 
       map.place(q, r, terrain, col.h);
-      if (dense) {
-        map.get(q, r).feature = { type: 'trees', kind: pine ? 'pine' : 'oak', remaining: this.rng.irange(2, 5) };
-      }
+      // Both kinds of wood carry their trees. The dense sheets have them drawn
+      // in; the bare floors get them stood on top from decor/ at draw time, so a
+      // sparse wood reads as a wood rather than as ground somebody already
+      // cleared. Felling either one down to nothing leaves the bare floor.
+      map.get(q, r).feature = {
+        type: 'trees',
+        kind: pine ? 'pine' : 'oak',
+        remaining: dense ? this.rng.irange(3, 5) : this.rng.irange(1, 2),
+      };
     }
   }
 

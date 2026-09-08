@@ -7,6 +7,7 @@
 
 import { GEOM, columnBaseY, tileCenter, traceTopFace } from '../world/hexgrid.js';
 import { drawColumn } from './columns.js';
+import { drawColumnDecor } from './decor.js';
 import { pixelScale } from '../core/camera.js';
 
 export class Renderer {
@@ -62,8 +63,12 @@ export class Renderer {
     this.collect(map, view, entities);
 
     for (const d of this.drawables) {
-      if (d.column) drawColumn(b, this.res, d.column);
-      else d.entity.draw(b, d.cx, d.cy, this.res);
+      if (d.column) {
+        drawColumn(b, this.res, d.column);
+        drawColumnDecor(b, this.res, d.column);
+      } else {
+        d.entity.draw(b, d.cx, d.cy, this.res);
+      }
     }
 
     if (hover) this.drawHover(b, map, hover);
