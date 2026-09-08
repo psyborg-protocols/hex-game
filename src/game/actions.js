@@ -7,6 +7,7 @@
 // and eventually climbable. The world is meant to be spent.
 
 import { neighbors, distance } from '../world/hexgrid.js';
+import { MAX_CLIMB } from '../world/pathfinding.js';
 import { variantFor, CROPS, cropFrame, TERRAIN } from '../world/tileset.js';
 import { harvestSpec, availableHarvests, nearbyOre, cliffTarget } from './harvests.js';
 import { addItem, countItem, removeItem, hasRoomFor } from './inventory.js';
@@ -137,13 +138,30 @@ export function prospect(world, state, at, rng) {
   };
 }
 
-/** Columns you could put a structure on, from where you stand. */
+/**
+ * Columns you could put a structure on, from where you stand.
+ *
+ * A ladder is the exception, and has to be: everything else is placed on ground
+ * you could already walk to, but a ladder's whole purpose is to reach ground you
+ * cannot. So it targets the cliff top instead — an adjacent column too high to
+ * climb — and is planted on the hex you are standing on.
+ */
 export function placementSpots(world, state, at, recipeId) {
   const { map } = world;
   const recipe = RECIPES[recipeId];
   if (!recipe) return [];
   const here = map.get(at.q, at.r);
   if (!here) return [];
+
+  if (isLadder(recipeId)) {
+    if (here.feature) return [];   // nowhere to plant its foot
+    return neighbors(at.q, at.r)
+      .map(c => map.get(c.q, c.r))
+      .filter(col => col
+        && TERRAIN[col.terrain]?.walk
+        && col.h - here.h > MAX_CLIMB          // a face you cannot already climb
+        && !ladderBetween(map, at, col));
+  }
 
   const candidates = [{ q: at.q, r: at.r }, ...neighbors(at.q, at.r)];
   return candidates
@@ -154,6 +172,12 @@ export function placementSpots(world, state, at, recipeId) {
       && Math.abs(col.h - here.h) <= 1);
 }
 
+const isLadder = recipeId => Object.keys(RECIPES[recipeId]?.output || {})[0] === 'ladder';
+
+const ladderBetween = (map, a, b) => map.structures.some(s => s.type === 'ladder'
+  && ((s.from.q === a.q && s.from.r === a.r && s.to.q === b.q && s.to.r === b.r)
+    || (s.to.q === a.q && s.to.r === a.r && s.from.q === b.q && s.from.r === b.r)));
+
 /**
  * Craft a 'build' recipe and put the result on a column.
  * @returns {{ok, message, column?}}
@@ -163,15 +187,34 @@ export function build(world, state, at, recipeId, target, ctx = {}) {
   const recipe = RECIPES[recipeId];
   const col = map.get(target.q, target.r);
   if (!col) return { ok: false, message: 'Nothing to build on.' };
-  if (col.feature) return { ok: false, message: 'Something is already there.' };
+  // A ladder's target is the cliff top it reaches, which is allowed to be
+  // occupied — it is the hex under your feet that has to be clear.
+  if (col.feature && !isLadder(recipeId)) return { ok: false, message: 'Something is already there.' };
   if (!placementSpots(world, state, at, recipeId).some(c => c.q === col.q && c.r === col.r)) {
-    return { ok: false, message: 'Too far, or the ground is wrong.' };
+    return { ok: false, message: isLadder(recipeId)
+      ? 'A ladder has to lean against a cliff you cannot climb.'
+      : 'Too far, or the ground is wrong.' };
   }
 
   const result = craft(state, recipeId, ctx);
   if (!result.ok) return { ok: false, message: result.reasons[0], reasons: result.reasons };
 
   const item = Object.keys(recipe.output)[0];
+
+  if (item === 'ladder') {
+    // The structure is the thing that matters: pathfinding joins these two
+    // columns whatever the drop between them. The feature is just what you see.
+    const foot = map.get(at.q, at.r);
+    map.addStructure({ type: 'ladder', from: { q: at.q, r: at.r }, to: { q: col.q, r: col.r } });
+    foot.feature = { type: 'structure', item, name: itemName(item), to: { q: col.q, r: col.r } };
+    recordBuilt(state, item, foot.q, foot.r);
+    return {
+      ok: true,
+      message: `You lean a ladder against the ${col.h - foot.h}-level face.`,
+      column: foot,
+      levels: result.levelsGained,
+    };
+  }
 
   if (item === 'field') {
     // A field is terrain, not furniture: the farm sheets draw it directly.

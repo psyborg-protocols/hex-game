@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, run, eq, ok } from './_harness.mjs';
-import { generateWorld } from '../src/world/worldgen.js';
+import { generateWorld, DEFAULTS } from '../src/world/worldgen.js';
 import { WorldMap } from '../src/world/mapformat.js';
 import { makeResolvers, TERRAIN, SHEET_NAMES, FRAMES_PER_SHEET, isWater } from '../src/world/tileset.js';
 import { neighbors, distance } from '../src/world/hexgrid.js';
@@ -67,7 +67,7 @@ test('every column is real terrain drawn from a real sheet', () => {
       ok(TERRAIN[col.terrain], `${SEEDS[i]}: unknown terrain ${col.terrain}`);
       ok(sheets.has(col.sprite), `${SEEDS[i]}: unknown sprite ${col.sprite}`);
       ok(col.frame >= 0 && col.frame < FRAMES_PER_SHEET, `${SEEDS[i]}: bad frame ${col.frame}`);
-      ok(Number.isInteger(col.h) && col.h >= 0 && col.h <= 7, `${SEEDS[i]}: bad height ${col.h}`);
+      ok(Number.isInteger(col.h) && col.h >= 0 && col.h <= DEFAULTS.maxHeight, `${SEEDS[i]}: bad height ${col.h}`);
     }
   }
 });
@@ -90,13 +90,59 @@ test('spawn is on dry walkable ground', () => {
   }
 });
 
-test('no cliff strands anything: with the river crossed, all land is walkable', () => {
+test('the low country is all walkable: no accidental barriers', () => {
   for (const [i, map] of worlds.entries()) {
     const seen = reachable(map, map.spawn, true);
-    const stranded = dryLand(map).filter(c => !seen.has(`${c.q},${c.r}`));
+    const stranded = dryLand(map)
+      .filter(c => !seen.has(`${c.q},${c.r}`) && c.h <= DEFAULTS.rampCeiling);
     eq(stranded.length, 0,
-      `${SEEDS[i]}: ${stranded.length} of ${dryLand(map).length} land hexes are walled off by cliffs`
+      `${SEEDS[i]}: ${stranded.length} hexes of low ground are walled off`
       + (stranded.length ? ` (e.g. ${stranded[0].q},${stranded[0].r} at height ${stranded[0].h})` : ''));
+  }
+});
+
+test('the high ground is gated, not flattened', () => {
+  for (const [i, map] of worlds.entries()) {
+    const seen = reachable(map, map.spawn, true);
+    const gated = dryLand(map).filter(c => !seen.has(`${c.q},${c.r}`));
+
+    // There has to be somewhere a ladder is the only way up, or woodworking 4
+    // buys nothing and the massifs are just scenery you walk around.
+    ok(gated.length > 10,
+      `${SEEDS[i]}: only ${gated.length} hexes need a ladder — the ramps flattened the world`);
+    const lowest = Math.min(...gated.map(c => c.h));
+    ok(lowest > DEFAULTS.rampCeiling,
+      `${SEEDS[i]}: gated ground starts at height ${lowest}, which should have been ramped`);
+  }
+});
+
+test('mountains reach the ceiling the old three.js world had', () => {
+  for (const [i, map] of worlds.entries()) {
+    const peak = Math.max(...dryLand(map).map(c => c.h));
+    ok(peak >= 15, `${SEEDS[i]}: highest ground is only ${peak}; the massifs are missing`);
+
+    // And the country you actually live in stays low, or none of it is walkable.
+    const heights = dryLand(map).map(c => c.h).sort((a, b) => a - b);
+    const median = heights[Math.floor(heights.length / 2)];
+    ok(median <= DEFAULTS.baseHeight,
+      `${SEEDS[i]}: median ground is ${median} — the whole map is mountain`);
+  }
+});
+
+test('a ladder is buildable against the gated ground', () => {
+  for (const [i, map] of worlds.entries()) {
+    const seen = reachable(map, map.spawn, true);
+    const gated = dryLand(map).filter(c => !seen.has(`${c.q},${c.r}`));
+
+    // Every gated region needs at least one face reachable from walkable ground,
+    // otherwise there is nowhere to stand a ladder against.
+    const footholds = gated.filter(c => neighbors(c.q, c.r).some(n => {
+      const below = map.get(n.q, n.r);
+      return below && seen.has(`${n.q},${n.r}`) && !isWater(below.terrain)
+        && c.h - below.h > 1;
+    }));
+    ok(footholds.length > 0,
+      `${SEEDS[i]}: the high ground has no face you can lean a ladder against`);
   }
 });
 

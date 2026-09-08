@@ -311,4 +311,43 @@ test('the opening chain works from nothing: forage, reeds, cord, snare', () => {
   ok(countItem(state, 'reed') >= 2, 'the shore should give reeds');
 });
 
+test('a ladder is placed against a cliff, and opens it', () => {
+  const world = ground('grass', 1);
+  // A 13-level face: unclimbable, undroppable, and the whole point of a ladder.
+  world.map.place(4, 3, 'stony', 14);
+  const state = ready();
+  addItem(state, 'beam', 10);
+  addItem(state, 'cord', 10);
+  addItem(state, 'stone_axe', 1);
+
+  eq(canStep(world.map, at(3, 3), at(4, 3)), false, 'a 13-level face should be a wall');
+
+  const spots = placementSpots(world, state, at(3, 3), 'ladder');
+  ok(spots.some(s => s.q === 4 && s.r === 3), 'the cliff top was not offered as a ladder target');
+  ok(!spots.some(s => s.q === 3 && s.r === 3), 'a ladder against your own hex climbs nothing');
+  ok(!spots.some(s => s.q === 2 && s.r === 3), 'flat ground was offered as a ladder target');
+
+  const result = build(world, state, at(3, 3), 'ladder', at(4, 3), { at: at(3, 3), distance });
+  ok(result.ok, result.message);
+  eq(world.map.get(3, 3).feature.item, 'ladder', 'the ladder stands on the hex you are on');
+  ok(canStep(world.map, at(3, 3), at(4, 3)), 'the ladder did not open the cliff');
+  ok(canStep(world.map, at(4, 3), at(3, 3)), 'a ladder should come back down as well');
+
+  // And it is a joint between two named columns, not a general climbing permit.
+  ok(!canStep(world.map, at(3, 2), at(4, 3)), 'the ladder let you climb from the wrong hex');
+});
+
+test('a ladder survives a save and reload', () => {
+  const world = ground('grass', 1);
+  world.map.place(4, 3, 'stony', 12);
+  const state = ready();
+  addItem(state, 'beam', 10);
+  addItem(state, 'cord', 10);
+  addItem(state, 'stone_axe', 1);
+  build(world, state, at(3, 3), 'ladder', at(4, 3), { at: at(3, 3), distance });
+
+  const reloaded = WorldMap.fromJSON(JSON.parse(JSON.stringify(world.map.toJSON())));
+  ok(canStep(reloaded, at(3, 3), at(4, 3)), 'the ladder was lost in the save');
+});
+
 run('world');

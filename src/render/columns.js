@@ -16,9 +16,6 @@
 
 import { frameOrigin, GEOM } from '../world/hexgrid.js';
 
-/** Total drawn height of a column, in 1x pixels. Used for culling. */
-export const columnPixelHeight = h => GEOM.frameHeight + h * GEOM.wallHeight;
-
 /**
  * Draw one column, bottom level first so each level covers the one beneath it.
  *

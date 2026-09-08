@@ -6,7 +6,7 @@
 // drawn.
 
 import { GEOM, columnBaseY, tileCenter, traceTopFace } from '../world/hexgrid.js';
-import { drawColumn, columnPixelHeight } from './columns.js';
+import { drawColumn } from './columns.js';
 import { pixelScale } from '../core/camera.js';
 
 export class Renderer {
@@ -89,10 +89,14 @@ export class Renderer {
     const list = this.drawables;
     list.length = 0;
 
-    // Rows first: a column's art can reach up by its height plus tree headroom,
-    // so scan further back in r than the visible rectangle strictly needs.
-    const rLo = Math.floor(view.top / GEOM.stepY) - 2;
-    const rHi = Math.ceil(view.bottom / GEOM.stepY) + 2;
+    // A column is drawn from `base - h*wallHeight` (its top face) down to
+    // `base + frameHeight` (the foot of its lowest wall), so a tall one reaches
+    // far above its own ground line — twenty levels is 160px, near seven rows.
+    // The scan has to run that far past the bottom of the view or the mountains
+    // get their tops sliced off as they come on screen.
+    const reach = Math.ceil((map.peakHeight() * GEOM.wallHeight) / GEOM.stepY) + 1;
+    const rLo = Math.floor((view.top - GEOM.frameHeight - GEOM.oddColumnOffsetY) / GEOM.stepY);
+    const rHi = Math.ceil(view.bottom / GEOM.stepY) + reach;
     const qLo = Math.floor((view.left - GEOM.frameWidth) / GEOM.stepX) - 1;
     const qHi = Math.ceil(view.right / GEOM.stepX) + 1;
 
@@ -101,9 +105,8 @@ export class Renderer {
         const col = map.get(q, r);
         if (!col) continue;
         const base = columnBaseY(q, r);
-        // Cull columns whose whole drawn extent is above the view.
-        if (base + GEOM.topFaceTop + GEOM.topFaceHeight - columnPixelHeight(col.h) > view.bottom) continue;
-        if (base + GEOM.frameHeight + col.h * GEOM.wallHeight < view.top) continue;
+        if (base - col.h * GEOM.wallHeight > view.bottom) continue;   // wholly below
+        if (base + GEOM.frameHeight < view.top) continue;             // wholly above
         list.push({ y: base, x: q, layer: 0, column: col });
       }
     }

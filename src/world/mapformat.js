@@ -49,6 +49,7 @@ export class WorldMap {
     this.structures = [];         // ladders, bridges — they span two columns
     this.spawn = { q: 0, r: 0 };
     this.bounds = null;           // cached {minQ,maxQ,minR,maxR}
+    this.peak = null;             // cached tallest column
   }
 
   // ------------------------------------------------------------ columns
@@ -70,7 +71,24 @@ export class WorldMap {
   set(q, r, column) {
     this.columns.set(columnKey(q, r), { q, r, ...column });
     this.bounds = null;
+    this.peak = null;
     return this.columns.get(columnKey(q, r));
+  }
+
+  /**
+   * The tallest column, which is how far above its own ground line the map's art
+   * can reach — the renderer needs it to know how far past the viewport to scan.
+   *
+   * Mining lowers `h` in place rather than through `set`, so this can be left
+   * standing one level high. That is the safe direction: it costs a row of extra
+   * scanning, where an under-estimate would clip a mountain off the screen.
+   */
+  peakHeight() {
+    if (this.peak === null) {
+      this.peak = 0;
+      for (const c of this.columns.values()) if (c.h > this.peak) this.peak = c.h;
+    }
+    return this.peak;
   }
 
   /** Place terrain, choosing a sprite variant unless one is given. */
@@ -81,6 +99,7 @@ export class WorldMap {
 
   delete(q, r) {
     this.bounds = null;
+    this.peak = null;
     return this.columns.delete(columnKey(q, r));
   }
 

@@ -21,7 +21,9 @@ import { variantFor, isWater } from './tileset.js';
 export const DEFAULTS = {
   seed: 'hexworld',
   radius: 26,          // board radius in hexes
-  maxHeight: 7,        // levels; a 7 next to a 0 is a wall you have to mine
+  maxHeight: 20,       // what a mountain may reach, as in the old three.js world
+  baseHeight: 5,       // ceiling of the rolling country you actually walk around
+  rampCeiling: 7,      // stranded ground at or under this gets a ramp; above it is ladder country
   villages: 5,
   oreVeins: 7,
 };
@@ -41,6 +43,13 @@ class Generator {
     this.opt = opt;
     this.radius = opt.radius;
     this.maxHeight = opt.maxHeight;
+    this.baseHeight = opt.baseHeight;
+    this.rampCeiling = opt.rampCeiling;
+
+    // Where the ground stops being green. Both are derived from maxHeight so
+    // that raising the ceiling moves the treeline and the scree with it.
+    this.upland = Math.round(opt.maxHeight * 0.3);
+    this.alpine = Math.round(opt.maxHeight * 0.55);
 
     this.land = new SeededPerlin(`${opt.seed}-land`);
     this.moist = new SeededPerlin(`${opt.seed}-moisture`);
@@ -66,6 +75,7 @@ class Generator {
     this.smoothShores();
     this.chooseSpawn();
     this.connectByRamps();
+    this.settleLedges();
 
     const map = new WorldMap({ seed: this.opt.seed, name: `world ${this.opt.seed}` });
     this.paintTerrain(map);
@@ -96,8 +106,13 @@ class Generator {
 
   /**
    * Base elevation: fbm sampled through a warped domain, so the contours bend
-   * instead of running in noise-shaped blobs. Most of the world stays low —
-   * height is spent on the mountains, where it reads.
+   * instead of running in noise-shaped blobs.
+   *
+   * This is capped at `baseHeight`, not `maxHeight`, and the difference is the
+   * whole shape of the world. The old three.js generator did the same thing —
+   * base terrain got 40% of the ceiling and the mountains got the rest — which
+   * is why its worlds were rolling country with genuine 20-high massifs standing
+   * out of them, rather than 20 levels of uniform noise nobody could cross.
    */
   raiseTerrain() {
     for (const { q, r } of this.cells) {
@@ -114,7 +129,7 @@ class Generator {
 
       // Fall away at the rim so the board ends in shoreline, not a wall.
       const rim = 1 - Math.max(0, distance(q, r, 0, 0) / this.radius - 0.78) / 0.22;
-      this.setH(q, r, e * this.maxHeight * 0.85 * clamp(rim, 0, 1));
+      this.setH(q, r, e * this.baseHeight * clamp(rim, 0, 1));
     }
   }
 
@@ -125,14 +140,16 @@ class Generator {
         distance(c.q, c.r, 0, 0) < this.radius * 0.75));
       if (!seat) continue;
 
-      const peak = this.rng.irange(Math.ceil(this.maxHeight * 0.7), this.maxHeight);
+      const peak = this.rng.irange(Math.ceil(this.maxHeight * 0.6), this.maxHeight);
       const rad = this.rng.irange(Math.floor(this.radius * 0.18), Math.floor(this.radius * 0.32));
 
+      // A 20-level peak over six or seven hexes is a sheer thing, and meant to
+      // be: its skirt is the wall you need a ladder for.
       for (const { q, r } of this.cells) {
         const d = distance(q, r, seat.q, seat.r);
         if (d >= rad) continue;
         const t = 1 - d / rad;
-        this.setH(q, r, this.h(q, r) + peak * Math.pow(t, 1.6));
+        this.setH(q, r, this.h(q, r) + peak * Math.pow(t, 1.25));
       }
 
       // Crests: only where the ridge is already strong, so they add spurs rather
@@ -140,7 +157,7 @@ class Generator {
       for (const { q, r } of this.cells) {
         if (distance(q, r, seat.q, seat.r) >= rad * 1.3) continue;
         const ridge = this.land.ridged((q - seat.q) * 0.09, (r - seat.r) * 0.09);
-        const edge = Math.max(0, ridge - 0.72) * 10;
+        const edge = Math.max(0, ridge - 0.7) * 12;
         if (edge > 0) this.setH(q, r, this.h(q, r) + edge);
       }
     }
@@ -246,28 +263,44 @@ class Generator {
   }
 
   /**
-   * Mountains generated as radial bumps produce plateaus ringed by sheer walls,
-   * and a plateau you cannot climb is scenery, not terrain. Carve a staircase up
-   * to each sizeable marooned region so every part of the land is walkable —
-   * without flattening the cliffs, which are what mining is for.
+   * Two kinds of barrier fall out of the mountains, and only one is a mistake.
+   *
+   * Low ground cut off by a step or two is an accident of the noise — had the
+   * contour landed one hex over you would simply have walked around it — so it
+   * gets a staircase. High ground ringed by a sheer face is the *point*: those
+   * plateaus are ladder country (woodworking 4), and carving a way up would
+   * throw away the reason to build one. So ramping stops at `rampCeiling` and
+   * everything above it is left standing.
    */
-  connectByRamps(maxRamps = 40) {
+  connectByRamps(maxRamps = 80) {
+    // Pockets nothing can reach — ground ringed entirely by water, say — must
+    // not stop the loop, or every region after them keeps its accidental wall.
+    const abandoned = new Set();
+    let reachable = this.reachableFrom(this.spawn, true);
+
     for (let pass = 0; pass < maxRamps; pass++) {
-      const reachable = this.reachableFrom(this.spawn, true);
+      const seed = this.cells.find(c => !reachable.has(this.key(c.q, c.r))
+        && !this.water.has(this.key(c.q, c.r))
+        && this.h(c.q, c.r) <= this.rampCeiling
+        && !abandoned.has(this.key(c.q, c.r)));
+      if (!seed) return;
 
-      // Group the unreachable dry land into regions and take the largest.
-      const stranded = this.cells.filter(c =>
-        !reachable.has(this.key(c.q, c.r)) && !this.water.has(this.key(c.q, c.r)));
-      if (!stranded.length) return;
-
-      const region = this.floodRegion(stranded[0], reachable);
+      const region = this.floodRegion(seed, reachable);
       if (region.length < 6) {
-        // Too small to be worth a ramp; flatten it into its surroundings.
+        // Too small to be worth a staircase; settle it into its surroundings.
         for (const c of region) this.levelInto(c, reachable);
-        continue;
+      } else {
+        this.carveRamp(region, reachable);
       }
 
-      if (!this.carveRamp(region, reachable)) return;
+      // Judge the pass by whether it actually opened anything up. A region that
+      // cannot be improved is abandoned rather than retried until the budget runs
+      // out, which is what lets the loop reach the regions behind it.
+      const after = this.reachableFrom(this.spawn, true);
+      if (after.size <= reachable.size) {
+        for (const c of region) abandoned.add(this.key(c.q, c.r));
+      }
+      reachable = after;
     }
   }
 
@@ -290,12 +323,36 @@ class Generator {
     return out;
   }
 
+  /**
+   * Settle a stray low cell onto whichever reachable neighbour it is already
+   * closest to in height, so the ground it joins is the ground it looked like it
+   * belonged to. Never touches anything above the ramp ceiling.
+   */
   levelInto(cell, reachable) {
-    for (const n of neighbors(cell.q, cell.r)) {
-      if (reachable.has(this.key(n.q, n.r))) {
-        this.setH(cell.q, cell.r, this.h(n.q, n.r));
-        return;
-      }
+    const own = this.h(cell.q, cell.r);
+    if (own > this.rampCeiling) return false;
+    const best = neighbors(cell.q, cell.r)
+      .filter(n => reachable.has(this.key(n.q, n.r)) && !this.water.has(this.key(n.q, n.r)))
+      .sort((a, b) => Math.abs(this.h(a.q, a.r) - own) - Math.abs(this.h(b.q, b.r) - own))[0];
+    if (!best) return false;
+    this.setH(cell.q, cell.r, this.h(best.q, best.r));
+    return true;
+  }
+
+  /**
+   * A staircase can leave a ledge behind: one hex too high to be climbed from
+   * the low ground and too far below the plateau to be dropped onto, so neither
+   * side reaches it. They always have a reachable neighbour, which is what makes
+   * them fixable — and what makes them not the deliberate kind of barrier.
+   */
+  settleLedges(limit = 200) {
+    for (let pass = 0; pass < limit; pass++) {
+      const reachable = this.reachableFrom(this.spawn, true);
+      const ledge = this.cells.find(c => !reachable.has(this.key(c.q, c.r))
+        && !this.water.has(this.key(c.q, c.r))
+        && this.h(c.q, c.r) <= this.rampCeiling
+        && neighbors(c.q, c.r).some(n => reachable.has(this.key(n.q, n.r))));
+      if (!ledge || !this.levelInto(ledge, reachable)) return;
     }
   }
 
@@ -357,8 +414,8 @@ class Generator {
       // whole map grey and leaves nowhere green to start.
       const moisture = this.moist.fbm(q * 0.09 + 100, r * 0.09 - 50, 3);
       let terrain;
-      if (h >= this.maxHeight - 1) terrain = 'stony';
-      else if (h >= this.maxHeight - 3) terrain = moisture > 0.5 ? 'steppes' : 'stony';
+      if (h >= this.alpine) terrain = 'stony';
+      else if (h >= this.upland) terrain = moisture > 0.5 ? 'steppes' : 'stony';
       else if (h >= 2) terrain = moisture > 0.42 ? 'grass' : 'steppes';
       else terrain = moisture > 0.56 ? 'meadow' : 'grass';
 
@@ -375,7 +432,8 @@ class Generator {
   growForests(map) {
     for (const { q, r } of this.cells) {
       const col = map.get(q, r);
-      if (!col || isWater(col.terrain) || col.h >= this.maxHeight - 2) continue;
+      // Nothing grows above the treeline; the massifs stay bare rock.
+      if (!col || isWater(col.terrain) || col.h >= this.upland) continue;
 
       const far = q > (this.riverQ.get(r) ?? 0);
       const n = this.forest.fbm(q * 0.11, r * 0.11, 3);
