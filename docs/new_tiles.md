@@ -373,3 +373,29 @@ The other place this bites: the editor's tile format carries no terrain id, so
 the sheet name is the only record of what a tile is. Grouping the stream sheets
 with the lake sheets in `SHEET_TO_TERRAIN` made streams come back from a
 round-trip as lakes.
+
+### Which LakeBase frame open water picks
+
+`Tiles_LakeBase` frame roles, measured rather than assumed: 0 is plain open
+water, 1-3 carry lilies or a duck, 4-5 carry a jetty.
+
+Open water is by definition a hex with no land on any edge, so hashing evenly
+across all six grew **jetties in the middle of the lake**, a third of the time,
+moored to nothing. They are excluded from the pool and stay available to place
+by hand.
+
+Dropping them is not enough on its own: three of the four survivors are
+decorated, so a flat pick decorated three hexes in four and the lake came out a
+lily pond — worse than the jetties. `LAKE_OPEN_FRAMES` is therefore a weighted
+pool giving roughly one decorated hex in four.
+
+The **big river** uses `DEEP_OPEN_FRAMES`, the plain frame alone: lilies and
+waterfowl belong on still water. It resolves through the same shoreline set as a
+lake, so it carries banks instead of meeting the grass at a hard edge, and it no
+longer draws the stony `Tiles_FlowingWater` — that art reads as shallow, which is
+what the one-hex streams are for. The sheet stays available to paint by hand.
+
+One consequence worth knowing: river and lake now draw the same sheet, so the
+sheet name alone cannot tell them apart. `terrainForTile` therefore trusts the
+editor's palette id ahead of the sprite, and falls back to the sheet only when
+the id is missing or unknown.

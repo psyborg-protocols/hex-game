@@ -669,9 +669,11 @@ export function resolveAutotiles(map, resolvers) {
       col.sprite = hit.sprite;
       col.frame = hit.frame;
     } else if (col.terrain === 'river') {
-      const v = variantFor('river', col.q, col.r);
-      col.sprite = v.sprite;
-      col.frame = v.frame;
+      // The river autotiles off the same shoreline set as a lake, so it carries
+      // banks rather than meeting the grass at a hard edge.
+      const hit = resolvers.river(map.landMask(col.q, col.r), col.q, col.r);
+      col.sprite = hit.sprite;
+      col.frame = hit.frame;
     }
   }
   return map;

@@ -26,6 +26,10 @@ const SHEET_TO_TERRAIN = (() => {
     else if (s.startsWith('Tiles_LakeSides')) m.set(s, 'water');
     else if (s.startsWith('Tiles_Path')) m.set(s, 'path');
   }
+  // Both `water` and `river` draw this one, and the loop above lets whichever
+  // comes last in TERRAIN win. Pin it: still water is the safer guess for a tile
+  // that has lost its palette id.
+  m.set('Tiles_LakeBase', 'water');
   for (const [id, c] of Object.entries(CROPS)) m.set(c.sheet, 'farm');
   return m;
 })();
@@ -234,10 +238,13 @@ export class WorldMap {
 /** Best guess at what terrain an editor tile represents. */
 export function terrainForTile(tile) {
   if (tile.terrain && TERRAIN[tile.terrain]) return tile.terrain;
-  const bySheet = SHEET_TO_TERRAIN.get(tile.sprite);
-  if (bySheet) return bySheet;
+  // The palette id is the brush the author actually chose, so it beats guessing
+  // from the sheet. It has to: the river now draws deep water off Tiles_LakeBase
+  // like a lake does, so the sheet name alone can no longer tell the two apart.
   const byPalette = PALETTE_TO_TERRAIN[tile.id];
   if (byPalette) return byPalette;
+  const bySheet = SHEET_TO_TERRAIN.get(tile.sprite);
+  if (bySheet) return bySheet;
   return 'grass';
 }
 

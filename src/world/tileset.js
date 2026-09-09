@@ -39,6 +39,27 @@ export const SHEET_NAMES = [
 export const FRAMES_PER_SHEET = 6;
 
 /**
+ * What each Tiles_LakeBase frame actually holds, measured from the art rather
+ * than assumed:
+ *   0        plain open water
+ *   1, 2, 3  waterfowl and lily pads
+ *   4, 5     a jetty
+ *
+ * The jetty belongs against a shore. Open water is by definition the hexes with
+ * no land on any edge, so hashing across all six frames grew jetties in the
+ * middle of the lake, a third of the time, moored to nothing. They are excluded
+ * here and remain available to place by hand in the editor.
+ *
+ * Weighted, not a flat pick. Three of the four remaining frames carry lilies or
+ * a duck, so hashing evenly across them decorated three hexes in four and the
+ * lake came out a lily pond — worse than the jetties it replaced. One in four is
+ * about right: open water that has something living in it here and there.
+ */
+export const LAKE_OPEN_FRAMES = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3];
+/** ...and the subset with nothing floating in it, for moving water. */
+export const DEEP_OPEN_FRAMES = [0];
+
+/**
  * The terrain vocabulary. `sheets` are interchangeable variants — a hex picks one
  * by coordinate hash, so the same world always looks the same.
  *
@@ -58,7 +79,10 @@ export const TERRAIN = {
   stony:        { name: 'Stony Ground', sheets: ['Tiles_Stony'], walk: true, stone: true },
   farm:         { name: 'Field',        sheets: ['Tiles_FarmingBase'], walk: true, farm: true },
   water:        { name: 'Water',        sheets: ['Tiles_LakeBase'], walk: false, water: true, autotile: 'lake' },
-  river:        { name: 'River',        sheets: ['Tiles_FlowingWater'], walk: false, water: true, flowing: true },
+  // The big river draws deep water off the lake set, not the stony shallow
+  // Tiles_FlowingWater — that art now reads as a one-hex stream, which is what
+  // the `stream` terrain is for. The sheet stays available to paint by hand.
+  river:        { name: 'River',        sheets: ['Tiles_LakeBase'], walk: false, water: true, flowing: true, autotile: 'river' },
   // A stream is one hex wide and autotiles off which neighbours are water, so it
   // runs into a pond or the river and joins it rather than stopping at the edge.
   stream:       { name: 'Stream',       sheets: ['Tiles_StreamStraight'], walk: false, water: true, flowing: true, autotile: 'stream' },
@@ -112,16 +136,33 @@ export function makeResolvers(index) {
   const path = index.pathByMask;
   const stream = index.streamByMask || {};
 
+  const openFramesFor = frames => (q, r) => frames[hashPick(q, r, frames.length, 11)];
+  const stillWater = openFramesFor(LAKE_OPEN_FRAMES);
+  const deepWater = openFramesFor(DEEP_OPEN_FRAMES);
+
   return {
-    /** @param landMask bits set for edges where the neighbour is *not* water. */
-    lake(landMask, q = 0, r = 0) {
+    /**
+     * Still water — a lake or a pond.
+     * @param landMask bits set for edges where the neighbour is *not* water.
+     */
+    lake(landMask, q = 0, r = 0, openFrame = stillWater) {
       if (landMask === 0) {
-        return { sprite: 'Tiles_LakeBase', frame: hashPick(q, r, FRAMES_PER_SHEET, 11) };
+        return { sprite: 'Tiles_LakeBase', frame: openFrame(q, r) };
       }
       const hit = lake[landMask] || lake[nearestMask(lake, landMask)];
       return hit
         ? { sprite: hit[0], frame: hit[1] }
-        : { sprite: 'Tiles_LakeBase', frame: 0 };
+        : { sprite: 'Tiles_LakeBase', frame: DEEP_OPEN_FRAMES[0] };
+    },
+
+    /**
+     * The big river. Same shoreline set as a lake, so it gets proper banks
+     * instead of meeting the grass at a hard edge, but its open water is only
+     * ever the plain deep frame — lilies and waterfowl belong on still water,
+     * and the stony shallow art belongs to the one-hex streams.
+     */
+    river(landMask, q = 0, r = 0) {
+      return this.lake(landMask, q, r, deepWater);
     },
 
     /** @param connMask bits set for edges that continue the path. */

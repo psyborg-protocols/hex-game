@@ -115,6 +115,10 @@ function retileAround(q, r) {
       const hit = res.resolvers.stream(map.waterMask(col.q, col.r));
       col.sprite = hit.sprite;
       col.frame = hit.frame;
+    } else if (col.terrain === 'river') {
+      const hit = res.resolvers.river(map.landMask(col.q, col.r), col.q, col.r);
+      col.sprite = hit.sprite;
+      col.frame = hit.frame;
     } else {
       const v = variantFor(col.terrain, col.q, col.r);
       col.sprite = v.sprite;
