@@ -1,7 +1,7 @@
 // serve.js
 // Dependency-free static server for the game and the editor.
 //
-//   node tools/serve.js [port]
+//   node tools/serve.js [port]        # or PORT=8090 node tools/serve.js
 //
 // Serves the repo root so `new_tiles/`, `icons/` and `data/` resolve at the
 // same paths the tools and docs already use. Directory listings are emitted as
@@ -12,7 +12,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const PORT = Number(process.argv[2]) || 8080;
+// An explicit argument wins, then $PORT (which is how a launcher assigns one),
+// then the default.
+const PORT = Number(process.argv[2] || process.env.PORT) || 8080;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',

@@ -4,8 +4,11 @@
     {
       "name": "hexworld",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["tools/serve.js", "8080"],
-      "port": 8080
+      "runtimeArgs": [
+        "tools/serve.js"
+      ],
+      "port": 8080,
+      "autoPort": true
     }
   ]
 }

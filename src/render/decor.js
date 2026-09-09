@@ -15,6 +15,7 @@
 
 import { hash2, hashPick } from '../core/rng.js';
 import { tileCenter } from '../world/hexgrid.js';
+import { litImage } from './columns.js';
 
 export const DECOR_DIR = 'decor';
 
@@ -41,10 +42,10 @@ export async function loadDecor(basePath = DECOR_DIR) {
 /**
  * Draw one named sprite standing on (cx, cy) — its foot point, not its corner.
  */
-export function drawSprite(ctx, decor, name, cx, cy) {
+export function drawSprite(ctx, decor, name, cx, cy, sheet = decor.image) {
   const box = decor.index.sprites[name];
   if (!box) return;
-  ctx.drawImage(decor.image,
+  ctx.drawImage(sheet,
     box.x, box.y, box.w, box.h,
     Math.round(cx - box.footX), Math.round(cy - box.footY), box.w, box.h);
 }
@@ -88,8 +89,11 @@ export function drawColumnDecor(ctx, res, col) {
     placed.push({ ...spot, name: `${kind}_${stage}` });
   }
 
+  // Lit with the tile they stand on. A tree at full brightness on a shadowed hex
+  // reads as pasted on rather than growing there.
+  const sheet = litImage(res, 'decor', decor.image, col.h);
   placed.sort((a, b) => a.dy - b.dy);
-  for (const p of placed) drawSprite(ctx, decor, p.name, cx + p.dx, cy + p.dy);
+  for (const p of placed) drawSprite(ctx, decor, p.name, cx + p.dx, cy + p.dy, sheet);
 }
 
 /** A felled wood keeps its stumps, so you can see where it was. */

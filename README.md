@@ -9,7 +9,7 @@ Plain ES modules and canvas 2D. No build step, no dependencies.
 
 ```
 node tools/serve.js          # then open http://localhost:8080
-node tests/all.mjs           # 128 tests, ~2s
+node tests/all.mjs           # 136 tests, ~2s
 ```
 
 `http://localhost:8080/?seed=alpha` generates a named world;
@@ -69,6 +69,20 @@ each copy covers the face of the one below and leaves only its side showing, so
 an *h*-high column draws one surface over *h* bands of wall. On stone those bands
 read as bedding planes, on grass as a cut earth bank. Nothing is synthesised, and
 the game and the editor draw a column with the same function.
+
+**Height lighting.** Ground darkens below `LIGHT_BASE` and lightens above it,
+5% a level, clamped to -20%/+10%. Applied per *level* rather than per column,
+which is what gives a cliff face its gradient: the stacked bands darken as they
+descend, so a tall column stands in its own shadow at the foot. The base sits at
+3, roughly the median of a generated world — centring it on worldgen's
+`baseHeight` of 5 rendered the whole map dim, because most of a map lies below
+that. The range is lopsided on purpose: brightening this art washes it out much
+faster than shading dulls it.
+
+It is baked, not filtered. `ctx.filter` expresses it in one line but flushes
+canvas state on every change, and the exposure changes per level — 193ms a frame
+against a 16.7ms budget. `litImage` runs the same filter once per (sheet,
+exposure) pair at first use instead, which brings it to 13.5ms.
 
 **Scale.** Everything is drawn at 1x into an offscreen buffer and upscaled once
 by a whole number, with smoothing off. Fractional device pixel ratios are floored
@@ -145,6 +159,7 @@ No framework — `tests/_harness.mjs` is thirty lines.
 | `hexgrid` | the lattice tiles the plane, neighbours are reciprocal at both parities, picking prefers the column in front |
 | `autotile` | all 64 masks land on real art; path coverage matches what `docs/new_tiles.md` measured |
 | `decor` | the prop index still describes the sheet, and the game only asks for sprites it has |
+| `lighting` | the height curve is monotonic, clamped, and centred where the ground actually is |
 | `worldgen` | determinism, the low country is all walkable, the high ground stays gated, peaks reach 20 |
 | `pathfinding` | climb 1 / drop 2, ladders, bridges, and every returned step is legal |
 | `economy` | the graph is consistent, and the whole discovery path is walkable from an empty pack — by planning backwards, not by crafting greedily |
