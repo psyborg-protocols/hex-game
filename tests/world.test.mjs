@@ -298,10 +298,14 @@ test('the opening chain works from nothing: forage, reeds, cord, snare', () => {
   const state = createState();
   const r = rng();
 
-  // Somewhere on the shore, which is where the opening actually happens.
+  // Somewhere on the shore that both openers actually accept. Asking the
+  // harvests themselves beats hardcoding the rules, and beats taking the first
+  // shoreline hex in iteration order — that used to pass only because the first
+  // one happened to be open ground, and it broke the moment ponds moved it.
   const shore = [...map].find(c => !isWater(c.terrain)
-    && neighbors(c.q, c.r).some(n => { const o = map.get(n.q, n.r); return o && isWater(o.terrain); }));
-  ok(shore, 'no shoreline in the whole world');
+    && harvestSpec('forage').where(c, map)
+    && harvestSpec('cut_reeds').where(c, map));
+  ok(shore, 'nowhere on the shore can you both forage and cut reeds');
 
   eq(state.energy, 0, 'you start with nothing to eat');
   ok(harvest(world, state, shore, 'forage', r).ok, 'foraging should not itself need energy');

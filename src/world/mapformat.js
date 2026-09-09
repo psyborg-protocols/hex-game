@@ -19,7 +19,11 @@ const SHEET_TO_TERRAIN = (() => {
   // Matched by name rather than enumerated, so the gap-filling junction and
   // shoreline sheets are picked up without this list having to track them.
   for (const s of SHEET_NAMES) {
-    if (s.startsWith('Tiles_LakeSides') || s.startsWith('Tiles_Stream')) m.set(s, 'water');
+    // Streams map to their own terrain, not to water. The editor's tile format
+    // carries no terrain id, so a sheet lumped in with the lake sheets would
+    // come back from a round-trip as a lake.
+    if (s.startsWith('Tiles_Stream')) m.set(s, 'stream');
+    else if (s.startsWith('Tiles_LakeSides')) m.set(s, 'water');
     else if (s.startsWith('Tiles_Path')) m.set(s, 'path');
   }
   for (const [id, c] of Object.entries(CROPS)) m.set(c.sheet, 'farm');
@@ -30,6 +34,7 @@ const SHEET_TO_TERRAIN = (() => {
 const PALETTE_TO_TERRAIN = {
   Grass: 'grass', Decor: 'meadow', Farming: 'farm', Lake: 'water', Path: 'path',
   Steppes: 'steppes', Stony: 'stony', Forest: 'forest_floor', Pine: 'pine_floor', Flowing: 'river',
+  Stream: 'stream',
 };
 
 /**
@@ -142,6 +147,15 @@ export class WorldMap {
   /** Bits set on edges that continue a path. */
   pathMask(q, r) {
     return this.edgeMask(q, r, col => !!col && col.terrain === 'path');
+  }
+
+  /**
+   * Bits set where the neighbour is also water — the inverse of landMask, and
+   * what a stream autotiles from. A stream reads a pond or the river as a
+   * continuation, so it runs into one rather than stopping at the shore.
+   */
+  waterMask(q, r) {
+    return this.edgeMask(q, r, col => !!col && isWater(col.terrain));
   }
 
   // ------------------------------------------------------------ structures

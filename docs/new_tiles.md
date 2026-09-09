@@ -333,3 +333,43 @@ Streams are registered as water in the sheet tables, so they load and round-trip
 through the map format. Giving them a **terrain id and a resolver of their own**
 is a gameplay decision and is not done here — the art and the mask table are
 ready for it.
+
+## Streams as terrain, and where they come from
+
+`stream` is its own terrain id: water, one hex wide, autotiled from
+`WorldMap.waterMask` — the edges whose neighbour is *any* water. Because it
+carries the lake's own colours, a stream that reaches a pond or the river joins
+it rather than stopping at the shore. `makeResolvers().stream(connMask)` reads
+`index.streamByMask`, the same shape as the path and lake tables.
+
+Worldgen adds them in `addPondsAndStreams()`, between carving the river and
+smoothing the shores so the new banks get eased too:
+
+- **Ponds** are ordinary `water`, 1-3 hexes, on low ground more than four
+  columns clear of the river. A one-hex pond is land on all six edges — mask 63,
+  the enclosed shoreline piece, which the shipped art never had.
+- **Streams** run from a pond toward the river, preferring downhill but weighting
+  the river three to one so the channel arrives instead of wandering a contour.
+  They stop as soon as they are beside water that is not their own pond, so the
+  last hex reads as a mouth. One pond in four is left with no outlet.
+
+Streams only ever hang off a pond and end at water or nowhere, which is what
+keeps them from fencing land off: a chain that dead-ends, or that ends at the
+river, can be walked around at its head. Measured across eight seeds, land
+unreachable without crossing water moved by about a point either way against the
+same seeds before the change — some worlds improved.
+
+### A trap in deriving the tables
+
+Sheets whose rotation family has fewer than six members pad the spare slots with
+plain ground — and plain ground probes as land on all six edges, which is mask
+63, a *legitimate* shoreline. A filler frame in an earlier sheet was therefore
+claiming 63 before `Tiles_LakeSidesSix` could, and every one-hex pond drew as
+blank grass. `tools/newtiles_index.js` now skips any frame that does not contain
+the feature it would be indexed for, and `tests/autotile.test.mjs` checks every
+table entry points at a frame that actually holds water.
+
+The other place this bites: the editor's tile format carries no terrain id, so
+the sheet name is the only record of what a tile is. Grouping the stream sheets
+with the lake sheets in `SHEET_TO_TERRAIN` made streams come back from a
+round-trip as lakes.

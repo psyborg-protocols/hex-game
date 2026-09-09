@@ -6,6 +6,7 @@ import { writeFileSync } from 'node:fs';
 
 const DIR = 'new_tiles';
 const FW = 32;
+const FACE_TOP = 16, FACE_H = 24;   // the hex top face within the 32x48 frame
 
 // Edge order used everywhere below: clockwise from the flat top edge.
 export const EDGES = ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
@@ -24,6 +25,26 @@ const PROBES = {
 const isWater = (r, g, b) => b > r + 20 && b > g + 10;
 // the path is a desaturated sand colour: warm, light, and low blue
 const isPath = (r, g, b) => r > 170 && g > 130 && b < 165 && r - b > 45 && g - b > 15 && !(g > r);
+
+/**
+ * Does this frame hold any of the given feature at all?
+ *
+ * Sheets whose rotation family has fewer than six members pad the spare slots
+ * with plain ground, and plain ground probes as land on all six edges — mask 63,
+ * which is a *legitimate* shoreline (a one-hex pond ringed by land). A filler
+ * frame in an earlier sheet was therefore claiming 63 before the real
+ * Tiles_LakeSidesSix could, and single-hex ponds drew as blank grass. A shore
+ * tile has to contain some water, and a path tile some path.
+ */
+function frameHas(img, fi, test) {
+  for (let y = FACE_TOP; y < FACE_TOP + FACE_H; y++)
+    for (let x = 0; x < FW; x++) {
+      const i = (y * img.width + fi * FW + x) * 4;
+      if (img.data[i + 3] === 0) continue;
+      if (test(img.data[i], img.data[i + 1], img.data[i + 2])) return true;
+    }
+  return false;
+}
 
 function edgeKind(img, fi, edge) {
   let water = 0, path = 0, n = 0;
@@ -70,6 +91,7 @@ export function buildIndex() {
   for (const s of PATH_SHEETS) {
     const img = readPng(`${DIR}/${s}.png`);
     for (let fi = 0; fi < 6; fi++) {
+      if (!frameHas(img, fi, isPath)) continue;      // a padded slot, not a piece
       let m = 0;
       EDGES.forEach((e, bit) => { if (edgeKind(img, fi, e) === 'path') m |= 1 << bit; });
       pathRows.push({ sheet: s, frame: fi, mask: m });
@@ -81,6 +103,7 @@ export function buildIndex() {
   for (const sh of STREAM_SHEETS) {
     const img = readPng(`${DIR}/${sh}.png`);
     for (let fi = 0; fi < 6; fi++) {
+      if (!frameHas(img, fi, isWater)) continue;     // a padded slot, not a piece
       let m = 0;
       EDGES.forEach((e, bit) => { if (edgeKind(img, fi, e) === 'water') m |= 1 << bit; });
       streamRows.push({ sheet: sh, frame: fi, mask: m });
@@ -92,6 +115,7 @@ export function buildIndex() {
   for (const s of LAKE_SHEETS) {
     const img = readPng(`${DIR}/${s}.png`);
     for (let fi = 0; fi < 6; fi++) {
+      if (!frameHas(img, fi, isWater)) continue;     // a padded slot, not a shore
       let m = 0;
       EDGES.forEach((e, bit) => { if (edgeKind(img, fi, e) === 'land') m |= 1 << bit; });
       lakeRows.push({ sheet: s, frame: fi, mask: m });

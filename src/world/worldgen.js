@@ -72,6 +72,7 @@ class Generator {
     this.raiseTerrain();
     this.addMountains(this.rng.irange(3, 6));
     this.carveRiver();
+    this.addPondsAndStreams();
     this.smoothShores();
     this.chooseSpawn();
     this.connectByRamps();
@@ -196,6 +197,76 @@ class Generator {
         // crossing high ground becomes a gorge. smoothShores then eases the lip.
         this.setH(q, r, 0);
         this.water.set(this.key(q, r), inLake && Math.abs(dq) < width - 1 ? 'water' : 'river');
+      }
+    }
+  }
+
+  /**
+   * A few still ponds out in the low country, most of them with a short stream
+   * running down to the river.
+   *
+   * A pond is ordinary `water`, so it draws from the lake shoreline set — a
+   * one-hex pond is exactly the enclosed piece, land on all six edges, which the
+   * shipped art never had. A stream is its own terrain, one hex wide, autotiled
+   * from which of its neighbours are water, so it joins whatever it runs into.
+   *
+   * Streams only ever hang off a pond and stop when they reach water. That keeps
+   * them from fencing anything off: a chain that dead-ends, or that ends at the
+   * river, can always be walked around at its head.
+   */
+  addPondsAndStreams() {
+    const wantPonds = this.rng.irange(3, 5);
+    const seats = [];
+
+    const dry = (q, r) => this.inBoard(q, r) && !this.water.has(this.key(q, r));
+    // far enough from the river to read as its own thing, and low enough to hold
+    const candidate = c =>
+      dry(c.q, c.r)
+      && this.h(c.q, c.r) <= 5
+      && Math.abs(c.q - (this.riverQ.get(c.r) ?? 0)) > 4
+      && seats.every(p => distance(p.q, p.r, c.q, c.r) > 5);
+
+    for (let attempt = 0; attempt < 40 && seats.length < wantPonds; attempt++) {
+      const open = this.cells.filter(candidate);
+      if (!open.length) break;
+      const seat = this.rng.pick(open);
+      seats.push(seat);
+
+      // the pond: the seat plus a neighbour or two, so most come out 1-3 hexes
+      const size = this.rng.irange(1, 3);
+      const body = [seat];
+      for (const n of neighbors(seat.q, seat.r)) {
+        if (body.length >= size) break;
+        if (dry(n.q, n.r) && this.h(n.q, n.r) <= 5) body.push(n);
+      }
+      const bodyKeys = new Set(body.map(c => this.key(c.q, c.r)));
+      for (const c of body) {
+        this.setH(c.q, c.r, 0);
+        this.water.set(this.key(c.q, c.r), 'water');
+      }
+
+      // The outflow heads for the river, preferring downhill. It stops the
+      // moment it is beside water that is not its own pond, so the last hex
+      // reads as a mouth. One pond in four is left with no outlet at all.
+      if (this.rng.range(0, 1) < 0.25) continue;
+      let cur = seat;
+      for (let step = 0; step < 16; step++) {
+        const around = neighbors(cur.q, cur.r).filter(n => this.inBoard(n.q, n.r));
+        const met = around.some(n => {
+          const k = this.key(n.q, n.r);
+          return this.water.has(k) && !bodyKeys.has(k) && this.water.get(k) !== 'stream';
+        });
+        if (met) break;
+        const open = around.filter(n => !this.water.has(this.key(n.q, n.r)));
+        if (!open.length) break;
+        // closing on the river counts for more than losing a little height, or
+        // the channel wanders along a contour and never arrives
+        const score = n => Math.abs(n.q - (this.riverQ.get(n.r) ?? 0)) * 3 + this.h(n.q, n.r);
+        const next = open.reduce((a, b) => (score(b) < score(a) ? b : a));
+        if (score(next) >= score(cur) + 3) break;    // nowhere better to go
+        this.setH(next.q, next.r, 0);
+        this.water.set(this.key(next.q, next.r), 'stream');
+        cur = next;
       }
     }
   }
@@ -405,7 +476,8 @@ class Generator {
       const h = this.h(q, r);
       const kind = this.water.get(this.key(q, r));
       if (kind) {
-        map.place(q, r, kind === 'water' ? 'water' : 'river', 0);
+        // `kind` is already a terrain id: 'water', 'river' or 'stream'
+        map.place(q, r, kind, 0);
         continue;
       }
 
@@ -590,6 +662,10 @@ export function resolveAutotiles(map, resolvers) {
       col.frame = hit.frame;
     } else if (col.terrain === 'path') {
       const hit = resolvers.path(map.pathMask(col.q, col.r));
+      col.sprite = hit.sprite;
+      col.frame = hit.frame;
+    } else if (col.terrain === 'stream') {
+      const hit = resolvers.stream(map.waterMask(col.q, col.r));
       col.sprite = hit.sprite;
       col.frame = hit.frame;
     } else if (col.terrain === 'river') {

@@ -59,6 +59,9 @@ export const TERRAIN = {
   farm:         { name: 'Field',        sheets: ['Tiles_FarmingBase'], walk: true, farm: true },
   water:        { name: 'Water',        sheets: ['Tiles_LakeBase'], walk: false, water: true, autotile: 'lake' },
   river:        { name: 'River',        sheets: ['Tiles_FlowingWater'], walk: false, water: true, flowing: true },
+  // A stream is one hex wide and autotiles off which neighbours are water, so it
+  // runs into a pond or the river and joins it rather than stopping at the edge.
+  stream:       { name: 'Stream',       sheets: ['Tiles_StreamStraight'], walk: false, water: true, flowing: true, autotile: 'stream' },
   path:         { name: 'Path',         sheets: ['Tiles_PathEnd'], walk: true, autotile: 'path' },
 };
 
@@ -78,12 +81,11 @@ export function cropFrame(stage, variant = 0) {
 // ------------------------------------------------------------- autotiling
 
 /**
- * Neither autotile set is complete (docs/new_tiles.md): paths are missing 12 of
- * 15 four-connection pieces and all six five-connection ones, and lake shores
- * exist only for contiguous runs of land. Rather than draw a hole, fall back to
- * the closest mask that does exist, preferring to *drop* a connection over
- * inventing one — a missing spur reads as a dead end, an extra one reads as a
- * bug.
+ * All three sets now cover every one of the 63 masks (docs/new_tiles.md), so this
+ * is no longer reached for a mask the art holds. It stays because a table can
+ * still be handed one it does not — mask 0, or a set trimmed by hand. Falling
+ * back prefers to *drop* a connection over inventing one: a missing spur reads
+ * as a dead end, an extra one reads as a bug.
  */
 export function nearestMask(table, mask) {
   const supported = Object.keys(table).map(Number);
@@ -108,6 +110,7 @@ export const popcount = n => {
 export function makeResolvers(index) {
   const lake = index.lakeByLandMask;
   const path = index.pathByMask;
+  const stream = index.streamByMask || {};
 
   return {
     /** @param landMask bits set for edges where the neighbour is *not* water. */
@@ -128,6 +131,18 @@ export function makeResolvers(index) {
         ? { sprite: hit[0], frame: hit[1] }
         : { sprite: 'Tiles_PathEnd', frame: 0 };
     },
+
+    /**
+     * @param connMask bits set for edges where the neighbour is also water —
+     * another stream hex, a pond or the river. A stream carries the lake's own
+     * water colours, so where the mask points at a pond the two merge.
+     */
+    stream(connMask) {
+      const hit = stream[connMask] || stream[nearestMask(stream, connMask)];
+      return hit
+        ? { sprite: hit[0], frame: hit[1] }
+        : { sprite: 'Tiles_StreamEnd', frame: 0 };
+    },
   };
 }
 
@@ -136,6 +151,7 @@ export function supportedMasks(index) {
   return {
     lake: new Set(Object.keys(index.lakeByLandMask).map(Number)),
     path: new Set(Object.keys(index.pathByMask).map(Number)),
+    stream: new Set(Object.keys(index.streamByMask || {}).map(Number)),
   };
 }
 

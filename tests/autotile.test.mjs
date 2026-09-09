@@ -1,10 +1,13 @@
-// autotile.test.mjs — the path and lake sets are known to be incomplete, so what
-// matters is that every mask the generator can produce still lands on real art.
+// autotile.test.mjs — the path, shoreline and stream sets each cover all 63
+// connection masks. What matters is that every mask lands on real art, that a
+// mask with its own piece never falls back, and that the fallback still behaves
+// when handed a table with a hole in it.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, run, eq, ok } from './_harness.mjs';
+import { readPng } from '../tools/png_read.js';
 import {
   SHEET_NAMES, FRAMES_PER_SHEET, makeResolvers, supportedMasks, popcount,
   variantFor, cropFrame, CROPS, TERRAIN,
@@ -99,6 +102,36 @@ test('every shoreline has its own art, contiguous or not', () => {
   ok(broken.length === 32, `expected 32 broken shorelines, got ${broken.length}`);
 });
 
+test('no table entry points at a padded filler frame', () => {
+  // Sheets whose rotation family has fewer than six members pad the spare slots
+  // with plain ground, and plain ground reads as land on all six edges — which
+  // is mask 63, a real shoreline (a one-hex pond). A filler was claiming 63
+  // before Tiles_LakeSidesSix could, so ponds drew as blank grass. Every entry
+  // must point at a frame that actually contains the feature it promises.
+  const anyWater = (img, fi) => {
+    for (let y = 16; y < 40; y++)
+      for (let x = 0; x < 32; x++) {
+        const i = (y * img.width + fi * 32 + x) * 4;
+        if (img.data[i + 3] === 0) continue;
+        const [r, g, b] = [img.data[i], img.data[i + 1], img.data[i + 2]];
+        if (b > r + 20 && b > g + 10) return true;
+      }
+    return false;
+  };
+  const cache = new Map();
+  const sheetOf = name => {
+    if (!cache.has(name)) cache.set(name, readPng(join(root, 'new_tiles', `${name}.png`)));
+    return cache.get(name);
+  };
+  for (const [label, table] of [['lake', index.lakeByLandMask], ['stream', index.streamByMask]]) {
+    for (const [mask, [name, frame]] of Object.entries(table)) {
+      ok(anyWater(sheetOf(name), frame),
+        `${label} mask ${mask} points at ${name} frame ${frame}, which holds no water`);
+    }
+  }
+  eq(index.lakeByLandMask[63], ['Tiles_LakeSidesSix', 0], 'a one-hex pond should draw the enclosed piece');
+});
+
 test('one-tile streams cover every connection mask and carry the lake water', () => {
   const stream = index.streamByMask;
   ok(stream, 'index.json has no streamByMask');
@@ -111,14 +144,26 @@ test('one-tile streams cover every connection mask and carry the lake water', ()
 });
 
 test('unsupported masks fall back to the nearest, preferring to drop a spur', () => {
-  // A five-way junction has no art. The fallback must be a real four-way piece
-  // that is a subset of what was asked for, not a different junction entirely.
+  // Every mask has art now, so the shipped table never reaches the fallback.
+  // Hand it a table with the five-ways cut out — the way the set used to ship —
+  // and it must pick a real piece that is a *subset* of what was asked for. A
+  // missing spur reads as a dead end; an invented one reads as a bug.
+  const holed = Object.fromEntries(
+    Object.entries(index.pathByMask).filter(([m]) => popcount(Number(m)) !== 5));
+  const gapped = makeResolvers({ ...index, pathByMask: holed });
+
   const fiveWay = 0b011111;
-  const hit = resolve.path(fiveWay);
+  ok(!holed[fiveWay], 'the hole was not actually cut');
+  const hit = gapped.path(fiveWay);
   ok(isRealFrame(hit), 'five-way did not resolve');
-  const chosen = Number(Object.entries(index.pathByMask)
+  const chosen = Number(Object.entries(holed)
     .find(([, v]) => v[0] === hit.sprite && v[1] === hit.frame)[0]);
   ok(popcount(chosen & ~fiveWay) === 0, `fallback ${chosen} invented a connection`);
+
+  // And with the full table it uses the real piece rather than approximating.
+  eq(resolve.path(fiveWay),
+    { sprite: index.pathByMask[fiveWay][0], frame: index.pathByMask[fiveWay][1] },
+    'a five-way should now use its own art');
 });
 
 test('open water is hashed across the base sheet, not stuck on one frame', () => {

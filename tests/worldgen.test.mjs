@@ -262,13 +262,18 @@ test('a map the editor wrote loads as columns', () => {
     ['0,0,1', { id: 'Grass', sprite: 'Tiles_GrassBase2', frame: 0 }],
     ['1,0,0', { id: 'Lake', sprite: 'Tiles_LakeBase', frame: 3 }],
     ['2,0,0', { id: 'Path', sprite: 'Tiles_PathsStraight', frame: 1 }],
+    // The editor's tile format carries no terrain id, so the sheet name is the
+    // only thing that says what this is. A stream sheet grouped with the lake
+    // sheets would silently come back as a lake.
+    ['3,0,0', { id: 'Stream', sprite: 'Tiles_StreamSmallCorner', frame: 2 }],
   ];
   const map = WorldMap.fromJSON(editorSave);
-  eq(map.size, 3, 'three columns');
+  eq(map.size, 4, 'four columns');
   eq(map.heightAt(0, 0), 1, 'the stack collapsed to its top level');
   eq(map.terrainAt(0, 0), 'grass', 'grass sheet');
   eq(map.terrainAt(1, 0), 'water', 'lake sheet');
   eq(map.terrainAt(2, 0), 'path', 'path sheet');
+  eq(map.terrainAt(3, 0), 'stream', 'a stream sheet must not come back as a lake');
   eq(map.get(0, 0).sprite, 'Tiles_GrassBase2', 'kept the topmost face');
 });
 
