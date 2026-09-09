@@ -16,7 +16,8 @@ import { png } from './preview.js';
 export const FRAME_W = 32, FRAME_H = 48;
 export const FACE_TOP = 16, FACE_H = 24, WALL_H = 8;
 export const STEP_X = 26, STEP_Y = 24, COL_OFFSET_Y = 12;
-const DIRS = ['new_tiles', 'new_tiles_gen'];
+// TILE_DIRS lets a scratch build be previewed before it is written into new_tiles/
+const DIRS = (process.env.TILE_DIRS || 'new_tiles,new_tiles_gen').split(',');
 
 const sheets = new Map();
 export function frame(sheet, i) {

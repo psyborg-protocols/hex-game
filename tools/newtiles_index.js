@@ -48,9 +48,21 @@ export function maskOf(sheet, fi, kind) {
   return m;
 }
 
+// Sheets ending in TriFan/QuadRun/QuadSpur/Five are the synthesised gap-fillers
+// from tools/newtiles_channels.js. They are probed here like any other art, so
+// index.json stays derived from the pixels rather than hand-maintained.
 const PATH_SHEETS = ['Tiles_PathEnd', 'Tiles_PathsStraight', 'Tiles_PathSmallCorner',
-  'Tiles_PathWideCorner', 'Tiles_PathBranchCrossLeft', 'Tiles_PathBranchCrossRight', 'Tiles_PathCrosses'];
-const LAKE_SHEETS = ['Tiles_LakeSidesOne', 'Tiles_LakeSidesTwo', 'Tiles_LakeSidesThree', 'Tiles_LakeSidesFour'];
+  'Tiles_PathWideCorner', 'Tiles_PathBranchCrossLeft', 'Tiles_PathBranchCrossRight', 'Tiles_PathCrosses',
+  'Tiles_PathTriFan', 'Tiles_PathQuadRun', 'Tiles_PathQuadSpur', 'Tiles_PathFive'];
+const LAKE_SHEETS = ['Tiles_LakeSidesOne', 'Tiles_LakeSidesTwo', 'Tiles_LakeSidesThree', 'Tiles_LakeSidesFour',
+  'Tiles_LakeSidesTwoWide', 'Tiles_LakeSidesTwoOpp', 'Tiles_LakeSidesThreeL', 'Tiles_LakeSidesThreeR',
+  'Tiles_LakeSidesThreeAlt', 'Tiles_LakeSidesFourSpur', 'Tiles_LakeSidesFourAlt',
+  'Tiles_LakeSidesFive', 'Tiles_LakeSidesSix'];
+// One-tile-wide streams: same connection-mask idea as paths, but the edge that
+// continues carries water, so they are probed for water rather than for sand.
+const STREAM_SHEETS = ['Tiles_StreamEnd', 'Tiles_StreamStraight', 'Tiles_StreamSmallCorner',
+  'Tiles_StreamWideCorner', 'Tiles_StreamTriFan', 'Tiles_StreamBranchLeft', 'Tiles_StreamBranchRight',
+  'Tiles_StreamCrosses', 'Tiles_StreamQuadRun', 'Tiles_StreamQuadSpur', 'Tiles_StreamFive'];
 
 export function buildIndex() {
   const paths = {};   // connection mask -> [sheet, frame]
@@ -64,6 +76,17 @@ export function buildIndex() {
       if (m && !(m in paths)) paths[m] = [s, fi];
     }
   }
+  const streams = {};  // connection mask -> [sheet, frame]
+  const streamRows = [];
+  for (const sh of STREAM_SHEETS) {
+    const img = readPng(`${DIR}/${sh}.png`);
+    for (let fi = 0; fi < 6; fi++) {
+      let m = 0;
+      EDGES.forEach((e, bit) => { if (edgeKind(img, fi, e) === 'water') m |= 1 << bit; });
+      streamRows.push({ sheet: sh, frame: fi, mask: m });
+      if (m && !(m in streams)) streams[m] = [sh, fi];
+    }
+  }
   const lakes = {};   // land-edge mask -> [sheet, frame]
   const lakeRows = [];
   for (const s of LAKE_SHEETS) {
@@ -75,14 +98,14 @@ export function buildIndex() {
       if (m && !(m in lakes)) lakes[m] = [s, fi];
     }
   }
-  return { paths, lakes, pathRows, lakeRows };
+  return { paths, lakes, streams, pathRows, lakeRows, streamRows };
 }
 
 const names = (m) => EDGES.filter((_, b) => m & (1 << b)).join('+') || '-';
 const popcount = (m) => EDGES.reduce((s, _, b) => s + ((m >> b) & 1), 0);
 
 if (process.argv[1].replace(/\\/g, '/').split('/').pop() === 'newtiles_index.js') {
-  const { paths, lakes, pathRows, lakeRows } = buildIndex();
+  const { paths, lakes, streams, pathRows, lakeRows, streamRows } = buildIndex();
 
   console.log('PATH pieces — frame -> connected edges (bit order N,NE,SE,S,SW,NW)\n');
   let cur = '';
@@ -124,6 +147,7 @@ if (process.argv[1].replace(/\\/g, '/').split('/').pop() === 'newtiles_index.js'
       edgeOrder: EDGES,
       pathByMask: paths,
       lakeByLandMask: lakes,
+      streamByMask: streams,
     }, null, 2) + '\n');
     console.log('\nwrote new_tiles/index.json');
   }

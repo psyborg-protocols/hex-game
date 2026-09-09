@@ -75,26 +75,38 @@ test('supported masks are covered exactly, not approximated', () => {
   }
 });
 
-test('path coverage is the documented shape', () => {
+test('every path junction has its own art', () => {
   const byConnections = {};
   for (const mask of supported.path) {
     const n = popcount(mask);
     byConnections[n] = (byConnections[n] || 0) + 1;
   }
-  // docs/new_tiles.md: 6/6, 15/15, 14/20, 3/15, 0/6, 1/1.
-  eq(byConnections, { 1: 6, 2: 15, 3: 14, 4: 3, 6: 1 }, 'path pieces by connection count');
+  // Was 6/15/14/3/0/1 while the set had gaps; tools/newtiles_channels.js filled
+  // the missing 24, so every one of the 63 masks now resolves to real art.
+  eq(byConnections, { 1: 6, 2: 15, 3: 20, 4: 15, 5: 6, 6: 1 }, 'path pieces by connection count');
 });
 
-test('lake shores exist only for contiguous runs of land', () => {
-  for (const mask of supported.lake) {
-    ok(isContiguous(mask), `lake mask ${mask} is not a contiguous shoreline`);
-  }
-  // And every contiguous run of 1-4 is present, which is what the generator relies on.
+test('every shoreline has its own art, contiguous or not', () => {
+  // The original set only drew shorelines that were a single unbroken run of
+  // land. A stream flowing into a lake breaks the shore in two, so the broken
+  // ones had to exist before streams were usable.
   for (let mask = 1; mask < 64; mask++) {
-    const n = popcount(mask);
-    if (n >= 1 && n <= 4 && isContiguous(mask)) {
-      ok(supported.lake.has(mask), `contiguous shoreline ${mask} is missing`);
-    }
+    ok(supported.lake.has(mask), `shoreline ${mask} is missing`);
+  }
+  // Of the 63 masks, 31 are a single run (six rotations each of lengths 1-5,
+  // plus all-six), so 32 are broken shorelines. None of those existed before.
+  const broken = [...supported.lake].filter(m => !isContiguous(m));
+  ok(broken.length === 32, `expected 32 broken shorelines, got ${broken.length}`);
+});
+
+test('one-tile streams cover every connection mask and carry the lake water', () => {
+  const stream = index.streamByMask;
+  ok(stream, 'index.json has no streamByMask');
+  for (let mask = 1; mask < 64; mask++) {
+    const hit = stream[mask];
+    ok(hit && sheets.has(hit[0]), `stream mask ${mask} has no art`);
+    ok(Number.isInteger(hit[1]) && hit[1] >= 0 && hit[1] < FRAMES_PER_SHEET,
+      `stream mask ${mask} names frame ${hit && hit[1]}`);
   }
 });
 

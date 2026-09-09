@@ -1,0 +1,258 @@
+{
+  "path": {},
+  "stream": {
+    "1": [
+      "Tiles_StreamEnd",
+      3
+    ],
+    "2": [
+      "Tiles_StreamEnd",
+      4
+    ],
+    "3": [
+      "Tiles_StreamSmallCorner",
+      0
+    ],
+    "4": [
+      "Tiles_StreamEnd",
+      5
+    ],
+    "5": [
+      "Tiles_StreamWideCorner",
+      0
+    ],
+    "6": [
+      "Tiles_StreamSmallCorner",
+      1
+    ],
+    "7": [
+      "Tiles_StreamTriFan",
+      0
+    ],
+    "8": [
+      "Tiles_StreamEnd",
+      0
+    ],
+    "9": [
+      "Tiles_StreamStraight",
+      0
+    ],
+    "10": [
+      "Tiles_StreamWideCorner",
+      1
+    ],
+    "11": [
+      "Tiles_StreamBranchRight",
+      0
+    ],
+    "12": [
+      "Tiles_StreamSmallCorner",
+      2
+    ],
+    "13": [
+      "Tiles_StreamBranchLeft",
+      3
+    ],
+    "14": [
+      "Tiles_StreamTriFan",
+      1
+    ],
+    "15": [
+      "Tiles_StreamQuadRun",
+      0
+    ],
+    "16": [
+      "Tiles_StreamEnd",
+      1
+    ],
+    "17": [
+      "Tiles_StreamWideCorner",
+      4
+    ],
+    "18": [
+      "Tiles_StreamStraight",
+      1
+    ],
+    "19": [
+      "Tiles_StreamBranchLeft",
+      1
+    ],
+    "20": [
+      "Tiles_StreamWideCorner",
+      2
+    ],
+    "21": [
+      "Tiles_StreamCrosses",
+      1
+    ],
+    "22": [
+      "Tiles_StreamBranchRight",
+      1
+    ],
+    "23": [
+      "Tiles_StreamQuadSpur",
+      0
+    ],
+    "24": [
+      "Tiles_StreamSmallCorner",
+      3
+    ],
+    "25": [
+      "Tiles_StreamBranchRight",
+      3
+    ],
+    "26": [
+      "Tiles_StreamBranchLeft",
+      4
+    ],
+    "27": [
+      "Tiles_StreamCrosses",
+      3
+    ],
+    "28": [
+      "Tiles_StreamTriFan",
+      2
+    ],
+    "29": [
+      "Tiles_StreamQuadSpur",
+      2
+    ],
+    "30": [
+      "Tiles_StreamQuadRun",
+      1
+    ],
+    "31": [
+      "Tiles_StreamFive",
+      5
+    ],
+    "32": [
+      "Tiles_StreamEnd",
+      2
+    ],
+    "33": [
+      "Tiles_StreamSmallCorner",
+      5
+    ],
+    "34": [
+      "Tiles_StreamWideCorner",
+      5
+    ],
+    "35": [
+      "Tiles_StreamTriFan",
+      5
+    ],
+    "36": [
+      "Tiles_StreamStraight",
+      2
+    ],
+    "37": [
+      "Tiles_StreamBranchRight",
+      5
+    ],
+    "38": [
+      "Tiles_StreamBranchLeft",
+      2
+    ],
+    "39": [
+      "Tiles_StreamQuadRun",
+      5
+    ],
+    "40": [
+      "Tiles_StreamWideCorner",
+      3
+    ],
+    "41": [
+      "Tiles_StreamBranchLeft",
+      0
+    ],
+    "42": [
+      "Tiles_StreamCrosses",
+      0
+    ],
+    "43": [
+      "Tiles_StreamQuadSpur",
+      5
+    ],
+    "44": [
+      "Tiles_StreamBranchRight",
+      2
+    ],
+    "45": [
+      "Tiles_StreamCrosses",
+      4
+    ],
+    "46": [
+      "Tiles_StreamQuadSpur",
+      1
+    ],
+    "47": [
+      "Tiles_StreamFive",
+      4
+    ],
+    "48": [
+      "Tiles_StreamSmallCorner",
+      4
+    ],
+    "49": [
+      "Tiles_StreamTriFan",
+      4
+    ],
+    "50": [
+      "Tiles_StreamBranchRight",
+      4
+    ],
+    "51": [
+      "Tiles_StreamQuadRun",
+      4
+    ],
+    "52": [
+      "Tiles_StreamBranchLeft",
+      5
+    ],
+    "53": [
+      "Tiles_StreamQuadSpur",
+      4
+    ],
+    "54": [
+      "Tiles_StreamCrosses",
+      2
+    ],
+    "55": [
+      "Tiles_StreamFive",
+      3
+    ],
+    "56": [
+      "Tiles_StreamTriFan",
+      3
+    ],
+    "57": [
+      "Tiles_StreamQuadRun",
+      3
+    ],
+    "58": [
+      "Tiles_StreamQuadSpur",
+      3
+    ],
+    "59": [
+      "Tiles_StreamFive",
+      2
+    ],
+    "60": [
+      "Tiles_StreamQuadRun",
+      2
+    ],
+    "61": [
+      "Tiles_StreamFive",
+      1
+    ],
+    "62": [
+      "Tiles_StreamFive",
+      0
+    ],
+    "63": [
+      "Tiles_StreamCrosses",
+      5
+    ]
+  },
+  "lake": {}
+}

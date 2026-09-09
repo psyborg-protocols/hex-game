@@ -99,14 +99,15 @@ The lake pieces follow a clean rule — for `LakeSidesK`, frame `i` puts land on
 frame = (firstLandEdge + K) % 6      // K = number of contiguous land edges
 ```
 
-### Coverage gaps — the real work
+### Coverage gaps in the shipped art — since filled
 
-Neither set is complete, so a generator that produces arbitrary shapes will hit
-missing art:
+The art as delivered did not cover every mask. It does now: see *Filling the
+autotile gaps, and streams* at the end of this file. Recorded here because the
+shape of the original set still explains how the sheets are organised.
 
-**Paths** (by number of connections)
+**Paths** (by number of connections, as shipped)
 
-| connections | have / possible | missing |
+| connections | shipped | missing |
 |---|---|---|
 | 1 | 6 / 6 | — |
 | 2 | 15 / 15 | — |
@@ -115,14 +116,11 @@ missing art:
 | 5 | 0 / 6 | all |
 | 6 | 1 / 1 | — |
 
-Dead ends, straights and every corner are fully covered. Junctions are not.
+Dead ends, straights and every corner were fully covered. Junctions were not.
 
-**Lake shores** — only *contiguous* shorelines exist: 1, 2, 3 or 4 land edges in a
-consecutive run (6 of each). Missing: any non-contiguous shoreline (a channel with
-land on opposite sides), and 5 or 6 land edges (a single-hex pond).
-
-Three options: constrain generation to the supported masks, fall back to the
-nearest supported mask, or draw the missing pieces.
+**Lake shores** — only *contiguous* shorelines shipped: 1, 2, 3 or 4 land edges in
+a consecutive run (6 of each). Missing were any broken shoreline (land on
+opposite sides with water between), and 5 or 6 land edges.
 
 ## Blemishes
 
@@ -246,3 +244,92 @@ original wall (imperceptible 1-3 value jitter), so the generated sheets carry
   the real structure, which gets the family resemblance right, but an artist
   would give each tile intent — a drift of scree, a worn track — that a
   generator does not invent.
+
+---
+
+# Filling the autotile gaps, and streams
+
+`tools/newtiles_channels.js` synthesises the path junctions the original set was
+missing, a one-tile-wide stream set, and the shorelines a stream needs in order
+to meet a lake. Everything lands in `new_tiles/` as 192x48 six-frame sheets.
+
+```
+node tools/newtiles_channels.js          # write the sheets
+node tools/newtiles_index.js --json      # re-derive index.json from the pixels
+node tools/newtiles_scene.js out.png 4   # a lake, streams feeding it, and a track
+```
+
+After it runs, all three tables cover every one of the 63 masks:
+
+| set | before | after |
+|---|---|---|
+| paths | 39 / 63 | **63 / 63** |
+| lake shorelines | 24 / 63 | **63 / 63** |
+| streams | — | **63 / 63** |
+
+## Why synthesis, not flipping
+
+Flipping yields nothing. The shipped sheets already hold all six rotations of
+every shape they cover, so the set is closed under rotation; and the Left/Right
+branch sheets are already mirrors of each other, so it is closed under reflection
+too. Every missing mask had to be built.
+
+## Method
+
+A path arm is a constant-width band from one edge to the middle of the tile.
+`Tiles_PathsStraight` holds three straights (N-S, NE-SW, SE-NW), so splitting
+each through the centre yields six arms **drawn by the artist**. Any mask is then
+the union of its arms plus a small disc at the centre, which rounds dead ends and
+keeps junctions solid.
+
+The band edges are rebuilt rather than copied, because a union creates borders
+the source never had. The structure is read off the art: fill, a 1px darker rim
+just inside the region, and a 1px dark-grass shadow just outside where the track
+cuts the turf. A stream is the same three-band structure with the lake's colours
+— sandy shore outside, the lake's under-bank shadow inside, lake water in the
+middle — so a stream running into a lake merges with it rather than butting up
+against it. Streams are eroded one pixel narrower than a cart track.
+
+A lake tile is the **inverse** of a channel: grass laid on water instead of water
+laid on grass. Same painter, different region. The six land bands are lifted from
+`Tiles_LakeSidesOne`, one per edge.
+
+Validation: synthesised versions of pieces the artist *did* draw were rendered
+beside the originals before trusting the method on the missing ones. The straight
+is near-identical and the six-way junction very close; synthesised corners sweep
+slightly wider than the hand-drawn ones.
+
+## Three things the renders caught
+
+- **Seams.** A channel pixel at the hex boundary is not a border — the channel
+  continues into the next tile. Treating it as one drew a dark rim across every
+  tile join, banding the stream into segments.
+- **Floating decor read as land.** The artist floats lily pads and reeds in open
+  water. They are green, so a naive "not water" test called them land and every
+  unioned shoreline came out shot through with islands. Only land that reaches
+  the rim counts.
+- **Banks closing the mouth.** Each source shore tile has land on one edge only,
+  so its bank spreads sideways into the neighbouring edges' territory. Unioned,
+  those overhangs sealed shut the very edge the tile was supposed to leave open.
+  Each band is now clipped to the wedge it faces.
+
+Water is also filtered to the components that actually reach an open edge, so a
+pinched-off pocket cannot render as a little walled pond mid-tile — which is what
+appeared where the first stream met the lake.
+
+## Integration
+
+`index.json` stays **derived from the pixels**: the new sheets are probed like any
+other art by `tools/newtiles_index.js`, which now also emits `streamByMask`. As a
+cross-check, all 63 stream tiles read back blind as exactly the mask they were
+built for.
+
+`tests/autotile.test.mjs` previously asserted the gaps as invariants — that paths
+stopped at 14 three-ways and that shorelines were contiguous-only. Those
+assertions described a limitation that no longer holds and now assert full
+coverage instead. The fallback machinery is still tested.
+
+Streams are registered as water in the sheet tables, so they load and round-trip
+through the map format. Giving them a **terrain id and a resolver of their own**
+is a gameplay decision and is not done here — the art and the mask table are
+ready for it.

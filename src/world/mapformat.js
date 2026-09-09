@@ -7,7 +7,7 @@
 // in the editor.
 
 import { columnKey, neighbors, EDGE_BITS, EDGE_ORDER } from './hexgrid.js';
-import { TERRAIN, CROPS, variantFor, terrainOf, isWater } from './tileset.js';
+import { TERRAIN, CROPS, SHEET_NAMES, variantFor, terrainOf, isWater } from './tileset.js';
 
 export const MAP_VERSION = 2;
 
@@ -16,12 +16,11 @@ const SHEET_TO_TERRAIN = (() => {
   const m = new Map();
   for (const [id, t] of Object.entries(TERRAIN)) for (const s of t.sheets) m.set(s, id);
   // The autotiled sets name many sheets that the terrain table does not list.
-  for (const s of ['Tiles_LakeSidesOne', 'Tiles_LakeSidesTwo', 'Tiles_LakeSidesThree', 'Tiles_LakeSidesFour']) {
-    m.set(s, 'water');
-  }
-  for (const s of ['Tiles_PathEnd', 'Tiles_PathsStraight', 'Tiles_PathSmallCorner', 'Tiles_PathWideCorner',
-    'Tiles_PathCrosses', 'Tiles_PathBranchCrossLeft', 'Tiles_PathBranchCrossRight']) {
-    m.set(s, 'path');
+  // Matched by name rather than enumerated, so the gap-filling junction and
+  // shoreline sheets are picked up without this list having to track them.
+  for (const s of SHEET_NAMES) {
+    if (s.startsWith('Tiles_LakeSides') || s.startsWith('Tiles_Stream')) m.set(s, 'water');
+    else if (s.startsWith('Tiles_Path')) m.set(s, 'path');
   }
   for (const [id, c] of Object.entries(CROPS)) m.set(c.sheet, 'farm');
   return m;

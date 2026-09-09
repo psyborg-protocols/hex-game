@@ -19,6 +19,21 @@ export const SHEET_NAMES = [
   'Tiles_LakeSidesOne', 'Tiles_LakeSidesTwo', 'Tiles_LakeSidesThree', 'Tiles_LakeSidesFour',
   'Tiles_PathEnd', 'Tiles_PathsStraight', 'Tiles_PathSmallCorner', 'Tiles_PathWideCorner',
   'Tiles_PathCrosses', 'Tiles_PathBranchCrossLeft', 'Tiles_PathBranchCrossRight',
+  // The junctions the original set never had — three-edge fans, four-way runs
+  // and spurs, and five-ways. With these the path table covers all 63 masks.
+  'Tiles_PathTriFan', 'Tiles_PathQuadRun', 'Tiles_PathQuadSpur', 'Tiles_PathFive',
+  // Shorelines that are not a single contiguous run of land. A stream mouth is a
+  // gap in a lake's shore, so these are what make streams meet water properly.
+  'Tiles_LakeSidesTwoWide', 'Tiles_LakeSidesTwoOpp',
+  'Tiles_LakeSidesThreeL', 'Tiles_LakeSidesThreeR', 'Tiles_LakeSidesThreeAlt',
+  'Tiles_LakeSidesFourSpur', 'Tiles_LakeSidesFourAlt',
+  'Tiles_LakeSidesFive', 'Tiles_LakeSidesSix',
+  // One-tile-wide streams: the same connection-mask idea as paths, carrying the
+  // lake's own water so a stream running into a lake merges with it.
+  'Tiles_StreamEnd', 'Tiles_StreamStraight', 'Tiles_StreamSmallCorner',
+  'Tiles_StreamWideCorner', 'Tiles_StreamTriFan',
+  'Tiles_StreamBranchLeft', 'Tiles_StreamBranchRight', 'Tiles_StreamCrosses',
+  'Tiles_StreamQuadRun', 'Tiles_StreamQuadSpur', 'Tiles_StreamFive',
 ];
 
 export const FRAMES_PER_SHEET = 6;
