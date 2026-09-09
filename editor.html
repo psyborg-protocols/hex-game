@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hex World Editor</title>
+    <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+    <div id="app">
+        <div id="toolbar">
+            <h2>Hex Editor</h2>
+            <div class="actions">
+                <button id="btn-save">Save Map</button>
+                <button id="btn-load">Load Map</button>
+                <input type="file" id="file-load" accept=".json" style="display:none">
+            </div>
+            <h3>Palette</h3>
+            <div id="palette">
+                <!-- Palette items injected by JS -->
+            </div>
+            <p class="instructions">
+                <strong>Left drag</strong> paint the selected terrain<br>
+                <strong>Shift + left</strong> raise a level<br>
+                <strong>Right drag</strong> lower a level, and away at zero<br>
+                <strong>Middle drag / Alt</strong> pan<br>
+                <strong>Wheel</strong> zoom, whole steps only
+            </p>
+            <p id="info" class="instructions"></p>
+        </div>
+        <div id="canvas-container">
+            <canvas id="view"></canvas>
+        </div>
+    </div>
+    <script type="module" src="editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,373 @@
+/* ui.css — chrome around the canvas. The world itself is drawn, not styled. */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
+
+:root {
+  --ink: #f0e6d2;
+  --ink-dim: #b9ab8f;
+  --panel: #1e1a14;
+  --panel-edge: #6b5836;
+  --accent: #d9b45b;
+  --bad: #c05a4a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0d0f14;
+  color: var(--ink);
+  font-family: 'Cinzel', Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage { position: relative; width: 100vw; height: 100vh; }
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* ---------------------------------------------------------------- HUD */
+
+#hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 10px 14px;
+  background: rgba(20, 17, 12, 0.82);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+  pointer-events: none;
+  min-width: 180px;
+}
+
+#hud b { color: var(--accent); font-weight: 700; }
+#hud .dim { color: var(--ink-dim); font-size: 11px; }
+
+#hud-skills { margin-top: 6px; }
+#hud-skills .skill { display: flex; align-items: center; gap: 6px; }
+#hud-skills img { width: 16px; height: 16px; image-rendering: pixelated; }
+
+/* ------------------------------------------------------- world-anchored */
+
+#worldspace {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.context-button {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 4px 10px;
+  background: rgba(20, 17, 12, 0.92);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.context-button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---------------------------------------------------------- notifications */
+
+#notifications {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.notification {
+  padding: 6px 14px;
+  background: rgba(20, 17, 12, 0.92);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  font-size: 13px;
+  animation: fade-in 160ms ease-out;
+}
+
+@keyframes fade-in { from { opacity: 0; transform: translateY(-4px); } }
+
+/* -------------------------------------------------------------- taskbar */
+
+#taskbar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+#taskbar button {
+  padding: 6px 16px;
+  background: rgba(20, 17, 12, 0.92);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#taskbar button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --------------------------------------------------------------- modals */
+
+#modal-root:empty { display: none; }
+
+#modal-root {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* ------------------------------------------------------------ progress */
+
+.progress {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 4px 10px;
+  background: rgba(20, 17, 12, 0.94);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.progress .bar {
+  margin-top: 4px;
+  height: 4px;
+  background: #3a3227;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+
+/* --------------------------------------------------------------- modal */
+
+.modal {
+  width: min(680px, 92vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 5px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
+}
+
+.modal header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--panel-edge);
+}
+
+.modal header h2 { margin: 0; font-size: 18px; flex: 1; text-transform: capitalize; }
+
+.modal .close {
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal .close:hover { color: var(--accent); }
+
+.modal-body { padding: 14px 16px; overflow-y: auto; font-size: 14px; }
+.modal-body h3 { font-size: 14px; margin: 16px 0 6px; color: var(--accent); }
+.modal-body p { margin: 6px 0; }
+
+.icon { image-rendering: pixelated; vertical-align: middle; }
+.dim { color: var(--ink-dim); }
+
+/* ------------------------------------------------------------ inventory */
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.slot {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid #3a3227;
+  border-radius: 3px;
+}
+
+.slot.empty { opacity: 0.4; }
+.slot .qty { position: absolute; right: 3px; bottom: 1px; font-size: 11px; }
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid #3a3227;
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.line span:nth-child(2) { flex: 1; }
+.line:hover { border-color: var(--accent); }
+
+/* -------------------------------------------------------------- crafting */
+
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+
+.tabs .tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid #3a3227;
+  border-radius: 3px;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 12px;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.tabs .tab img { image-rendering: pixelated; }
+.tabs .tab.on { color: var(--accent); border-color: var(--accent); }
+
+.recipes { display: flex; flex-direction: column; gap: 8px; }
+
+.recipe {
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid #3a3227;
+  border-radius: 3px;
+}
+
+.recipe.locked { opacity: 0.62; }
+
+.recipe-head { display: flex; align-items: center; gap: 10px; }
+.recipe-head > div { flex: 1; display: flex; flex-direction: column; }
+.recipe-head .dim { font-size: 11px; text-transform: capitalize; }
+
+.recipe-head button {
+  padding: 5px 12px;
+  background: #2b2519;
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.recipe-head button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.recipe-head button:disabled { opacity: 0.4; cursor: default; }
+
+.ingredients { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 12px; }
+.ingredient { display: inline-flex; align-items: center; gap: 3px; }
+.ingredient.short { color: var(--bad); }
+
+.why { margin: 6px 0 0; padding-left: 16px; font-size: 11px; color: var(--ink-dim); }
+
+/* ---------------------------------------------------------------- skills */
+
+.skill-block { margin-bottom: 18px; }
+.skill-block header { display: flex; align-items: center; gap: 8px; padding: 0; border: none; }
+.skill-block h3 { margin: 0; flex: 1; text-transform: capitalize; color: var(--ink); }
+.skill-block header img { image-rendering: pixelated; }
+.skill-block header b { color: var(--accent); font-size: 18px; }
+
+.xp-bar { height: 4px; margin: 6px 0 10px; background: #3a3227; border-radius: 2px; overflow: hidden; }
+.xp-bar i { display: block; height: 100%; background: var(--accent); }
+
+.abilities { display: flex; flex-direction: column; gap: 6px; }
+.ability { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; }
+.ability img { image-rendering: pixelated; margin-top: 2px; }
+.ability.locked { opacity: 0.35; }
+.ability ul { margin: 2px 0 0; padding-left: 16px; }
+
+/* ----------------------------------------------------------------- trade */
+
+.trade { display: flex; flex-direction: column; gap: 5px; }
+
+.trade-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid #3a3227;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.trade-row > span:nth-child(2) { flex: 1; }
+.trade-row .dim { font-size: 11px; }
+
+.trade-row button {
+  padding: 4px 10px;
+  background: #2b2519;
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trade-row button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.trade-row button:disabled { opacity: 0.35; cursor: default; }
+
+/* Free-resource testing mode: unmissable on purpose. */
+.free-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border: 1px solid #d9a441;
+  border-radius: 3px;
+  color: #f0c46a;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}

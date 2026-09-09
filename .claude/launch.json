@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hexworld",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/serve.js"
+      ],
+      "port": 8080,
+      "autoPort": true
+    }
+  ]
+}

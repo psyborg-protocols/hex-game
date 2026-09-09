@@ -1,0 +1,10 @@
+node_modules/
+*.log
+
+# Preview / verification renders written by tools/*.js into the repo root.
+/sheet.png
+/map.png
+/field.png
+/one.png
+/out.png
+/--verify

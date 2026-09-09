@@ -1,0 +1,284 @@
+{
+  "frame": {
+    "width": 32,
+    "height": 48
+  },
+  "topFace": {
+    "top": 16,
+    "height": 24,
+    "width": 32
+  },
+  "wallHeight": 8,
+  "headroom": 16,
+  "layout": {
+    "stepX": 26,
+    "stepY": 24,
+    "oddColumnOffsetY": 12,
+    "orientation": "flat-top, odd-q (columns offset)"
+  },
+  "drawOrder": "back to front by screen y; walls and tall decor overlap the tiles behind",
+  "edgeOrder": [
+    "N",
+    "NE",
+    "SE",
+    "S",
+    "SW",
+    "NW"
+  ],
+  "pathByMask": {
+    "1": [
+      "Tiles_PathEnd",
+      1
+    ],
+    "2": [
+      "Tiles_PathEnd",
+      3
+    ],
+    "3": [
+      "Tiles_PathSmallCorner",
+      0
+    ],
+    "4": [
+      "Tiles_PathEnd",
+      4
+    ],
+    "5": [
+      "Tiles_PathWideCorner",
+      0
+    ],
+    "6": [
+      "Tiles_PathSmallCorner",
+      1
+    ],
+    "8": [
+      "Tiles_PathEnd",
+      0
+    ],
+    "9": [
+      "Tiles_PathsStraight",
+      0
+    ],
+    "10": [
+      "Tiles_PathWideCorner",
+      1
+    ],
+    "11": [
+      "Tiles_PathBranchCrossRight",
+      0
+    ],
+    "12": [
+      "Tiles_PathSmallCorner",
+      2
+    ],
+    "13": [
+      "Tiles_PathBranchCrossLeft",
+      3
+    ],
+    "16": [
+      "Tiles_PathEnd",
+      2
+    ],
+    "17": [
+      "Tiles_PathWideCorner",
+      4
+    ],
+    "18": [
+      "Tiles_PathsStraight",
+      1
+    ],
+    "19": [
+      "Tiles_PathBranchCrossLeft",
+      1
+    ],
+    "20": [
+      "Tiles_PathWideCorner",
+      2
+    ],
+    "21": [
+      "Tiles_PathCrosses",
+      1
+    ],
+    "22": [
+      "Tiles_PathBranchCrossRight",
+      1
+    ],
+    "24": [
+      "Tiles_PathSmallCorner",
+      3
+    ],
+    "25": [
+      "Tiles_PathBranchCrossRight",
+      3
+    ],
+    "26": [
+      "Tiles_PathBranchCrossLeft",
+      4
+    ],
+    "27": [
+      "Tiles_PathCrosses",
+      3
+    ],
+    "32": [
+      "Tiles_PathEnd",
+      5
+    ],
+    "33": [
+      "Tiles_PathSmallCorner",
+      5
+    ],
+    "34": [
+      "Tiles_PathWideCorner",
+      5
+    ],
+    "36": [
+      "Tiles_PathsStraight",
+      2
+    ],
+    "37": [
+      "Tiles_PathBranchCrossRight",
+      5
+    ],
+    "38": [
+      "Tiles_PathBranchCrossLeft",
+      2
+    ],
+    "40": [
+      "Tiles_PathWideCorner",
+      3
+    ],
+    "41": [
+      "Tiles_PathBranchCrossLeft",
+      0
+    ],
+    "42": [
+      "Tiles_PathCrosses",
+      0
+    ],
+    "44": [
+      "Tiles_PathBranchCrossRight",
+      2
+    ],
+    "45": [
+      "Tiles_PathCrosses",
+      4
+    ],
+    "48": [
+      "Tiles_PathSmallCorner",
+      4
+    ],
+    "50": [
+      "Tiles_PathBranchCrossRight",
+      4
+    ],
+    "52": [
+      "Tiles_PathBranchCrossLeft",
+      5
+    ],
+    "54": [
+      "Tiles_PathCrosses",
+      2
+    ],
+    "63": [
+      "Tiles_PathCrosses",
+      5
+    ]
+  },
+  "lakeByLandMask": {
+    "1": [
+      "Tiles_LakeSidesOne",
+      1
+    ],
+    "2": [
+      "Tiles_LakeSidesOne",
+      2
+    ],
+    "3": [
+      "Tiles_LakeSidesTwo",
+      2
+    ],
+    "4": [
+      "Tiles_LakeSidesOne",
+      3
+    ],
+    "6": [
+      "Tiles_LakeSidesTwo",
+      3
+    ],
+    "7": [
+      "Tiles_LakeSidesThree",
+      3
+    ],
+    "8": [
+      "Tiles_LakeSidesOne",
+      4
+    ],
+    "12": [
+      "Tiles_LakeSidesTwo",
+      4
+    ],
+    "14": [
+      "Tiles_LakeSidesThree",
+      4
+    ],
+    "15": [
+      "Tiles_LakeSidesFour",
+      4
+    ],
+    "16": [
+      "Tiles_LakeSidesOne",
+      5
+    ],
+    "24": [
+      "Tiles_LakeSidesTwo",
+      5
+    ],
+    "28": [
+      "Tiles_LakeSidesThree",
+      5
+    ],
+    "30": [
+      "Tiles_LakeSidesFour",
+      5
+    ],
+    "32": [
+      "Tiles_LakeSidesOne",
+      0
+    ],
+    "33": [
+      "Tiles_LakeSidesTwo",
+      1
+    ],
+    "35": [
+      "Tiles_LakeSidesThree",
+      2
+    ],
+    "39": [
+      "Tiles_LakeSidesFour",
+      3
+    ],
+    "48": [
+      "Tiles_LakeSidesTwo",
+      0
+    ],
+    "49": [
+      "Tiles_LakeSidesThree",
+      1
+    ],
+    "51": [
+      "Tiles_LakeSidesFour",
+      2
+    ],
+    "56": [
+      "Tiles_LakeSidesThree",
+      0
+    ],
+    "57": [
+      "Tiles_LakeSidesFour",
+      1
+    ],
+    "60": [
+      "Tiles_LakeSidesFour",
+      0
+    ]
+  }
+}

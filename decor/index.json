@@ -1,0 +1,366 @@
+{
+  "sheet": "decor/Decor.png",
+  "width": 80,
+  "height": 160,
+  "cell": 16,
+  "note": "Boxes are measured from the alpha by tools/decor_index.js. foot* is the ground contact point within the box, for standing a sprite on a hex.",
+  "sprites": {
+    "pine_0": {
+      "x": 6,
+      "y": 22,
+      "w": 5,
+      "h": 10,
+      "footX": 3,
+      "footY": 10
+    },
+    "pine_1": {
+      "x": 20,
+      "y": 16,
+      "w": 9,
+      "h": 16,
+      "footX": 5,
+      "footY": 16
+    },
+    "pine_2": {
+      "x": 34,
+      "y": 10,
+      "w": 12,
+      "h": 22,
+      "footX": 6,
+      "footY": 22
+    },
+    "pine_3": {
+      "x": 48,
+      "y": 5,
+      "w": 16,
+      "h": 27,
+      "footX": 8,
+      "footY": 27
+    },
+    "pine_stump": {
+      "x": 70,
+      "y": 26,
+      "w": 4,
+      "h": 6,
+      "footX": 2,
+      "footY": 6
+    },
+    "oak_0": {
+      "x": 6,
+      "y": 57,
+      "w": 6,
+      "h": 7,
+      "footX": 3,
+      "footY": 7
+    },
+    "oak_1": {
+      "x": 20,
+      "y": 48,
+      "w": 10,
+      "h": 16,
+      "footX": 5,
+      "footY": 16
+    },
+    "oak_2": {
+      "x": 33,
+      "y": 42,
+      "w": 14,
+      "h": 22,
+      "footX": 7,
+      "footY": 22
+    },
+    "oak_3": {
+      "x": 48,
+      "y": 37,
+      "w": 16,
+      "h": 27,
+      "footX": 8,
+      "footY": 27
+    },
+    "oak_stump": {
+      "x": 70,
+      "y": 58,
+      "w": 4,
+      "h": 6,
+      "footX": 2,
+      "footY": 6
+    },
+    "mushroom_0": {
+      "x": 6,
+      "y": 74,
+      "w": 5,
+      "h": 6,
+      "footX": 3,
+      "footY": 6
+    },
+    "mushroom_1": {
+      "x": 21,
+      "y": 73,
+      "w": 7,
+      "h": 7,
+      "footX": 4,
+      "footY": 7
+    },
+    "mushroom_2": {
+      "x": 38,
+      "y": 74,
+      "w": 5,
+      "h": 6,
+      "footX": 3,
+      "footY": 6
+    },
+    "log_0": {
+      "x": 51,
+      "y": 75,
+      "w": 9,
+      "h": 5,
+      "footX": 5,
+      "footY": 5
+    },
+    "log_1": {
+      "x": 67,
+      "y": 73,
+      "w": 9,
+      "h": 6,
+      "footX": 5,
+      "footY": 6
+    },
+    "rock_0": {
+      "x": 3,
+      "y": 88,
+      "w": 11,
+      "h": 8,
+      "footX": 6,
+      "footY": 8
+    },
+    "rock_1": {
+      "x": 20,
+      "y": 86,
+      "w": 10,
+      "h": 10,
+      "footX": 5,
+      "footY": 10
+    },
+    "rock_2": {
+      "x": 36,
+      "y": 89,
+      "w": 8,
+      "h": 7,
+      "footX": 4,
+      "footY": 7
+    },
+    "rock_3": {
+      "x": 48,
+      "y": 83,
+      "w": 16,
+      "h": 13,
+      "footX": 8,
+      "footY": 13
+    },
+    "rock_4": {
+      "x": 69,
+      "y": 90,
+      "w": 7,
+      "h": 6,
+      "footX": 4,
+      "footY": 6
+    },
+    "bush_0": {
+      "x": 3,
+      "y": 103,
+      "w": 11,
+      "h": 9,
+      "footX": 6,
+      "footY": 9
+    },
+    "bush_1": {
+      "x": 18,
+      "y": 105,
+      "w": 10,
+      "h": 7,
+      "footX": 5,
+      "footY": 7
+    },
+    "bush_2": {
+      "x": 36,
+      "y": 104,
+      "w": 11,
+      "h": 8,
+      "footX": 6,
+      "footY": 8
+    },
+    "seedling_0": {
+      "x": 54,
+      "y": 109,
+      "w": 4,
+      "h": 3,
+      "footX": 2,
+      "footY": 3
+    },
+    "seedling_1": {
+      "x": 70,
+      "y": 109,
+      "w": 4,
+      "h": 3,
+      "footX": 2,
+      "footY": 3
+    },
+    "pumpkin_0": {
+      "x": 6,
+      "y": 125,
+      "w": 5,
+      "h": 3,
+      "footX": 3,
+      "footY": 3
+    },
+    "pumpkin_1": {
+      "x": 18,
+      "y": 118,
+      "w": 9,
+      "h": 9,
+      "footX": 5,
+      "footY": 9
+    },
+    "pumpkin_2": {
+      "x": 33,
+      "y": 118,
+      "w": 11,
+      "h": 10,
+      "footX": 6,
+      "footY": 10
+    },
+    "pumpkin_3": {
+      "x": 48,
+      "y": 115,
+      "w": 13,
+      "h": 12,
+      "footX": 7,
+      "footY": 12
+    },
+    "pumpkin_4": {
+      "x": 64,
+      "y": 113,
+      "w": 14,
+      "h": 15,
+      "footX": 7,
+      "footY": 15
+    },
+    "cabbage_0": {
+      "x": 6,
+      "y": 140,
+      "w": 6,
+      "h": 4,
+      "footX": 3,
+      "footY": 4
+    },
+    "cabbage_1": {
+      "x": 21,
+      "y": 140,
+      "w": 5,
+      "h": 4,
+      "footX": 3,
+      "footY": 4
+    },
+    "cabbage_2": {
+      "x": 37,
+      "y": 138,
+      "w": 7,
+      "h": 6,
+      "footX": 4,
+      "footY": 6
+    },
+    "cabbage_3": {
+      "x": 51,
+      "y": 136,
+      "w": 11,
+      "h": 8,
+      "footX": 6,
+      "footY": 8
+    },
+    "cabbage_4": {
+      "x": 68,
+      "y": 136,
+      "w": 10,
+      "h": 8,
+      "footX": 5,
+      "footY": 8
+    },
+    "tomato_0": {
+      "x": 5,
+      "y": 154,
+      "w": 7,
+      "h": 6,
+      "footX": 4,
+      "footY": 6
+    },
+    "tomato_1": {
+      "x": 19,
+      "y": 145,
+      "w": 7,
+      "h": 15,
+      "footX": 4,
+      "footY": 15
+    },
+    "tomato_2": {
+      "x": 37,
+      "y": 145,
+      "w": 8,
+      "h": 15,
+      "footX": 4,
+      "footY": 15
+    },
+    "tomato_3": {
+      "x": 51,
+      "y": 144,
+      "w": 8,
+      "h": 16,
+      "footX": 4,
+      "footY": 16
+    },
+    "tomato_4": {
+      "x": 68,
+      "y": 144,
+      "w": 10,
+      "h": 16,
+      "footX": 5,
+      "footY": 16
+    }
+  },
+  "groups": {
+    "pine": [
+      "pine_0",
+      "pine_1",
+      "pine_2",
+      "pine_3"
+    ],
+    "oak": [
+      "oak_0",
+      "oak_1",
+      "oak_2",
+      "oak_3"
+    ],
+    "stumps": [
+      "pine_stump",
+      "oak_stump"
+    ],
+    "rocks": [
+      "rock_0",
+      "rock_1",
+      "rock_2",
+      "rock_3",
+      "rock_4"
+    ],
+    "bushes": [
+      "bush_0",
+      "bush_1",
+      "bush_2"
+    ],
+    "litter": [
+      "log_0",
+      "log_1",
+      "mushroom_0",
+      "mushroom_1",
+      "mushroom_2"
+    ]
+  }
+}
