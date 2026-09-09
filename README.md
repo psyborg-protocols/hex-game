@@ -71,13 +71,14 @@ read as bedding planes, on grass as a cut earth bank. Nothing is synthesised, an
 the game and the editor draw a column with the same function.
 
 **Height lighting.** Ground darkens below `LIGHT_BASE` and lightens above it,
-5% a level, clamped to -20%/+10%. Applied per *level* rather than per column,
-which is what gives a cliff face its gradient: the stacked bands darken as they
-descend, so a tall column stands in its own shadow at the foot. The base sits at
-3, roughly the median of a generated world — centring it on worldgen's
-`baseHeight` of 5 rendered the whole map dim, because most of a map lies below
-that. The range is lopsided on purpose: brightening this art washes it out much
-faster than shading dulls it.
+5% a level. Applied per *level* rather than per column, which is what gives a
+cliff face its gradient: the stacked bands darken as they descend, so a tall
+column stands in its own shadow at the foot and its crown reads as a snowcap.
+The base sits at 3, roughly the median of a generated world — centring it on
+worldgen's `baseHeight` of 5 rendered the whole map dim, because most of a map
+lies below that. The clamps at -20%/+95% are a safety net for hand-edited maps:
+the full range worldgen produces, height 0 to 20, lands inside them at 85% to
+185% and never reaches either end.
 
 It is baked, not filtered. `ctx.filter` expresses it in one line but flushes
 canvas state on every change, and the exposure changes per level — 193ms a frame

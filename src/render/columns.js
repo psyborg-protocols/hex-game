@@ -29,10 +29,16 @@ import { frameOrigin, GEOM } from '../world/hexgrid.js';
  * at worldgen's `baseHeight` of 5 was the obvious guess and came out wrong: most
  * of the map is below that, so the whole world rendered dim.
  *
- * The range is deliberately lopsided: 20% of darkening against 10% of lift.
- * Brightening this art destroys it much faster than shading it does — the stone
- * and steppes sheets are already pale, and at +30% they blew out to near-white
- * and lost their texture entirely. Shadow has room to work; highlight does not.
+ * The ceiling is set high enough that the ramp never reaches it: 5% a level from
+ * a base of 3 puts the tallest ground a world can generate, height 20, at 185%.
+ * So the lift runs free across the whole height range and only the shadow side
+ * clamps, at -20%.
+ *
+ * That is a deliberate choice about how the map should read rather than about
+ * what the art likes. The stone and steppes sheets are pale to begin with, and
+ * well before the peak they wash out toward white and give up their texture —
+ * high ground reads as altitude rather than as rock. Lower LIGHT_MAX to around
+ * 1.10 to trade that back for texture.
  *
  * Deliberately a constant rather than derived from the map — mining a cliff down
  * must not re-light the world around it.
@@ -40,7 +46,7 @@ import { frameOrigin, GEOM } from '../world/hexgrid.js';
 export const LIGHT_BASE = 3;
 export const LIGHT_STEP = 0.05;
 export const LIGHT_MIN = 0.80;
-export const LIGHT_MAX = 1.10;
+export const LIGHT_MAX = 1.95;
 
 /** Brightness multiplier for ground at `level`. */
 export function brightnessAt(level) {

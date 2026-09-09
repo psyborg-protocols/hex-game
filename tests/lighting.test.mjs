@@ -29,7 +29,6 @@ test('it never runs away, at any height the world can produce', () => {
     const b = brightnessAt(h);
     ok(b >= LIGHT_MIN && b <= LIGHT_MAX, `height ${h} lit to ${b}, outside the clamps`);
   }
-  eq(brightnessAt(DEFAULTS.maxHeight), LIGHT_MAX, 'the peak should sit at the top of the range');
   eq(brightnessAt(0), LIGHT_MIN > 1 - LIGHT_BASE * LIGHT_STEP ? LIGHT_MIN : 1 - LIGHT_BASE * LIGHT_STEP,
     'the lowest ground should be at the bottom of the range or on the ramp');
 });
@@ -40,12 +39,29 @@ test('it is monotonic, so height always reads the same direction', () => {
   }
 });
 
-test('shadow has more room than highlight', () => {
-  // Brightening this art washes it out much faster than shading dulls it, so the
-  // range is deliberately lopsided. If someone symmetrises it, the pale stone and
-  // steppes sheets blow out to near-white.
-  ok(1 - LIGHT_MIN > LIGHT_MAX - 1,
-    `range should favour shadow, got -${(1 - LIGHT_MIN).toFixed(2)} / +${(LIGHT_MAX - 1).toFixed(2)}`);
+test('the lift runs free across the whole height range', () => {
+  // The ceiling is set above what the ramp can reach, so height keeps reading as
+  // height all the way to the peak instead of flattening out partway up.
+  const peak = brightnessAt(DEFAULTS.maxHeight);
+  ok(peak < LIGHT_MAX, `the peak clamps at ${peak}; the ramp should never reach LIGHT_MAX`);
+  ok(peak > 1.8, `the tallest ground should be strongly lit, got ${peak}`);
+
+  // Every step below the peak must still be a real step, or tall ground goes flat.
+  for (let h = LIGHT_BASE; h < DEFAULTS.maxHeight; h++) {
+    ok(brightnessAt(h + 1) > brightnessAt(h), `lighting flattened between ${h} and ${h + 1}`);
+  }
+});
+
+test('the clamps are a safety net, not part of the look', () => {
+  // With the ceiling raised, the whole height a world can generate — 0 to 20 —
+  // fits inside the range with room to spare, so neither clamp actually binds.
+  // They exist for hand-edited maps, which can stack higher than worldgen does.
+  ok(brightnessAt(0) > LIGHT_MIN, 'the shadow floor should not be reached by generated ground');
+  ok(brightnessAt(DEFAULTS.maxHeight) < LIGHT_MAX, 'the highlight ceiling should not be reached either');
+
+  // But they must still hold for a column taller than any generator makes.
+  ok(brightnessAt(200) === LIGHT_MAX, 'an absurdly tall column should clamp');
+  ok(brightnessAt(-200) === LIGHT_MIN, 'an absurdly deep one should clamp too');
 });
 
 test('the base sits where the ground actually is, not at worldgen baseHeight', () => {
