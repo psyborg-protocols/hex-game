@@ -399,3 +399,54 @@ One consequence worth knowing: river and lake now draw the same sheet, so the
 sheet name alone cannot tell them apart. `terrainForTile` therefore trusts the
 editor's palette id ahead of the sprite, and falls back to the sheet only when
 the id is missing or unknown.
+
+## The bridge deck
+
+`Tiles_Bridge` is the artist's jetty — `Tiles_LakeBase` frames 4 and 5 — made
+longer and a little wider: the same five wood tones, 2-pixel rails, plank pitch
+of three, and corner posts. The jetty is 10 wide and 15 long and stops in open
+water; the deck runs the full span of a top face and is as wide as a path, so a
+road can walk onto it. `tools/newtiles_bridge.js` builds it.
+
+Three frames cover all six directions. A bridge spans a pair of opposite edges,
+and edges are numbered clockwise from the flat top, so an edge and the one
+facing it are three apart: `bridgeFrame(edge) === edge % 3`. N and S share frame
+0, NE and SW frame 1, SE and NW frame 2 — and the last two are mirror images,
+which is why three is enough.
+
+It is **not a terrain**. It draws over whatever tile it is on, so the water
+underneath keeps flowing and the posts are free to hang below the face and the
+caps to rise above it. Nothing places one yet; the art and `bridgeFrame` are
+what a placement pass will need.
+
+### Why the diagonals run 13:6
+
+A diagonal in pixel art usually wants 2:1, and the path art uses it. A bridge
+cannot: a step to the NE neighbour moves the screen by `(+26, -12)`, so a deck
+drawn at 2:1 leaves its tile half a pixel high and enters the next half a pixel
+low, and a chain of them zigzags at every joint. Paths hide that — their edges
+are soft and hand-dithered — but a hard 2-pixel rail shows it. 13:6 costs one
+three-wide tread in an otherwise two-wide stair and lands dead on the edge
+midpoints, so a causeway of any length reads as one continuous deck.
+
+### Width, and why it differs per axis
+
+A path is 12 wide on the N-S frame and 10 tall on the diagonals, and the bridge
+matches both. The ground plane is squashed vertically, so a deck lying across
+the view foreshortens; using one number for all three axes would make the
+diagonals look fat.
+
+### Which posts show a leg
+
+All four corner posts are drawn, but a post is only visible below the deck when
+no part of the deck stands between it and the viewer — that is, when nothing of
+the deck falls below it in its own column. On the vertical run that hides both
+posts at the far end, leaving two tips above and two legs below, exactly as on
+the jetty. On a diagonal it hides three of the four, leaving one leg at the
+lowest corner, which is what a narrow deck seen from this angle actually does.
+
+`tools/newtiles_bridgescene.js` renders three causeways, one per run, each three
+tiles long, with the jetty beside them for comparison. It walks the chains with
+the game's own `neighbor()`: a run has to leave a tile by the edge its neighbour
+arrives on, and eyeballing that on an odd-q lattice is exactly the mistake the
+scene exists to catch.

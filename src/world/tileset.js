@@ -34,7 +34,24 @@ export const SHEET_NAMES = [
   'Tiles_StreamWideCorner', 'Tiles_StreamTriFan',
   'Tiles_StreamBranchLeft', 'Tiles_StreamBranchRight', 'Tiles_StreamCrosses',
   'Tiles_StreamQuadRun', 'Tiles_StreamQuadSpur', 'Tiles_StreamFive',
+  // A plank deck crossing the face edge to edge. Not a terrain: it draws over
+  // whatever tile it is on, so the water underneath keeps flowing.
+  'Tiles_Bridge',
 ];
+
+/** The bridge deck, drawn over a tile rather than replacing it. */
+export const BRIDGE_SHEET = 'Tiles_Bridge';
+
+/**
+ * Which of the three decks crosses a given edge.
+ *
+ * A bridge spans a pair of opposite edges, and the edges are numbered clockwise
+ * from the flat top, so an edge and the one facing it are three apart and land
+ * on the same frame: N and S both cross on frame 0, NE and SW on 1, SE and NW
+ * on 2. The last two are mirror images of each other, which is why three decks
+ * cover all six directions.
+ */
+export const bridgeFrame = edge => edge % 3;
 
 export const FRAMES_PER_SHEET = 6;
 

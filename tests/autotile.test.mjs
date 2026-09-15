@@ -10,7 +10,7 @@ import { test, run, eq, ok } from './_harness.mjs';
 import { readPng } from '../tools/png_read.js';
 import {
   SHEET_NAMES, FRAMES_PER_SHEET, makeResolvers, supportedMasks, popcount,
-  variantFor, cropFrame, CROPS, TERRAIN,
+  variantFor, cropFrame, CROPS, TERRAIN, BRIDGE_SHEET, bridgeFrame,
 } from '../src/world/tileset.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -170,6 +170,36 @@ test('open water is hashed across the base sheet, not stuck on one frame', () =>
   const frames = new Set();
   for (let q = 0; q < 12; q++) for (let r = 0; r < 12; r++) frames.add(resolve.lake(0, q, r).frame);
   ok(frames.size > 1, 'every open-water tile picked the same frame');
+});
+
+test('three bridge decks cover all six directions, edge to edge', () => {
+  // Opposite edges are three apart, so they share a deck: six directions, three
+  // frames, and the two diagonals are mirror images.
+  for (let e = 0; e < 6; e++) {
+    eq(bridgeFrame(e), bridgeFrame((e + 3) % 6), `edge ${e} and its opposite should share a deck`);
+  }
+  eq(new Set([0, 1, 2, 3, 4, 5].map(bridgeFrame)).size, 3, 'there should be exactly three decks');
+
+  const img = readPng(join(root, 'new_tiles', `${BRIDGE_SHEET}.png`));
+  // Each deck has to reach both edges it claims, or a bridge would stop short
+  // of the tile it joins. Probing the two edge midpoints is the same trick the
+  // index derivation uses on the autotiled sets.
+  const MIDS = [[16, 17], [28, 22], [28, 34], [16, 38], [3, 34], [3, 22]];
+  const wood = (fi, x, y) => {
+    const i = (y * img.width + fi * 32 + x) * 4;
+    return img.data[i + 3] > 0 && img.data[i] > img.data[i + 2];   // brown, not water
+  };
+  for (let e = 0; e < 6; e++) {
+    const [x, y] = MIDS[e];
+    const fi = bridgeFrame(e);
+    ok(wood(fi, x, y), `deck ${fi} has no planking at the ${e} edge (${x},${y})`);
+  }
+  // And the decks it does not claim must leave that edge clear.
+  for (let e = 0; e < 6; e++) for (let fi = 0; fi < 3; fi++) {
+    if (fi === bridgeFrame(e)) continue;
+    const [x, y] = MIDS[e];
+    ok(!wood(fi, x, y), `deck ${fi} spills onto the ${e} edge, which belongs to deck ${bridgeFrame(e)}`);
+  }
 });
 
 test('terrain variants are deterministic and spread across the sheets', () => {
