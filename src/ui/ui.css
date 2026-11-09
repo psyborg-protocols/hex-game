@@ -133,6 +133,61 @@ html, body {
 
 #taskbar button:hover { border-color: var(--accent); color: var(--accent); }
 
+#taskbar button.eye { display: flex; align-items: center; padding: 6px 12px; }
+#taskbar button.eye.on {
+  border-color: #f6cc52;
+  color: #f6cc52;
+  box-shadow: 0 0 12px rgba(246, 204, 82, 0.45);
+}
+
+/* ---------------------------------------------------------------- pings */
+
+/* The tier colours match TIER_COLORS in render/discovery_fx.js. */
+#pings {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+}
+
+.ping {
+  --tone: 240, 230, 210;
+  min-width: 220px;
+  padding: 10px 26px 12px;
+  text-align: center;
+  background: rgba(20, 17, 12, 0.94);
+  border: 1px solid rgb(var(--tone));
+  border-radius: 4px;
+  box-shadow: 0 0 24px rgba(var(--tone), 0.45), inset 0 0 18px rgba(var(--tone), 0.12);
+  animation: ping-in 340ms cubic-bezier(.2, 1.4, .4, 1);
+}
+.ping.out { opacity: 0; transform: translateY(-6px); transition: all 240ms ease-in; }
+
+.ping-kicker {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(var(--tone));
+  opacity: 0.85;
+}
+.ping-title { font-size: 19px; font-weight: 700; margin: 2px 0; }
+.ping-xp { font-size: 12px; color: rgb(var(--tone)); }
+
+.ping.tier-1 { --tone: 214, 137, 82; }
+.ping.tier-2 { --tone: 206, 218, 236; }
+.ping.tier-3 { --tone: 246, 204, 82; }
+.ping.tier-3 .ping-title { text-shadow: 0 0 12px rgba(246, 204, 82, 0.6); }
+.ping.kind-achievement { --tone: 150, 214, 180; }
+.ping.kind-village,
+.ping.kind-trade { --tone: 217, 180, 91; }
+
+@keyframes ping-in {
+  from { opacity: 0; transform: scale(0.85); }
+}
+
 /* --------------------------------------------------------------- modals */
 
 #modal-root:empty { display: none; }
@@ -370,4 +425,19 @@ html, body {
   color: #f0c46a;
   font-size: 11px;
   letter-spacing: 0.06em;
+}
+
+/* ------------------------------------------------------- mind discoveries */
+
+.discoveries { margin: 6px 0 4px; font-size: 12px; }
+.discoveries p { margin: 0 0 4px; }
+.discoveries .find.copper { color: rgb(214, 137, 82); }
+.discoveries .find.silver { color: rgb(206, 218, 236); }
+.discoveries .find.gold { color: rgb(246, 204, 82); }
+.achievements { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; }
+.achievements li {
+  padding: 2px 8px;
+  border: 1px solid rgba(150, 214, 180, 0.6);
+  border-radius: 10px;
+  color: rgb(150, 214, 180);
 }

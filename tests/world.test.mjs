@@ -18,6 +18,7 @@ import { addItem, countItem } from '../src/game/inventory.js';
 import { addXp } from '../src/game/skills.js';
 import { availableHarvests, harvestSpec, cliffTarget, nearbyOre } from '../src/game/harvests.js';
 import { determineContext, villageNear } from '../src/game/context.js';
+import { resourcesAt, exploreHex } from '../src/game/discovery.js';
 import { harvest, prospect, build, placementSpots, growCrops, PROSPECT_RADIUS, FIELD_RIPENS_IN } from '../src/game/actions.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -302,12 +303,16 @@ test('the opening chain works from nothing: forage, reeds, cord, snare', () => {
   // harvests themselves beats hardcoding the rules, and beats taking the first
   // shoreline hex in iteration order — that used to pass only because the first
   // one happened to be open ground, and it broke the moment ponds moved it.
+  // Berries are a hidden resource, so the hex also has to actually have some.
   const shore = [...map].find(c => !isWater(c.terrain)
     && harvestSpec('forage').where(c, map)
-    && harvestSpec('cut_reeds').where(c, map));
+    && harvestSpec('cut_reeds').where(c, map)
+    && resourcesAt(map, c).includes('forage'));
   ok(shore, 'nowhere on the shore can you both forage and cut reeds');
 
   eq(state.energy, 0, 'you start with nothing to eat');
+  ok(!harvest(world, state, shore, 'forage', r).ok, 'foraged before exploring the hex');
+  exploreHex(map, state, shore.q, shore.r);
   ok(harvest(world, state, shore, 'forage', r).ok, 'foraging should not itself need energy');
   ok(state.energy > 0, 'and it should feed you');
 

@@ -356,6 +356,12 @@ function planner({ ore = true } = {}) {
    */
   function grind(skill, level, budget = 400) {
     if (levelOf(state, skill) >= level) return true;
+    // Mind is not earned at a bench: its xp comes from travel and exploring
+    // (mind.js), which a recipe planner cannot do. Stand in for a walk.
+    if (skill === 'mind') {
+      while (levelOf(state, skill) < level) addXp(state, 'mind', 10);
+      return true;
+    }
     if (grinding.has(skill)) return false;
     grinding.add(skill);
     const prepared = new Set();

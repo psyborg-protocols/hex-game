@@ -70,12 +70,12 @@ export function brightnessAt(level) {
  * exposures between LIGHT_MIN and LIGHT_MAX, so the cache tops out around 270
  * small canvases and stays well inside a 16.7ms budget.
  */
-export function litImage(res, key, img, level) {
+export function litImage(res, key, img, level, dim = false) {
   const b = brightnessAt(level);
-  if (b === 1 || !img) return img;
+  if ((b === 1 && !dim) || !img) return img;
 
   const cache = (res.litCache ||= new Map());
-  const id = `${key}|${b.toFixed(2)}`;
+  const id = `${key}|${b.toFixed(2)}${dim ? '|dim' : ''}`;
   const hit = cache.get(id);
   if (hit) return hit;
 
@@ -84,11 +84,18 @@ export function litImage(res, key, img, level) {
   canvas.height = img.height;
   const c = canvas.getContext('2d');
   c.imageSmoothingEnabled = false;
-  c.filter = `brightness(${(b * 100).toFixed(0)}%)`;
+  // The eye view's unexplored ground: the same exposure, pushed down into the
+  // dark and drained of most of its colour, so explored ground stands out.
+  c.filter = dim
+    ? `brightness(${(b * DIM * 100).toFixed(0)}%) saturate(45%)`
+    : `brightness(${(b * 100).toFixed(0)}%)`;
   c.drawImage(img, 0, 0);
   cache.set(id, canvas);
   return canvas;
 }
+
+/** How dark unexplored ground goes in the eye view. */
+export const DIM = 0.38;
 
 /**
  * Draw one column, bottom level first so each level covers the one beneath it.
@@ -96,8 +103,9 @@ export function litImage(res, key, img, level) {
  * @param {CanvasRenderingContext2D} ctx  world-space context (already translated)
  * @param {{images:Object}} res
  * @param {{q,r,h,sprite,frame}} col
+ * @param {boolean} dim  draw it darkened, for the eye view
  */
-export function drawColumn(ctx, res, col) {
+export function drawColumn(ctx, res, col, dim = false) {
   const img = res.images[col.sprite];
   if (!img) return;
 
@@ -105,7 +113,7 @@ export function drawColumn(ctx, res, col) {
   const x = frameOrigin(col.q, col.r, 0).x;
 
   for (let level = 0; level <= col.h; level++) {
-    ctx.drawImage(litImage(res, col.sprite, img, level),
+    ctx.drawImage(litImage(res, col.sprite, img, level, dim),
       sx, 0, GEOM.frameWidth, GEOM.frameHeight,
       x, frameOrigin(col.q, col.r, level).y, GEOM.frameWidth, GEOM.frameHeight);
   }

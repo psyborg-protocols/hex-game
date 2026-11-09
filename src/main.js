@@ -19,6 +19,11 @@ import { determineContext } from './game/context.js';
 import { harvest, prospect, build, placementSpots, growCrops, eat, refreshArt } from './game/actions.js';
 import { harvestSpec } from './game/harvests.js';
 import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile } from './game/save.js';
+import { ensureMind, isKnown, HIDDEN } from './game/discovery.js';
+import { onStep as mindStep, onExplored, onTrade } from './game/mind.js';
+import { Explorer } from './game/explorer.js';
+import { drawExploreCharge, Pings, loadResourceIcons, drawResourceIcons, drawScenicRings } from './render/discovery_fx.js';
+import { chime } from './ui/chime.js';
 
 import { UI } from './ui/ui.js';
 import { inventoryPanel } from './ui/panels/inventory.js';
@@ -54,6 +59,7 @@ async function boot() {
   // reloads in free mode and `?free=1` can switch an ordinary save into it.
   const state = restored ? restored.state : createState();
   if (params.get('free') === '1') state.free = true;
+  ensureMind(state);           // a save from before exploring existed has none
   recomputeEnergy(state);
   const camera = new Camera({ scale: 3 });
   const renderer = new Renderer(canvas, res);
@@ -68,6 +74,10 @@ async function boot() {
   let preview = null;
   let placing = null;          // { recipeId, spots }
   let features = [];           // columns carrying something to draw
+  let eye = false;             // the explored-land view
+  const explorer = new Explorer(map, state);
+  const pings = new Pings();
+  const resourceIcons = loadResourceIcons();
   const drag = { active: false, x: 0, y: 0, moved: 0 };
 
   // ------------------------------------------------------------- the game
@@ -155,13 +165,32 @@ async function boot() {
     },
 
     doBuy(col, itemId) {
-      game.ui.notify(buy(state, col.q, col.r, itemId).message);
+      const result = buy(state, col.q, col.r, itemId);
+      game.ui.notify(result.message);
+      if (result.ok) game.traded(col);
       game.ui.refreshPanel();
     },
 
     doSell(col, itemId) {
-      game.ui.notify(sell(state, col.q, col.r, itemId).message);
+      const result = sell(state, col.q, col.r, itemId);
+      game.ui.notify(result.message);
+      if (result.ok) game.traded(col);
       game.ui.refreshPanel();
+    },
+
+    /** A trade went through: the first one at a village teaches you its land. */
+    traded(col) {
+      const result = onTrade(world, state, col);
+      if (result.revealed.length) {
+        game.ui.notify(`They tell you what grows and lies around ${col.feature.name}.`);
+      }
+      announceMind(result);
+      if (result.revealed.length) refreshContext();
+    },
+
+    toggleEye() {
+      eye = !eye;
+      game.ui.setEye(eye);
     },
 
     doEat(itemId) {
@@ -215,6 +244,28 @@ async function boot() {
 
   function announceLevels(skill, levels) {
     for (const l of levels || []) game.ui.notify(`Your ${skill} rises to ${l}.`);
+  }
+
+  /** Ping each moment Mind produced, then any levels it reached. */
+  function announceMind(result) {
+    for (const m of result.moments) game.ui.ping(m);
+    announceLevels('mind', result.levels);
+    if (result.moments.length) game.ui.updateHud();
+  }
+
+  /** Standing still finished exploring a hex. */
+  function explored(done, now) {
+    const result = onExplored(world, state, done);
+    if (!result.found) return;
+    pings.add(done.q, done.r, result.found.tier, now);
+    if (!result.found.tier) chime('tick', 0.035);
+
+    const finds = result.found.resources.map(id => itemName(HIDDEN[id].icon));
+    if (finds.length) game.ui.notify(`You find ${listOf(finds)} here.`);
+    if (result.found.oreSign) game.ui.notify('Traces of ore glint in the rock nearby.');
+
+    announceMind(result);
+    refreshContext();
   }
 
   // --------------------------------------------------------- world drawing
@@ -288,6 +339,7 @@ async function boot() {
     if (hunger.starving) game.ui.notify('You are starving.');
     const grown = growCrops(world, state);
     if (grown.length) rebuildFeatures();
+    announceMind(mindStep(world, state, player));
     game.ui.updateHud();
   };
 
@@ -372,10 +424,18 @@ async function boot() {
   }, { passive: false });
 
   window.addEventListener('resize', () => renderer.resize(camera));
+  // Space is the eye toggle, so it must not also press whatever button has focus.
+  window.addEventListener('keyup', e => {
+    if (e.code === 'Space' && !typing(e)) e.preventDefault();
+  });
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if (placing) { placing = null; refreshContext(); }
       else player.stop();
+    }
+    if (e.code === 'Space' && !typing(e)) {
+      e.preventDefault();
+      if (!e.repeat) game.toggleEye();
     }
     if (e.key === 'c') follow = true;
     if (e.key === 'i') game.ui.togglePanel('inventory');
@@ -393,6 +453,11 @@ async function boot() {
     last = now;
 
     player.update(dt);
+
+    // Exploring runs while you stand still and are not busy with anything else.
+    const done = explorer.update(dt, player, !placing && !game.ui.busy);
+    if (done) explored(done, now);
+
     if (follow) {
       const p = player.pos;
       camera.moveTo(p.x, p.y);
@@ -402,7 +467,16 @@ async function boot() {
     renderer.render(map, camera, {
       hover: placing ? null : hover,
       entities: [...features, player],
-      overlays: [drawOverlays],
+      overlays: [
+        drawOverlays,
+        ctx => drawExploreCharge(ctx, map, explorer.charge, now),
+        ctx => pings.draw(ctx, map, now),
+        ...(eye ? [(ctx, cam) => drawScenicRings(ctx, map, state, cam.viewBounds(32))] : []),
+      ],
+      screenOverlays: eye
+        ? [(ctx, cam) => drawResourceIcons(ctx, cam, map, state, resourceIcons, now)]
+        : [],
+      dim: eye ? col => !isKnown(state, col.q, col.r) : null,
     });
 
     game.ui.positionAnchors(camera, map, pixelScale());
@@ -419,6 +493,8 @@ async function boot() {
   requestAnimationFrame(frame);
 
   refreshContext();
+  // Wherever you start counts as somewhere you have been.
+  announceMind(mindStep(world, state, player));
 
   // Autosave, so a closed tab does not cost an evening. Quiet on failure — the
   // Game panel is where saving is meant to be confirmed.
@@ -432,6 +508,13 @@ async function boot() {
   game.getPlacing = () => placing;
   window.game = game;
 }
+
+/** Keys typed into a text box are not hotkeys. */
+const typing = e => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '') || e.target?.isContentEditable;
+
+/** "a", "a and b", "a, b and c". */
+const listOf = xs => (xs.length < 2 ? xs.join('')
+  : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 
 boot().catch(err => {
   console.error(err);

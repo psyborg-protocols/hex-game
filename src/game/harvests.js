@@ -43,7 +43,7 @@ const water = col => !!TERRAIN[col.terrain]?.water;
  */
 export const HARVESTS = {
   forage: {
-    id: 'forage', name: 'Forage', skill: 'mind', level: 1, xp: 2,
+    id: 'forage', name: 'Forage', skill: 'mind', level: 1, xp: 0,   // Mind xp comes from going places; see mind.js
     where: on(...OPEN, ...FOREST),
     yields: { berries: [1, 3], seeds: [0, 2] },
     verb: 'Foraging',

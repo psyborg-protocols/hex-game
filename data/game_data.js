@@ -274,19 +274,19 @@ export const RECIPES = {
 
   // ============================================================ MIND
   // L1 (attention to nature)
-  find_herb: { id: 'find_herb', name: 'Seek Herbs', inputs: {}, output: { herb: 1 }, skill: 'mind', level: 1, xp: 2, gather: true }, // Mind makes herbs visible at all
-  amulet:    { id: 'amulet',    name: 'Bone Amulet', inputs: { bone: 1, sinew: 1, flint: 1 }, output: { amulet: 1 }, skill: 'mind', level: 1, xp: 8, category: 'good', tools: [ ['stone_chisel', 'chisel'] ] },
+  find_herb: { id: 'find_herb', name: 'Seek Herbs', inputs: {}, output: { herb: 1 }, skill: 'mind', level: 1, xp: 0, gather: true }, // Mind makes herbs visible at all
+  amulet:    { id: 'amulet',    name: 'Bone Amulet', inputs: { bone: 1, sinew: 1, flint: 1 }, output: { amulet: 1 }, skill: 'mind', level: 1, xp: 0, category: 'good', tools: [ ['stone_chisel', 'chisel'] ] },
   // L2 (prayer / ritual)
-  drum: { id: 'drum', name: 'Ritual Drum', inputs: { branch: 4, hide: 2, cord: 2 }, output: { drum: 1 }, skill: 'mind', level: 2, xp: 15, category: 'good', tools: [ ['stone_axe', 'axe'], ['stone_chisel', 'chisel'] ] },
+  drum: { id: 'drum', name: 'Ritual Drum', inputs: { branch: 4, hide: 2, cord: 2 }, output: { drum: 1 }, skill: 'mind', level: 2, xp: 0, category: 'good', tools: [ ['stone_axe', 'axe'], ['stone_chisel', 'chisel'] ] },
   // L3 (story / social)
-  journal: { id: 'journal', name: 'Journal', inputs: { branch: 2, hide: 1, sinew: 2 }, output: { journal: 1 }, skill: 'mind', level: 3, xp: 15, category: 'good', tools: [ ['stone_chisel', 'chisel'] ] },
+  journal: { id: 'journal', name: 'Journal', inputs: { branch: 2, hide: 1, sinew: 2 }, output: { journal: 1 }, skill: 'mind', level: 3, xp: 0, category: 'good', tools: [ ['stone_chisel', 'chisel'] ] },
   // L5 (medicine)
-  salve: { id: 'salve', name: 'Salve', inputs: { herb: 3, clay: 1 }, output: { salve: 2 }, skill: 'mind', level: 5, xp: 12, category: 'good', tools: [ ['pot', 'fine_pot'] ], needs: [ ['built:hearth', 'built:stone_oven'] ] },
+  salve: { id: 'salve', name: 'Salve', inputs: { herb: 3, clay: 1 }, output: { salve: 2 }, skill: 'mind', level: 5, xp: 0, category: 'good', tools: [ ['pot', 'fine_pot'] ], needs: [ ['built:hearth', 'built:stone_oven'] ] },
   // L6 (village ritual)
-  totem:  { id: 'totem',  name: 'Totem',  inputs: { beam: 6, flint: 2, hide: 2 }, output: { totem: 1 }, skill: 'mind', level: 6, xp: 40, category: 'build', tools: [ ['bone_adze', 'stone_adze', 'adze'], ['stone_chisel', 'chisel', 'knife'] ] },
-  shrine: { id: 'shrine', name: 'Shrine', inputs: { stone_block: 4, amulet: 1 }, output: { shrine: 1 }, skill: 'mind', level: 6, xp: 30, category: 'build', tools: [ ['stone_chisel', 'chisel'] ] },
+  totem:  { id: 'totem',  name: 'Totem',  inputs: { beam: 6, flint: 2, hide: 2 }, output: { totem: 1 }, skill: 'mind', level: 6, xp: 0, category: 'build', tools: [ ['bone_adze', 'stone_adze', 'adze'], ['stone_chisel', 'chisel', 'knife'] ] },
+  shrine: { id: 'shrine', name: 'Shrine', inputs: { stone_block: 4, amulet: 1 }, output: { shrine: 1 }, skill: 'mind', level: 6, xp: 0, category: 'build', tools: [ ['stone_chisel', 'chisel'] ] },
   // L7 (sage)
-  oracle: { id: 'oracle', name: 'Oracle', inputs: { journal: 1, amulet: 1, herb: 4, stone_block: 2 }, output: { oracle: 1 }, skill: 'mind', level: 7, xp: 80, category: 'build', tools: [ ['shrine'] ], needs: ['built:shrine', 'skill:mind:6'] },
+  oracle: { id: 'oracle', name: 'Oracle', inputs: { journal: 1, amulet: 1, herb: 4, stone_block: 2 }, output: { oracle: 1 }, skill: 'mind', level: 7, xp: 0, category: 'build', tools: [ ['shrine'] ], needs: ['built:shrine', 'skill:mind:6'] },
 
   // ============================================================ PROCESSING (tool-use, not craft)
 
@@ -330,10 +330,10 @@ export const SKILL_INFO = {
     7: ['Forge the Ingot Adze (final adze tier; requires refined tongs).', 'Draw Ingot Arrowheads.'],
   },
   mind: {
-    1: ['Attention to Nature: herbs become findable.', 'Craft a Bone Amulet (small protection).'],
+    1: ['Attention to Nature: herbs become findable.', 'Craft a Bone Amulet (small protection).', 'Mind grows by going places: roads, villages, the wild, and what you find there.'],
     2: ['Carve a Ritual Drum (group ritual: foraging and trade +).'],
     3: ['Keep a Journal (records seasons and stories).', 'Stories earned: strangers are safe to trade with; dogs can be tamed.'],
-    4: ['LORE: prospecting unlocked (reveals ore veins).', 'Read the Seasons: field yield +.', 'Read the Weather: storms no longer ruin work.'],
+    4: ['LORE: prospecting unlocked (reveals ore veins).', 'Exploring shows traces of ore in the rock nearby.', 'Read the Seasons: field yield +.', 'Read the Weather: storms no longer ruin work.'],
     5: ['Prepare Salve (heals wounds and illness).'],
     6: ['Carve a Totem (village monument: strangers become traders).', 'Build a Shrine (protection, +trade).'],
     7: ['Raise an Oracle (requires shrine): prospect 2x, reveals the map.', 'Sage: all skill gains +25%; pilgrims visit.'],

@@ -108,6 +108,18 @@ is finite. A world with no prospectable ore is a stone-age world with
 metalworking fully locked. That is the scarcity anchor, not a bug — and
 `tests/economy.test.mjs` proves the stone age stays fully playable inside it.
 
+**Mind and exploring.** Mind is not earned at a bench: its recipes still
+unlock by level but pay no xp. It comes from going places, in spurts:
+scenic finds, first arrivals at villages, first trades, and hidden
+achievements for roads walked, distance from civilisation, hexes explored and
+special places (`src/game/mind.js`). Berries, herbs, flint, clay and fish are
+hidden, and only on some of the ground that could hold them. Stand still on a
+hex for a couple of seconds to explore it. A ticker runs round its edge, and a
+scenic hex keeps going through copper, silver and gold circuits, so better places
+take longer (`src/game/discovery.js`, `src/game/explorer.js`). A first trade at
+a village reveals the land around it. Space (or the eye button) dims everything
+you have not explored and shows what you have found.
+
 **The river.** It divides the board and is meant to. The far bank waits on a
 bridge (woodworking 6) or a boat (woodworking 5). The generator therefore puts
 the spawn and every village on the near one.

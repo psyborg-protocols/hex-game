@@ -14,6 +14,7 @@ import { addItem, countItem, removeItem, hasRoomFor } from './inventory.js';
 import { addXp, levelOf } from './skills.js';
 import { recordBuilt, itemName, RECIPES } from './state.js';
 import { craft } from './crafting.js';
+import { harvestsHere } from './discovery.js';
 
 /** How far Lore reaches when you prospect. */
 export const PROSPECT_RADIUS = 4;
@@ -31,7 +32,9 @@ const roll = (rng, [lo, hi]) => lo + Math.floor(rng.next() * (hi - lo + 1));
 export function harvest(world, state, at, id, rng) {
   const { map } = world;
   const spec = harvestSpec(id);
-  const entry = availableHarvests(map, state, at).find(h => h.spec.id === id);
+  // harvestsHere, not availableHarvests: a hidden resource has to have been
+  // found on this hex before it can be gathered from it.
+  const entry = harvestsHere(map, state, at).find(h => h.spec.id === id);
   if (!spec || !entry) return { ok: false, message: 'Not here.' };
   if (!entry.ok) return { ok: false, message: entry.reasons[0] };
 

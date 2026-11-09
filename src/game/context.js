@@ -6,7 +6,8 @@
 // offers the two or three that this hex actually affords.
 
 import { neighbors } from '../world/hexgrid.js';
-import { availableHarvests, nearbyOre, cliffTarget } from './harvests.js';
+import { nearbyOre, cliffTarget } from './harvests.js';
+import { harvestsHere } from './discovery.js';
 import { levelOf } from './skills.js';
 
 /** The village on this hex or the next one over, if any. */
@@ -40,7 +41,8 @@ export function determineContext(world, state, at) {
   const col = map.get(at.q, at.r);
   if (!col) return { offers: [], blocked: [], village: null };
 
-  const harvests = availableHarvests(map, state, at);
+  // Hidden resources only show once this hex is known; see discovery.js.
+  const harvests = harvestsHere(map, state, at);
   const village = villageNear(map, at);
   const vein = nearbyOre(map, col);
   const cliff = cliffTarget(map, col);

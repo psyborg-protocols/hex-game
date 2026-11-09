@@ -9,6 +9,7 @@
 
 import { SKILLS, MAX_LEVEL } from '../game/state.js';
 import { levelOf, progress, skillIcon } from '../game/skills.js';
+import { chime } from './chime.js';
 
 export class UI {
   constructor(game) {
@@ -19,6 +20,10 @@ export class UI {
     this.notifications = document.getElementById('notifications');
     this.modalRoot = document.getElementById('modal-root');
     this.taskbar = document.getElementById('taskbar');
+
+    this.pings = document.getElementById('pings');
+    this.pingQueue = [];
+    this.pingShowing = false;
 
     this.anchors = [];        // { el, q, r } — repositioned every frame
     this.openPanelName = null;
@@ -44,12 +49,73 @@ export class UI {
       ['menu', 'Game'],
     ];
     this.taskbar.innerHTML = '';
+
+    // The eye: dims the map down to what you have explored and what is on it.
+    this.eyeButton = document.createElement('button');
+    this.eyeButton.className = 'eye';
+    this.eyeButton.title = 'What you know of the land (Space)';
+    this.eyeButton.setAttribute('aria-label', 'Toggle the explored-land view');
+    this.eyeButton.setAttribute('aria-pressed', 'false');
+    this.eyeButton.innerHTML = EYE_SVG;
+    this.eyeButton.addEventListener('click', () => {
+      this.eyeButton.blur();     // so Space does not click it again
+      this.game.toggleEye();
+    });
+    this.taskbar.appendChild(this.eyeButton);
+
     for (const [name, label] of buttons) {
       const b = document.createElement('button');
       b.textContent = label;
-      b.addEventListener('click', () => this.togglePanel(name));
+      b.addEventListener('click', () => { b.blur(); this.togglePanel(name); });
       this.taskbar.appendChild(b);
     }
+  }
+
+  setEye(on) {
+    this.eyeButton.classList.toggle('on', on);
+    this.eyeButton.setAttribute('aria-pressed', String(on));
+  }
+
+  // ---------------------------------------------------------------- pings
+
+  /**
+   * Announce a moment: a scenic find, an achievement, a first arrival. Shown
+   * one at a time as a banner in the tier's colour, with a chime.
+   * @param {{kind, title, xp, tier?, tierName?}} m
+   */
+  ping(m) {
+    this.pingQueue.push(m);
+    if (!this.pingShowing) this.nextPing();
+  }
+
+  nextPing() {
+    const m = this.pingQueue.shift();
+    if (!m) { this.pingShowing = false; return; }
+    this.pingShowing = true;
+
+    const kicker = {
+      scenic: `${m.tierName} find`,
+      achievement: 'Achievement',
+      village: 'Arrived',
+      trade: 'Trade',
+    }[m.kind] || '';
+    const tierClass = m.kind === 'scenic' ? `tier-${m.tier}` : `kind-${m.kind}`;
+    const el = document.createElement('div');
+    el.className = `ping ${tierClass}`;
+    el.innerHTML = `<div class="ping-kicker">${escapeHtml(kicker)}</div>
+      <div class="ping-title">${escapeHtml(m.title)}</div>
+      ${m.xp ? `<div class="ping-xp">+${m.xp} Mind</div>` : ''}`;
+    this.pings.appendChild(el);
+
+    chime(m.kind === 'scenic' ? ['tick', 'copper', 'silver', 'gold'][m.tier]
+      : m.kind === 'achievement' ? 'achievement' : 'village');
+
+    // Hurry through a backlog rather than making the last one wait.
+    const hold = this.pingQueue.length ? 1500 : 2600;
+    setTimeout(() => {
+      el.classList.add('out');
+      setTimeout(() => { el.remove(); this.nextPing(); }, 260);
+    }, hold);
   }
 
   updateHud() {
@@ -184,6 +250,10 @@ export class UI {
     this.currentPanel = null;
   }
 }
+
+const EYE_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+  <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  <circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>`;
 
 /** Small helpers the panels share. */
 export const icon = (item, size = 24) =>

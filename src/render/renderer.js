@@ -43,12 +43,15 @@ export class Renderer {
   /**
    * @param {WorldMap} map
    * @param {Camera} camera
-   * @param {{hover?:{q,r}, entities?:Array, overlays?:Array}} opts
+   * @param {{hover?:{q,r}, entities?:Array, overlays?:Array, screenOverlays?:Array, dim?:Function}} opts
    *   entities: { q, r, h, draw(ctx, cx, cy) } — drawn interleaved with the
    *   columns by depth, so a player behind a tall hex is correctly hidden.
+   *   dim: (column) => boolean — draw that column darkened (the eye view).
+   *   screenOverlays: (ctx, camera) — drawn on the display canvas after the
+   *   upscale, for anything that has to stay crisp.
    */
   render(map, camera, opts = {}) {
-    const { hover = null, entities = [], overlays = [] } = opts;
+    const { hover = null, entities = [], overlays = [], screenOverlays = [], dim = null } = opts;
     const b = this.bctx;
 
     b.fillStyle = this.sky;
@@ -64,8 +67,9 @@ export class Renderer {
 
     for (const d of this.drawables) {
       if (d.column) {
-        drawColumn(b, this.res, d.column);
-        drawColumnDecor(b, this.res, d.column);
+        const dark = dim ? dim(d.column) : false;
+        drawColumn(b, this.res, d.column, dark);
+        drawColumnDecor(b, this.res, d.column, dark);
       } else {
         d.entity.draw(b, d.cx, d.cy, this.res);
       }
@@ -80,6 +84,10 @@ export class Renderer {
     this.ctx.drawImage(this.buffer,
       0, 0, this.buffer.width, this.buffer.height,
       0, 0, this.buffer.width * camera.scale, this.buffer.height * camera.scale);
+
+    // Drawn at full resolution after the upscale: icons and text that would
+    // turn to mush if they went through the 1x buffer.
+    for (const o of screenOverlays) o(this.ctx, camera);
   }
 
   /**

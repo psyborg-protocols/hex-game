@@ -41,6 +41,20 @@ export const itemName = id => ITEMS[id]?.name || id;
  */
 export const isFree = state => !!state?.free;
 
+/** The part of the state Mind keeps: what you have explored and found. */
+export function createMindState() {
+  return {
+    explored: {},    // "q,r" -> scenic tier (0 = common)
+    known: {},       // "q,r" -> 1 where the hidden resources are known
+    oreSigns: {},    // "q,r" -> 1 where an explored hex showed traces of ore
+    roads: {},       // "q,r" -> 1 for each road tile walked
+    villages: {},    // "q,r" -> 1 for each village visited
+    traded: {},      // "q,r" -> 1 for each village traded with
+    farthest: 0,     // furthest you have been from a road or village
+    done: {},        // achievement id -> 1
+  };
+}
+
 export function createState({ gold = 15, maxEnergy = 10, slots = INVENTORY_SLOTS, free = false } = {}) {
   return {
     inventory: new Array(slots).fill(null),
@@ -53,6 +67,7 @@ export function createState({ gold = 15, maxEnergy = 10, slots = INVENTORY_SLOTS
     built: [],              // { item, q, r }
     prices: {},             // "q,r" of a village -> { itemId: price }
     log: [],                // recent events, newest last
+    mind: createMindState(), // what you have explored and found; see discovery.js and mind.js
   };
 }
 
