@@ -563,10 +563,15 @@ class Generator {
   }
 
   /**
-   * Join the villages with paths. The road network is grown as a tree — each
-   * village links to the nearest one already connected — because the path art
-   * has no five-way junctions and only three of the fifteen four-ways, so a
-   * denser network would spend most of its tiles on fallback sprites.
+   * Join the villages with paths. The road network is grown as a tree: each
+   * village in turn routes to the nearest point of the network built so far,
+   * whether that is a village or a road tile, so later roads branch off earlier
+   * ones instead of running beside them. A tree also suits the path art, which
+   * has no five-way junctions and only three of the fifteen four-ways.
+   *
+   * A village with no walkable route to the network gets no road at all rather
+   * than a partial one. (The old greedy walk painted wherever it wandered while stuck,
+   * and a walk that may not revisit a tile spirals into a solid patch of path.)
    */
   layRoads(map) {
     if (this.villages.length < 2) return;
@@ -574,48 +579,96 @@ class Generator {
     const pending = this.villages.slice(1);
 
     while (pending.length) {
+      // The pending village nearest the network goes next.
       let best = null;
       for (const p of pending) {
         for (const c of connected) {
           const d = distance(p.q, p.r, c.q, c.r);
-          if (!best || d < best.d) best = { from: c, to: p, d };
+          if (!best || d < best.d) best = { p, d };
         }
       }
-      const route = this.walkRoute(best.from, best.to, map);
+      pending.splice(pending.indexOf(best.p), 1);
+
+      const route = this.routeToNetwork(best.p, connected, map) ?? [];
       for (const step of route) {
         const col = map.get(step.q, step.r);
         if (!col || isWater(col.terrain) || col.feature) continue;
         map.place(step.q, step.r, 'path', col.h);
       }
-      connected.push(best.to);
-      pending.splice(pending.indexOf(best.to), 1);
+      // A cut-off village still joins as a destination, so a neighbour stranded
+      // on the same plateau gets a road to it.
+      connected.push(best.p);
     }
   }
 
-  /** Greedy walk downhill-ish towards a target, staying on walkable ground. */
-  walkRoute(from, to, map) {
-    const route = [];
-    let cur = { q: from.q, r: from.r };
-    const seen = new Set();
+  /**
+   * Cheapest walkable route from a village to the network (any connected
+   * village or existing road tile). Dijkstra rather than A*, because the goal is
+   * a set of tiles, and the board is small enough that it costs nothing.
+   *
+   * The costs are what shape the roads:
+   *   - noise on every tile, so a road winds instead of running ruler-straight;
+   *   - a little extra for a change of level, so it follows the contours;
+   *   - a stiff charge for a tile touching two or more road tiles. That is the
+   *     one that keeps roads one tile wide. Without it a new road happily runs
+   *     alongside an old one, and two adjacent rows of path autotile into a
+   *     solid paved area.
+   * Steps may climb or drop one level, so every road is walkable both ways.
+   * @returns {Array<{q,r}>|null} from the village to the tile it joins, or null.
+   */
+  routeToNetwork(from, connected, map) {
+    const isRoad = (q, r) => map.get(q, r)?.terrain === 'path';
+    const isGoal = (q, r) => isRoad(q, r) || connected.some(c => c.q === q && c.r === r);
+    const roadContacts = (q, r) => neighbors(q, r).filter(n => isRoad(n.q, n.r)).length;
 
-    for (let i = 0; i < this.radius * 6; i++) {
-      route.push(cur);
-      seen.add(this.key(cur.q, cur.r));
-      if (cur.q === to.q && cur.r === to.r) break;
+    const startKey = this.key(from.q, from.r);
+    const cost = new Map([[startKey, 0]]);
+    const cameFrom = new Map();
+    const open = [{ q: from.q, r: from.r, g: 0 }];
 
-      const next = neighbors(cur.q, cur.r)
-        .filter(n => {
-          const col = map.get(n.q, n.r);
-          return col && !isWater(col.terrain)
-            && !seen.has(this.key(n.q, n.r))
-            && Math.abs(col.h - map.heightAt(cur.q, cur.r)) <= 1;
-        })
-        .sort((a, b) => distance(a.q, a.r, to.q, to.r) - distance(b.q, b.r, to.q, to.r))[0];
+    while (open.length) {
+      // A linear scan for the cheapest entry; a few hundred tiles at most.
+      let bi = 0;
+      for (let i = 1; i < open.length; i++) if (open[i].g < open[bi].g) bi = i;
+      const cur = open[bi];
+      open[bi] = open[open.length - 1];
+      open.pop();
 
-      if (!next) break;
-      cur = next;
+      const curKey = this.key(cur.q, cur.r);
+      if (cur.g > cost.get(curKey)) continue;   // a stale entry
+      if (curKey !== startKey && isGoal(cur.q, cur.r)) {
+        const route = [{ q: cur.q, r: cur.r }];
+        for (let k = curKey; cameFrom.has(k);) {
+          k = cameFrom.get(k);
+          const [q, r] = k.split(',').map(Number);
+          route.push({ q, r });
+        }
+        return route.reverse();
+      }
+
+      const hereH = map.heightAt(cur.q, cur.r);
+      for (const n of neighbors(cur.q, cur.r)) {
+        const col = map.get(n.q, n.r);
+        if (!col || isWater(col.terrain)) continue;
+        const climb = Math.abs(col.h - hereH);
+        if (climb > 1) continue;
+        // Other villages are destinations, never something a road runs through.
+        if (col.feature && !isGoal(n.q, n.r)) continue;
+
+        let step = 1 + climb * 0.5
+          + (this.land.noise(n.q * 0.35, n.r * 0.35, 7.3) + 1) * 0.6;
+        if (!isRoad(n.q, n.r)) step += Math.max(0, roadContacts(n.q, n.r) - 1) * 4;
+
+        const g = cur.g + step;
+        const k = this.key(n.q, n.r);
+        if (g < (cost.get(k) ?? Infinity)) {
+          cost.set(k, g);
+          cameFrom.set(k, curKey);
+          open.push({ q: n.q, r: n.r, g });
+        }
+      }
     }
-    return route;
+    return null;
   }
 
   /**

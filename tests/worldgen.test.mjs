@@ -209,6 +209,17 @@ test('roads connect the villages without stepping into water', () => {
   }
 });
 
+test('roads stay one tile wide instead of paving over whole areas', () => {
+  for (const [i, map] of worlds.entries()) {
+    const isRoad = (q, r) => map.get(q, r)?.terrain === 'path';
+    for (const p of map) {
+      if (p.terrain !== 'path') continue;
+      const touching = neighbors(p.q, p.r).filter(n => isRoad(n.q, n.r)).length;
+      ok(touching <= 3, `${SEEDS[i]}: road at ${p.q},${p.r} touches ${touching} other road tiles`);
+    }
+  }
+});
+
 test('ore is finite, hidden, and only in the high stone', () => {
   for (const [i, map] of worlds.entries()) {
     const veins = [...map].filter(c => c.feature?.type === 'ore');
