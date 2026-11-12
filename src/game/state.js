@@ -2,19 +2,28 @@
 // The player's whole mutable state, and the vocabulary derived from
 // data/game_data.js that the rest of the game asks about.
 
-import { ITEMS, RECIPES, SKILL_INFO } from '../../data/game_data.js';
+import { ITEMS, RECIPES, SKILL_INFO, STRUCTURE_HP } from '../../data/game_data.js';
 
-export { ITEMS, RECIPES, SKILL_INFO };
+export { ITEMS, RECIPES, SKILL_INFO, STRUCTURE_HP };
 
 export const SKILLS = Object.keys(SKILL_INFO);
-export const MAX_LEVEL = 7;
-export const INVENTORY_SLOTS = 24;
+export const MAX_LEVEL = 5;
+
+/** Pack slots before any basket, pack or cart. */
+export const BASE_SLOTS = 16;
+/** The array is this long so gear can open slots without reshaping it. */
+export const MAX_SLOTS = 40;
+
+export const BASE_MAX_ENERGY = 20;
+export const BASE_MAX_HP = 10;
+
+/** Seconds in a day. The last quarter of each one is night. */
+export const DAY_LENGTH = 180;
 
 /**
  * Items that are structures rather than carryable goods: anything a recipe with
  * category 'build' produces. A recipe that lists one of these as a *tool* means
- * "you must be working at one", not "you must be carrying one" — you do not put
- * a forge in your pocket.
+ * "you must be working at one", not "you must be carrying one".
  */
 export const BUILDINGS = new Set(
   Object.values(RECIPES).filter(r => r.category === 'build')
@@ -28,16 +37,7 @@ export const itemName = id => ITEMS[id]?.name || id;
 
 /**
  * Free-resource mode: a testing switch that turns off every *cost* while leaving
- * every *rule* in place.
- *
- * Recipes still need their tools to exist as concepts, harvests still only work
- * on the terrain they belong to, cliffs still have to be climbed and the river
- * still has to be crossed — what goes away is having to gather, pay, provision
- * and level up first. So it is useful for testing the parts of the game that are
- * hard to reach, and useless for testing the economy, which is the point.
- *
- * It is one flag on the state, read through `isFree`, so it saves and loads with
- * the game and there is exactly one thing to search for.
+ * every *rule* in place. One flag, read through `isFree`.
  */
 export const isFree = state => !!state?.free;
 
@@ -55,27 +55,49 @@ export function createMindState() {
   };
 }
 
-export function createState({ gold = 15, maxEnergy = 10, slots = INVENTORY_SLOTS, free = false } = {}) {
+export function createState({ gold = 10, free = false } = {}) {
+  const inventory = new Array(MAX_SLOTS).fill(null);
+  // A few berries in your pocket, so the first minute is spent exploring rather
+  // than starving.
+  inventory[0] = { id: 'berries', qty: 6 };
   return {
-    inventory: new Array(slots).fill(null),
+    inventory,
     free,
     gold,
-    energy: 0,              // derived from carried food; see inventory.js
-    maxEnergy,
+    energy: BASE_MAX_ENERGY,
+    hp: BASE_MAX_HP,
+    time: 0,                // world seconds; see DAY_LENGTH
     stepsWalked: 0,
     skills: Object.fromEntries(SKILLS.map(s => [s, { level: 1, xp: 0 }])),
     built: [],              // { item, q, r }
+    stash: new Array(16).fill(null),
     prices: {},             // "q,r" of a village -> { itemId: price }
-    log: [],                // recent events, newest last
-    mind: createMindState(), // what you have explored and found; see discovery.js and mind.js
+    trust: {},              // "q,r" of a village -> true once its favour is done
+    goals: {},              // journey goal id -> 1
+    stats: { kills: 0, raidsRepelled: 0, campsBurned: 0, deaths: 0, crafted: 0 },
+    raid: null,             // the raid schedule; see raiders.js
+    won: false,
+    log: [],
+    mind: createMindState(),
   };
 }
+
+/** Day number (from 1) and how far through it we are (0..1). */
+export function dayOf(state) {
+  const t = state.time || 0;
+  return { day: Math.floor(t / DAY_LENGTH) + 1, frac: (t % DAY_LENGTH) / DAY_LENGTH };
+}
+export const isNight = state => dayOf(state).frac >= 0.75;
 
 // ------------------------------------------------------------- structures
 
 export function recordBuilt(state, item, q, r) {
   state.built.push({ item, q, r });
   return state.built[state.built.length - 1];
+}
+
+export function forgetBuilt(state, q, r) {
+  state.built = state.built.filter(b => !(b.q === q && b.r === r));
 }
 
 /** Does this structure exist anywhere in the world yet? What `needs` asks. */

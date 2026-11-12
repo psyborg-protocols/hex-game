@@ -1,10 +1,26 @@
 // inventory.js
-// Slot-based carrying, and the food-as-energy rule the old game ran on:
-// your energy *is* the food you are carrying, so provisioning is the constraint
-// on how much work you can do before you have to go and eat.
+// Slot-based carrying, and food as energy.
+//
+// Food is never "used". You carry it, and it tops your energy up on its own as
+// work and walking spend it, cheapest food first and never wasting any. So the
+// question provisioning asks is simply: how much work can I do before I have to
+// go and find more? Better food packs more energy into each slot.
 
 import { ITEMS } from '../../data/game_data.js';
-import { isFree } from './state.js';
+import { isFree, BASE_SLOTS, BASE_MAX_ENERGY, hasBuilt } from './state.js';
+
+// ---------------------------------------------------------------- capacity
+
+/** Gear that opens pack slots counts once each, however many you carry. */
+export function capacity(state) {
+  let n = BASE_SLOTS;
+  const seen = new Set();
+  for (const slot of state.inventory) {
+    const item = slot && ITEMS[slot.id];
+    if (item?.slots && !seen.has(slot.id)) { seen.add(slot.id); n += item.slots; }
+  }
+  return Math.min(state.inventory.length, n);
+}
 
 export function countItem(state, id) {
   let n = 0;
@@ -22,35 +38,33 @@ export function addItem(state, id, qty = 1) {
   const item = ITEMS[id];
   if (!item) return 0;
   const stack = item.stack || 1;
+  const cap = capacity(state);
   let left = qty;
 
   for (let i = 0; i < state.inventory.length && left > 0; i++) {
     const slot = state.inventory[i];
     if (!slot || slot.id !== id) continue;
-    const room = stack - slot.qty;
-    if (room <= 0) continue;
-    const add = Math.min(room, left);
+    const add = Math.min(stack - slot.qty, left);
+    if (add <= 0) continue;
     slot.qty += add;
     left -= add;
   }
 
-  for (let i = 0; i < state.inventory.length && left > 0; i++) {
+  for (let i = 0; i < cap && left > 0; i++) {
     if (state.inventory[i]) continue;
     const add = Math.min(stack, left);
     state.inventory[i] = { id, qty: add };
     left -= add;
   }
 
-  const added = qty - left;
-  if (added && item.food) recomputeEnergy(state);
-  return added;
+  return qty - left;
 }
 
 /** Remove `qty`. Returns false and changes nothing if there are not enough. */
 export function removeItem(state, id, qty = 1) {
   if (!hasItem(state, id, qty)) return false;
   let left = qty;
-  for (let i = 0; i < state.inventory.length && left > 0; i++) {
+  for (let i = state.inventory.length - 1; i >= 0 && left > 0; i--) {
     const slot = state.inventory[i];
     if (!slot || slot.id !== id) continue;
     const take = Math.min(slot.qty, left);
@@ -58,7 +72,6 @@ export function removeItem(state, id, qty = 1) {
     left -= take;
     if (slot.qty <= 0) state.inventory[i] = null;
   }
-  if (ITEMS[id]?.food) recomputeEnergy(state);
   return true;
 }
 
@@ -67,20 +80,27 @@ export function hasRoomFor(state, id, qty = 1) {
   const item = ITEMS[id];
   if (!item) return false;
   const stack = item.stack || 1;
+  const cap = capacity(state);
   let room = 0;
-  for (const slot of state.inventory) {
-    if (!slot) room += stack;
+  for (let i = 0; i < state.inventory.length; i++) {
+    const slot = state.inventory[i];
+    if (!slot) { if (i < cap) room += stack; }
     else if (slot.id === id) room += stack - slot.qty;
     if (room >= qty) return true;
   }
   return false;
 }
 
-export const freeSlots = state => state.inventory.filter(s => !s).length;
+export const usedSlots = state => state.inventory.filter(Boolean).length;
+export const freeSlots = state => capacity(state) - usedSlots(state);
 
 // ---------------------------------------------------------------- energy
 
-/** Total nourishment carried. */
+export function maxEnergy(state) {
+  return BASE_MAX_ENERGY + (hasBuilt(state, 'hut') ? 6 : 0);
+}
+
+/** Total nourishment carried and not yet eaten. */
 export function foodValue(state) {
   let total = 0;
   for (const slot of state.inventory) {
@@ -90,37 +110,92 @@ export function foodValue(state) {
   return total;
 }
 
-/** Energy is the food you carry, capped. Called on every food change. */
+/**
+ * What gets eaten first. Ready food before raw (so the meat you meant to cook is
+ * still there when you reach the hearth), and grain last, because it is seed.
+ */
+const EAT_ORDER = ['berries', 'bread', 'meal', 'rations', 'stew', 'fish', 'meat', 'grain'];
+
+/** Raw food is saved for the hearth, and only eaten when you are nearly spent. */
+const RAW = new Set(['fish', 'meat', 'grain']);
+
+/** You eat once the tank drops below this share of its size... */
+export const HUNGRY_AT = 0.4;
+/** ...and eat raw food only below this. */
+export const STARVING_AT = 0.15;
+
+/**
+ * Eat from the pack when you are getting low, in EAT_ORDER, and only food that
+ * fits whole — so nothing is wasted.
+ * @returns {string[]} what was eaten
+ */
+export function topUp(state, force = false) {
+  if (isFree(state)) { state.energy = maxEnergy(state); return []; }
+  const max = maxEnergy(state);
+  if (!force && state.energy >= max * HUNGRY_AT) return [];
+  const eaten = [];
+  // A bite at a time, just enough to stay above the line: what you carry stays
+  // in your pack, visible, until you actually need it.
+  for (let guard = 0; guard < 200 && state.energy < max * HUNGRY_AT; guard++) {
+    const desperate = force || state.energy < max * STARVING_AT;
+    const id = EAT_ORDER.find(f => countItem(state, f) > 0 && state.energy + ITEMS[f].food <= max
+      && (desperate || !RAW.has(f)));
+    if (!id) break;
+    removeItem(state, id, 1);
+    state.energy += ITEMS[id].food;
+    eaten.push(id);
+  }
+  return eaten;
+}
+
+/** Kept for older callers: the tank after eating what fits. */
 export function recomputeEnergy(state) {
-  // Free mode keeps the tank full: energy here *is* carried food, so leaving it
-  // derived would make provisioning the one cost free mode did not lift.
-  state.energy = isFree(state) ? state.maxEnergy : Math.min(state.maxEnergy, foodValue(state));
+  state.energy = Math.min(state.energy ?? 0, maxEnergy(state));
+  topUp(state);
   return state.energy;
 }
 
-/**
- * A step's worth of hunger. Every `STEPS_PER_MEAL` tiles you eat one food item;
- * with nothing to eat you burn energy instead, and then you are just starving.
- * @returns {{ate?:string, starving?:boolean}} what happened, for the UI to say.
- */
-export const STEPS_PER_MEAL = 8;
+/** Can you afford this much work? Eats first if it has to. */
+export function canSpend(state, n) {
+  if (isFree(state) || n <= 0) return true;
+  if (state.energy < n) topUp(state, true);
+  // Out of room to top up without waste, but starving: eat anyway.
+  while (state.energy < n && eatAnything(state));
+  return state.energy >= n;
+}
 
-export function walkOneStep(state) {
+/** Spend energy on work. Returns false (and spends nothing) if you cannot. */
+export function spend(state, n) {
+  if (isFree(state) || n <= 0) return true;
+  if (!canSpend(state, n)) return false;
+  state.energy -= n;
+  topUp(state);
+  return true;
+}
+
+function eatAnything(state) {
+  const id = EAT_ORDER.find(f => countItem(state, f) > 0);
+  if (!id) return null;
+  removeItem(state, id, 1);
+  state.energy = Math.min(maxEnergy(state), state.energy + ITEMS[id].food);
+  return id;
+}
+
+/** Steps per point of energy spent walking. */
+export const STEPS_PER_ENERGY = 8;
+
+/**
+ * A step's worth of hunger.
+ * @returns {{exhausted?:boolean}} what happened, for the UI to say.
+ */
+export function walkOneStep(state, { cartOnRoad = false } = {}) {
   state.stepsWalked++;
   if (isFree(state)) return {};
-  if (state.stepsWalked % STEPS_PER_MEAL !== 0) return {};
-
-  for (const slot of state.inventory) {
-    if (slot && ITEMS[slot.id]?.food) {
-      const id = slot.id;
-      removeItem(state, id, 1);
-      return { ate: id };
-    }
+  if (state.stepsWalked % (cartOnRoad ? STEPS_PER_ENERGY * 2 : STEPS_PER_ENERGY) !== 0) return {};
+  if (state.energy > 0 || canSpend(state, 1)) {
+    state.energy = Math.max(0, state.energy - 1);
+    topUp(state);
+    return { exhausted: state.energy <= 0 && foodValue(state) === 0 };
   }
-
-  if (state.energy > 0) {
-    state.energy--;
-    return { hungry: true };
-  }
-  return { starving: true };
+  return { exhausted: true };
 }

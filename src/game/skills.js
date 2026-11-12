@@ -1,12 +1,13 @@
 // skills.js
-// Five skills, seven levels each. The curve is the old game's — level squared
-// times ten — which keeps early levels quick and makes level 7 a real project.
+// Five skills, five levels each. Every level opens something you can make or do;
+// there are no empty levels.
 
 import { SKILL_INFO, SKILLS, MAX_LEVEL } from './state.js';
 
 export { SKILLS, MAX_LEVEL };
 
-export const xpToNext = level => level * level * 10;
+const CURVE = [0, 10, 25, 50, 80];
+export const xpToNext = level => CURVE[level] ?? 999;
 
 export const levelOf = (state, skill) => state.skills[skill]?.level ?? 0;
 
@@ -16,7 +17,7 @@ export function meetsLevel(state, skill, level) {
 
 /**
  * Award xp, rolling over as many levels as it earns.
- * @returns {string[]} the levels reached, for the UI to announce.
+ * @returns {number[]} the levels reached, for the UI to announce.
  */
 export function addXp(state, skill, xp) {
   const s = state.skills[skill];
@@ -28,7 +29,7 @@ export function addXp(state, skill, xp) {
     s.level++;
     gained.push(s.level);
   }
-  if (s.level >= MAX_LEVEL) s.xp = Math.min(s.xp, xpToNext(MAX_LEVEL) - 1);
+  if (s.level >= MAX_LEVEL) s.xp = 0;
   return gained;
 }
 
@@ -42,7 +43,6 @@ export function progress(state, skill) {
 /** What this level of a skill lets you do, from SKILL_INFO. */
 export const abilitiesAt = (skill, level) => SKILL_INFO[skill]?.[level] || [];
 
-/** Everything unlocked so far. */
 export function unlockedAbilities(state, skill) {
   const out = [];
   for (let l = 1; l <= levelOf(state, skill); l++) {

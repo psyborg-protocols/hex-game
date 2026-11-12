@@ -126,10 +126,10 @@ export function revealAround(map, state, q, r, radius) {
 // ------------------------------------------------------------------ scenery
 
 export const TIERS = [
-  { id: 'common', name: 'Common', xp: 0, seconds: 2 },
-  { id: 'copper', name: 'Copper', xp: 3, seconds: 3.5 },
-  { id: 'silver', name: 'Silver', xp: 8, seconds: 5 },
-  { id: 'gold', name: 'Gold', xp: 20, seconds: 7 },
+  { id: 'common', name: 'Common', xp: 0, seconds: 1.2 },
+  { id: 'copper', name: 'Copper', xp: 3, seconds: 2.6 },
+  { id: 'silver', name: 'Silver', xp: 7, seconds: 4 },
+  { id: 'gold', name: 'Gold', xp: 15, seconds: 5.5 },
 ];
 
 const WOODED = new Set(['oak_wood', 'pine_wood']);
@@ -271,7 +271,7 @@ export function exploreHex(map, state, q, r) {
   // Lore teaches you what ore looks like in the rock; before that, a trace of it
   // is just rock. A trace says a vein is near, not where — prospecting does that.
   let oreSign = false;
-  if (levelOf(state, 'mind') >= 4) {
+  if (levelOf(state, 'mind') >= 3) {
     for (const c of map) {
       if (c.feature?.type !== 'ore' || c.feature.known || !(c.feature.remaining > 0)) continue;
       if (distance(c.q, c.r, q, r) <= ORE_SIGN_RADIUS) { oreSign = true; break; }

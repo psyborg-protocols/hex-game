@@ -32,6 +32,8 @@ const PHRASES = {
   gold: [[0], [2], [4], [7, 5]],
   achievement: [[1], [4, 6]],
   village: [[0], [3]],
+  // Low and falling: something is wrong.
+  raid: [[3], [1], [0]],
 };
 
 function bell(ctx, freq, at, gain) {

@@ -1,16 +1,39 @@
-# Hex World
+# Hex Quest
 
-A 2.5D hex survival/crafting game built on **real anthropological discovery
-sequences**: true scarcity (worlds gate you), redundancy (multiple routes to
-every gated achievement), non-linear progression (skills unlock gates in both
-directions), and maximum interdependence between five skill domains.
+*A fork of Hex World.* A 2.5D hex survival, crafting and strategy game. Raiders hold
+the far bank of the river; you start with a handful of berries. Build a homestead,
+win the trust of the villages, hold off the war bands, then cross over and burn
+their camps.
+
+Same principles as the original: true scarcity, redundancy, non-linear
+progression, maximum interdependence. The fork adds what turns it into a game you
+play to the end:
+
+- **Five chapters** with goals always on screen, so there is always a next thing.
+- **56 items instead of 93**, each with a job. Click anything in your pack to see
+  what it makes and what it lets you do. A test fails if any item has no job.
+- **Raiders.** Three camps across the river send war bands every day or two after
+  your buildings. Walls, watchtowers and shrines are your strategy; dice decide
+  fights (attack hits on 4+, defence blocks on 5+). Burn every camp to win.
+- **Villages ask one favour** before they trade, lend you their station (hearth,
+  workbench or forge) and show you the land. Each kind sells different things;
+  not every world has every kind.
+- **Real clock.** Days and nights, fields that ripen, berries that regrow.
+- **Fixed:** bridges now span water and boats now cross it (both used to do
+  nothing, so the far bank was unreachable). Starving now has consequences.
+  Villages buy anything. Food is eaten from your pack as you need it, ready food
+  before raw. One berry bush no longer feeds you forever.
+
+See `skill_map.md` for the progression and the laws the tests hold it to.
 
 Plain ES modules and canvas 2D. No build step, no dependencies.
 
 ```
 node tools/serve.js          # then open http://localhost:8080
-node tests/all.mjs           # 136 tests, ~2s
+node tests/all.mjs           # 12 suites
 ```
+
+In the browser console, `game.advance(seconds)` runs the world forward by hand.
 
 `http://localhost:8080/?seed=alpha` generates a named world;
 `?load=1` restores the saved game; `?free=1` turns on free-resource mode for
@@ -41,10 +64,15 @@ src/
   game/
     state.js  inventory.js  skills.js  crafting.js  economy.js
     harvests.js  context.js  actions.js  player.js  save.js
+    gear.js       attack/defence dice, reach, health
+    combat.js     the dice
+    raiders.js    camps, the raid clock, unit AI, towers, militia
+    journey.js    the five chapters and their goals
+  render/units.js   raiders, militia, the dog
   ui/
-    ui.js  panels/{inventory,crafting,build,skills,trade,menu}.js
+    ui.js  panels/{inventory,crafting,build,skills,trade,stash,message,menu}.js
 
-data/                 the economy: 93 items, 85 recipes, 5 skills x 7 levels
+data/                 the economy: 56 items, 49 recipes, 5 skills x 5 levels
 new_tiles/            27 tile sheets + index.json (lattice + autotile tables)
 decor/                40-sprite prop sheet + index.json (trees, rocks, crops)
 icons/                93 item icons, 5 skill glyphs, 35 ability icons
@@ -103,10 +131,10 @@ to. Harvests spend the world: woods fell to bare floor, cliffs mine down until
 they can be climbed, veins run out.
 
 **The knowledge gate.** Ore exists in the map from generation but is invisible
-and unusable until Mind 4 (Lore) reveals it, a few hexes at a time, and each vein
-is finite. A world with no prospectable ore is a stone-age world with
-metalworking fully locked. That is the scarcity anchor, not a bug — and
-`tests/economy.test.mjs` proves the stone age stays fully playable inside it.
+and unusable until Mind 3 (Lore) reveals it, a few hexes at a time, and each vein
+is finite. A world short of ore is short of iron. The counterweights are a smith
+village (if the world has one) that sells ore and ingots, and brutes, who
+sometimes carry an ingot.
 
 **Mind and exploring.** Mind is not earned at a bench: its recipes still
 unlock by level but pay no xp. It comes from going places, in spurts:
@@ -120,9 +148,10 @@ take longer (`src/game/discovery.js`, `src/game/explorer.js`). A first trade at
 a village reveals the land around it. Space (or the eye button) dims everything
 you have not explored and shows what you have found.
 
-**The river.** It divides the board and is meant to. The far bank waits on a
-bridge (woodworking 6) or a boat (woodworking 5). The generator therefore puts
-the spawn and every village on the near one.
+**The river.** It divides the board and is meant to. The far bank, where the
+raider camps are, waits on a boat (woodworking 4, or bought from fishers) or a
+bridge (woodworking 5, three planks a hex). The generator therefore puts the spawn
+and every village on the near one. Raiders cross on rafts, slowly.
 
 **The mountains.** Base terrain gets its own low ceiling (`baseHeight`) and the
 massifs get the rest, up to 20 levels — the split the old three.js generator used,
@@ -130,7 +159,7 @@ and the reason its worlds were rolling country with real mountains in them rathe
 than uniform noise nobody could cross. The two barriers that fall out of that are
 not treated alike. Low ground cut off by a step or two is an accident of the
 noise and gets a staircase; high ground ringed by a sheer face is left standing,
-because those plateaus are ladder country (woodworking 4) and carving a way up
+because those plateaus are ladder country (woodworking 3) and carving a way up
 would throw away the reason to build one. Ramping therefore stops at
 `rampCeiling`, and `tests/worldgen.test.mjs` holds both halves of that: nothing
 low is ever walled off, and something high always is.
@@ -175,7 +204,8 @@ No framework — `tests/_harness.mjs` is thirty lines.
 | `lighting` | the height curve is monotonic, clamped, and centred where the ground actually is |
 | `worldgen` | determinism, the low country is all walkable, the high ground stays gated, peaks reach 20 |
 | `pathfinding` | climb 1 / drop 2, ladders, bridges, and every returned step is legal |
-| `economy` | the graph is consistent, and the whole discovery path is walkable from an empty pack — by planning backwards, not by crafting greedily |
+| `economy` | the graph is consistent, every item has a job, the redundancy pairs and the tongs cycle exist, and everything is reachable from an empty pack |
+| `raids` | camps and guards, the warning-then-raid clock, walls, towers, shrines, burning camps, the death penalty |
 | `world` | harvesting, felling, mining, prospecting and building change the map correctly |
 | `save` | a save restores the world you left, not the world the seed would generate |
 | `freemode` | the testing switch lifts every cost and not one rule |

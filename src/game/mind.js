@@ -199,7 +199,9 @@ export function onTrade(world, state, village) {
   if (mind.traded[k]) return { revealed: [], ...settle(state, []) };
 
   mind.traded[k] = 1;
-  const revealed = revealAround(map, state, village.q, village.r, TRADE_REVEAL_RADIUS);
+  // Wayfinding (Mind 4): a village that trusts you tells you twice as much.
+  const radius = TRADE_REVEAL_RADIUS * ((state.skills?.mind?.level ?? 1) >= 4 ? 2 : 1);
+  const revealed = revealAround(map, state, village.q, village.r, radius);
   const name = village.feature?.name || 'the village';
   const moments = [moment('trade', `Trusted at ${name}`, FIRST_TRADE_XP)];
   moments.push(...checkAchievements(map, state, null));

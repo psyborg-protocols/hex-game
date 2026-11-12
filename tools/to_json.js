@@ -11,9 +11,8 @@ const out = {
   ITEM_BASE_PRICES: mod.ITEM_BASE_PRICES,
   RECIPES: mod.RECIPES,
   SKILL_INFO: mod.SKILL_INFO,
-  SKILL_DEPS: mod.SKILL_DEPS,
-  CIRCULAR_DEPS: mod.CIRCULAR_DEPS,
-  CROSS_SKILL_GATES: mod.CROSS_SKILL_GATES,
+  STRUCTURE_HP: mod.STRUCTURE_HP,
+  VILLAGE_KINDS: mod.VILLAGE_KINDS,
 };
 writeFileSync(path.join(__dirname, '..', 'data', 'game_data.json'), JSON.stringify(out, null, 2));
 console.log('wrote data/game_data.json');

@@ -1,75 +1,80 @@
 // panels/crafting.js
-// Recipes grouped by skill, each showing exactly what is standing in its way.
-//
-// With five skills, seven levels, any-of tool slots and world gates, a list that
-// only distinguishes "can" from "cannot" tells the player nothing about where to
-// go next. So every locked recipe carries its reasons, and the list is sorted so
-// the things you are closest to making sit at the top.
+// Recipes, each showing exactly what stands in its way. The first tab is what
+// you can make right now; the rest are the five skills.
 
-import { ITEMS, RECIPES, SKILLS, isBuilding } from '../../game/state.js';
+import { ITEMS, SKILLS, isBuilding, RECIPES } from '../../game/state.js';
 import { checkRecipe, recipesBySkill } from '../../game/crafting.js';
-import { skillIcon } from '../../game/skills.js';
+import { skillIcon, levelOf } from '../../game/skills.js';
+import { countItem } from '../../game/inventory.js';
 import { icon, escapeHtml } from '../ui.js';
 
-function recipeRow(game, recipe, check) {
+export function recipeRow(game, recipe, check, { action = 'craft' } = {}) {
   const out = Object.entries(recipe.output)[0];
   const item = ITEMS[out[0]];
   const inputs = Object.entries(recipe.inputs || {}).map(([id, qty]) => {
-    const have = game.state.inventory.reduce((n, s) => n + (s && s.id === id ? s.qty : 0), 0);
-    const short = have < qty;
-    return `<span class="ingredient${short ? ' short' : ''}">
-      ${icon(ITEMS[id], 16)} ${qty}<span class="dim">/${have}</span>
-    </span>`;
+    const have = countItem(game.state, id);
+    return `<span class="ingredient${have < qty ? ' short' : ''}" title="${escapeHtml(ITEMS[id]?.name || id)}">
+      ${icon(ITEMS[id], 16)} ${qty}<span class="dim">/${have}</span></span>`;
   }).join('') || '<span class="dim">nothing but effort</span>';
+  const span = recipe.perSpan ? Object.entries(recipe.perSpan).map(([id, n]) =>
+    `<span class="ingredient">${icon(ITEMS[id], 16)} ${n} per hex of water</span>`).join('') : '';
+  const tools = (recipe.tools || []).map(slot => {
+    const ids = Array.isArray(slot) ? slot : [slot];
+    return `<span class="tool">${ids.map(t => escapeHtml(ITEMS[t]?.name || t)).join(' / ')}</span>`;
+  }).join('');
 
-  const why = check.ok ? '' :
-    `<ul class="why">${check.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
+  const why = check.ok ? '' : `<ul class="why">${check.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
+  const build = isBuilding(out[0]);
 
-  return `<div class="recipe${check.ok ? '' : ' locked'}">
+  return `<div class="recipe${check.ok ? ' ready' : ' locked'}">
     <div class="recipe-head">
-      ${icon(item, 28)}
+      ${icon(item, 30)}
       <div>
-        <b>${escapeHtml(recipe.name)}</b>
-        <span class="dim">lvl ${recipe.level}${out[1] > 1 ? ` &middot; makes ${out[1]}` : ''}</span>
+        <b>${escapeHtml(recipe.name)}${out[1] > 1 ? ` <span class="dim">&times;${out[1]}</span>` : ''}</b>
+        <span class="desc">${escapeHtml(item?.desc || '')}</span>
       </div>
-      <button data-craft="${recipe.id}" ${check.ok ? '' : 'disabled'}>
-        ${isBuilding(out[0]) ? 'Build' : 'Make'}
-      </button>
+      <button data-${action}="${recipe.id}" ${check.ok ? '' : 'disabled'}>${build ? 'Build' : 'Make'}</button>
     </div>
-    <div class="ingredients">${inputs}</div>
+    <div class="ingredients">${inputs}${span}${tools ? `<span class="tools dim">with ${tools}</span>` : ''}
+      <span class="dim lvl">${recipe.skill} ${recipe.level}</span></div>
     ${why}
   </div>`;
 }
 
+const sortRows = rows => rows.sort((a, b) => (b.check.ok - a.check.ok)
+  || (a.r.level - b.r.level) || (a.check.reasons.length - b.check.reasons.length));
+
 export const craftingPanel = {
   title: () => 'Craft',
+  wide: true,
 
   render(game, props = {}) {
-    const skill = props.skill || SKILLS[0];
+    const tab = props.skill || 'ready';
     const ctx = game.craftingContext();
     const groups = recipesBySkill();
 
-    const tabs = SKILLS.map(s => `<button class="tab${s === skill ? ' on' : ''}" data-skill="${s}">
-        <img src="${skillIcon(s)}" alt="" width="18" height="18"> ${s}
-      </button>`).join('');
+    const tabs = [`<button class="tab${tab === 'ready' ? ' on' : ''}" data-skill="ready">&#10022; Ready</button>`,
+      ...SKILLS.map(s => `<button class="tab${s === tab ? ' on' : ''}" data-skill="${s}">
+        <img src="${skillIcon(s)}" alt="" width="18" height="18"> ${s} <b>${levelOf(game.state, s)}</b></button>`)].join('');
 
-    const rows = (groups[skill] || [])
-      .map(r => ({ r, check: checkRecipe(game.state, r.id, ctx) }))
-      // Craftable first, then up the ladder. Level before blocker-count: the
-      // skill tree is a progression, and a level 2 recipe with three obstacles
-      // sitting above a level 1 recipe with four reads as noise.
-      .sort((a, b) => (b.check.ok - a.check.ok)
-        || (a.r.level - b.r.level)
-        || (a.check.reasons.length - b.check.reasons.length))
-      .map(({ r, check }) => recipeRow(game, r, check))
-      .join('');
+    let list;
+    if (tab === 'ready') {
+      list = Object.values(RECIPES).map(r => ({ r, check: checkRecipe(game.state, r.id, ctx) }))
+        .filter(x => x.check.ok);
+    } else {
+      list = (groups[tab] || []).map(r => ({ r, check: checkRecipe(game.state, r.id, ctx) }));
+    }
+    const rows = sortRows(list).map(({ r, check }) => recipeRow(game, r, check)).join('');
 
     const where = ctx.village
-      ? `<p class="dim">At ${escapeHtml(ctx.village.name)}. You may borrow:
-         ${(ctx.village.rentableTools || []).map(t => escapeHtml(ITEMS[t]?.name || t)).join(', ') || 'nothing'}.</p>`
-      : '';
+      ? `<p class="where">At ${escapeHtml(ctx.village.name)}. ${ctx.village.trusted
+        ? `You may work at their ${escapeHtml(ITEMS[ctx.village.station]?.name || ctx.village.station)}.`
+        : 'Earn their trust and you may use their workshop.'}</p>` : '';
 
-    return `<div class="tabs">${tabs}</div>${where}<div class="recipes">${rows}</div>`;
+    const empty = tab === 'ready'
+      ? '<p class="dim">Nothing you can make right now. Look under a skill to see what each recipe is waiting on.</p>'
+      : '';
+    return `<div class="tabs">${tabs}</div>${where}<div class="recipes">${rows || empty}</div>`;
   },
 
   bind(game, body, props = {}) {

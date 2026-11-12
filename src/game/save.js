@@ -8,8 +8,10 @@
 
 import { WorldMap } from '../world/mapformat.js';
 
-export const SAVE_VERSION = 1;
-export const SAVE_KEY = 'hexworld.save';
+// The fork's saves are not the original game's: a different key, so the two can
+// sit side by side in one browser, and a new version, so neither reads the other.
+export const SAVE_VERSION = 2;
+export const SAVE_KEY = 'hexquest.save';
 
 export function serialize(world, state, player) {
   return {
@@ -101,7 +103,7 @@ export function downloadSave(world, state, player) {
     { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `hexworld-${world.seed}.json`;
+  a.download = `hexquest-${world.seed}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 }

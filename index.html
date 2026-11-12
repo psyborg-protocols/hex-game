@@ -3,24 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Hex World</title>
+  <title>Hex Quest</title>
   <link rel="stylesheet" href="src/ui/ui.css">
 </head>
 <body>
   <div id="stage">
     <canvas id="view"></canvas>
 
-    <!-- World-anchored context buttons; positioned by the camera transform. -->
+    <!-- World-anchored buttons, dice and floating text; positioned by the camera. -->
     <div id="worldspace"></div>
 
-    <!-- Top-left status readout. -->
+    <!-- Top-left: health, energy, gold, day, skills. -->
     <div id="hud">
       <div id="hud-stats"></div>
       <div id="hud-skills"></div>
       <div id="hud-terrain" class="dim"></div>
     </div>
 
-    <!-- Bottom bar: the panel buttons. -->
+    <!-- Top-right: the chapter you are on and what to reach for next. -->
+    <aside id="journey" aria-live="polite"></aside>
+
+    <!-- A red line while a raid is coming. -->
+    <div id="alert" role="status"></div>
+
     <nav id="taskbar"></nav>
 
     <div id="notifications"></div>

@@ -1,93 +1,77 @@
-# Skill Map & Dependency Graph
+# Skill Map & Progression — Hex Quest
 
-Five skills, 7 levels each. Arrows mean **requires**. Two roots (stone, wood), one knowledge gate (Mind → ore), one infrastructure cap (stoneworking masonry → heat), and social scale as the endgame.
+Five skills, five levels each, 56 items. Every level opens something; every item
+has a job. `data/game_data.js` is the source of truth and
+`tests/economy.test.mjs` checks the laws below.
+
+## The five chapters
+
+The game is paced by five chapters, shown in the corner with their goals. They
+are milestones, not quests: nobody asks you for them, they are just where the
+gates naturally fall.
+
+| # | Chapter | Goals | What it unlocks |
+|---|---|---|---|
+| 1 | **Stranded** | explore 5 places · twist cord · stone axe · hearth | food you can cook, a respawn point |
+| 2 | **Homestead** | cook a meal · earn a village's trust · sow a field · raise a hut | trade, stations, grain, a stash, +6 energy |
+| 3 | **Hold the Line** | fight off a raid · wall or watchtower · arm yourself · cross the river | the far bank, where the camps are |
+| 4 | **The Iron Age** | Lore (Mind 3) · find ore · smelt an ingot · forge iron | swords, mail, pickaxes |
+| 5 | **The Reckoning** | burn a camp · kill the Warlord · burn every camp | victory |
+
+Raids start on day 2 whatever chapter you are in, so chapter 3 tends to arrive
+on its own.
+
+## The skills
 
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │                  MIND                       │
-                    │ 1 attention → 2 ritual → 3 story            │
-                    │ 4 LORE (prospect!) → 5 medicine             │
-                    │ 6 totem/shrine → 7 oracle                  │
-                    │   ▲ sinew/bone      │ trust, trade, dogs    │
-                    └──────┬──────────────┤                       │
-                           │              ▼                       │
- ┌──────────────┐   ore   ┌──────────────┴──────────────┐   tongs/
- │ STONEWORKING │────────▶│        METALWORKING         │   hammer
- │ 1 hammer,    │  (L1    │ 1 prospect (needs mind 4)   │◀─ cycles
- │   chisel     │   gate) │ 2 bone tongs, bellows,      │  (tongs→
- │ 2 stone axe, │         │    SMELT (needs forge!)     │   tongs,
- │   rock wall  │  forge  │ 3 knife, saw (stone anvil)  │   hammer→
- │ 3 block,     │────────▶│ 4 axe, pickaxe, hoe         │   hammer,
- │   quern,     │  (L6)   │ 5 anvil, tongs, hammer      │   anvil)
- │   stone oven │         │ 6 ref. tongs, chisel, sword │
- │ 4 wall, adze,│  whet-  │ 7 adze (final tier), arrows │
- │   grindstone,│ stone   └──────────────┬──────────────┘
- │   anvil      │────────▶│              │ ingot
- │ 5 whetstone, │  (L5-7) │              │
- │   stone house│         │              ▼
- │ 6 FORGE      │   wood  ┌──────────────┴──────────────┐
- │ 7 quarry     │────────▶│        HOMESTEADING         │
- └──────┬───────┘  (fuel) │ 1 HEARTH, cook              │
-        │ stone           │ 2 hoe, pot, field           │
-        │ blocks          │ 3 stew, bread, smokehouse   │
-        ▼                 │ 4 clay oven, granary, dog   │
-   (all masonry:          │ 5 brick, market, well       │
-    ovens, forge,         │ 6 plough(wood), kiln        │
-    quarry, shrine)       │ 7 ingot plough, bakehouse   │
-                          └──────▲──────────▲───────────┘
-                                 │          │
- ┌───────────────────────────────┴──┐        │ log/beam/
- │          WOODWORKING             │        │ plank
- │ 1 branch, cord, basket          │        │
- │ 2 rough log, log, beam (chisel) │───────▶│
- │ 3 bone adze, bone saw, plank,   │        │
- │   arrows                        │  cabin │
- │ 4 fence, ladder, rod, chair     │───────▶│ (granary
- │ 5 cabin, table, boat (adze)     │  needs  │  needs
- │ 6 bridge, chest, cart (wheel)   │  house) │  house)
- │ 7 bow (beam + sinew)            │        │
- └──────────────────────────────────┘        │
-        │ sinew/branch (hafts everything)────┘
+STONEWORKING            WOODWORKING             HOMESTEADING
+1 knife, axe, hammer    1 cord, basket, rod     1 HEARTH, cook
+2 dress blocks          2 planks, palisade,     2 field, bread, pot
+3 stone wall, FORGE       WORKBENCH             3 HUT, stew, hide armour
+4 whetstone, SHRINE*    3 ladder, bow, shield   4 leather pack, dog*
+5 master masonry        4 BOAT, watchtower      5 trail rations
+                        5 BRIDGE, cart*
+
+METALWORKING            MIND (from exploring, not crafting)
+1 wood tongs, SMELT     1 herbs, amulet
+2 iron axe, pickaxe     2 salve, dogs trust you
+3 IRON TONGS, saw       3 LORE: ore shows, prospecting
+4 sword, iron mail      4 wayfinding: villages reveal 2x
+5 master smith          5 rally banner
 ```
+`*` crosses skills: the shrine needs Mind 3, the dog Mind 2, the cart an ingot.
 
-## The bootstrap path (archaeologically canonical)
+## The bootstrap
 
-1. **Gather** branch, stone, berries (free, no tools)
-2. **Stone 1** stone hammer + chisel → **Wood 2** (chop) → rough log → log
-3. **Wood 1** cord + basket → **Homestead 1** HEARTH (stone+log) → cooked meat
-4. **Stone 2** stone axe → **Wood 2–3** beam (whittle) → plank (bone saw)
-5. **Homestead 2** pot + field → grain → **Stone 3** quern → **Homestead 3** bread
-6. **Mind 1–3** amulet, drum, journal (trust) → **Mind 4 LORE** → *ore appears*
-7. **Stone 3–6** stone oven → anvil → **FORGE**
-8. **Metal 2** bellows + bone tongs + ore + fuel → **ingot** (the great unlock)
-9. **Metal 3–5** knife, saw, axe, pickaxe, anvil, tongs (cycle), hammer (cycle)
-10. **Homestead 4–7** smokehouse → granary (needs cabin!) → well → kiln → plough → bakehouse
-11. **Wood 5–7** cabin → table → boat → bridge → cart → bow
-12. **Mind 5–7** salve → totem → shrine → **oracle** (map, 2x prospecting)
+1. **Explore** — stand still on hexes; berries, flint, clay and fish show up.
+2. **Reeds → cord**, **stone + branch + cord → axe and hammer**, flint → knife.
+3. **Fell trees → logs**, **stone + logs → hearth**. Hunt with a cord snare, cook.
+4. **Visit a village**, do its favour, and it trades and lends its station.
+5. **Planks → workbench → bow, shield, boat**. **Hut** for the stash and energy.
+6. **Explore for Mind 3** (Lore) → read the rock → ore. Or buy it from smiths.
+7. **Blocks + clay + logs → forge**. **Tongs → smelt → iron tongs** (tongs make tongs).
+8. **Sword, mail**, a **rally banner**, a **boat or bridge** — and across the river.
 
-## Redundancy pairs (scarcity counterweights)
+## Laws, and where they are checked
 
-| Problem | Route A | Route B |
+| Law | Example | Test |
 |---|---|---|
-| Beam | whittle (branch ×2, any sharp edge) | saw (log, bone/inot saw) |
-| River | bridge (wood 6) | boat (wood 5) |
-| Chop | stone axe / adze | ingot axe |
-| Hammer | stone hammer (free-ish) | ingot hammer (cycle) |
-| Tongs | bone (metal 2) | ingot (cycle) → refined (whetstone) |
-| Adze | bone (wood 3) | stone (stone 4) → ingot (metal 7) |
-| Anvil | stone (stone 4) | ingot (metal 5) |
-| Food | hearth cook (L1) | smokehouse (keep) / stew / bread |
-| Water | river (fishing) | well (farm + quenching) |
-| Transport | on foot | cart (wood 6) |
+| Significance | every item is an input, tool, station or has an effect | `significance: every item…` |
+| Minimal archetypes | ≤ 60 items; one "ore", one "ingot", no tiers of chisel | `the item list stays small` |
+| Redundancy | cord from reeds or hide · planks by axe or saw · river by boat or bridge · ore by hammer or pickaxe · ore from Lore or smiths | `redundancy: …` |
+| Circularity | iron tongs are made with tongs; green-wood tongs break the cycle | `circularity: …` |
+| Reachability | the whole graph climbs from an empty pack | `the whole graph is reachable…` |
+| Scarcity | finite veins; five villages, six kinds — some worlds have no smiths | worldgen, raids |
+| Food is never "used" | the pack tops your energy up; raw food is saved for the hearth | `food is eaten on its own…` |
 
-## Cycles (by design, all real)
+## Raids
 
-- **tongs → tongs**: bone tongs → ingot tongs (made with tongs) → refined tongs (made with ingot tongs + whetstone)
-- **hammer → hammer**: ingot hammer requires any existing hammer
-- **whetstone ↔ metal**: stone whetstone sharpens all metal; ingot chisel carves finer whetstones
-- **kiln ↔ brick**: kilns are built of bricks fired in the ovens they supersede
-- **adze ↔ boat**: the adze shapes the boat; the boat carries the stone and ore that made the adze
-
-## The single knowledge gate
-
-`metalworking:1` (prospecting) requires `mind:4` (Lore). Ore only exists in the world after Lore has revealed it, and each vein is finite. A world with no prospectable ore is a stone-age world: metalworking is fully locked. This is the "true scarcity" anchor of the whole economy.
+- Three camps on the far bank; the farthest is the **Warlord's Hold**.
+- First raid partway into day 2, then every 1.3–1.8 days from a random camp.
+  A warning comes first: 35s, or 70s with a watchtower.
+- Bands grow: 1 raider on day 2, up to 6 later, with brutes from day 6.
+- They go for what you built (hut and fields first), never anything within 2 hexes
+  of a shrine. With nothing to burn, they raid a village and shut its market.
+- **Walls** are hacked through or walked round. **Watchtowers** shoot (2 dice, range 3).
+- **Combat** is dice: attack dice hit on 4+, defence dice block on 5+.
+- Burning every camp wins the game.

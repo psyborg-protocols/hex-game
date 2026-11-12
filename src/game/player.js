@@ -21,6 +21,7 @@ export class Player {
     this.facing = 1;       // +1 right, -1 left
     this.onArrive = null;
     this.onStep = null;    // called with (q, r) each time a tile is reached
+    this.speedAt = null;   // (from, to) => speed multiplier for that step
   }
 
   get h() { return Math.max(0, this.map.heightAt(this.q, this.r)); }
@@ -81,7 +82,10 @@ export class Player {
     }
     const from = { q: this.q, r: this.r };
     if (next.q !== from.q) this.facing = next.q > from.q ? 1 : -1;
-    this.leg = { from, to: next, t: 0, duration: 1 / WALK_TILES_PER_SEC };
+    // How fast this step goes: slower rowing, faster on a road with a cart,
+    // dragging when you have no food left. The game decides; see main.js.
+    const mult = this.speedAt ? this.speedAt(from, next) : 1;
+    this.leg = { from, to: next, t: 0, duration: 1 / (WALK_TILES_PER_SEC * mult) };
   }
 
   update(dt) {

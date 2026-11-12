@@ -1,78 +1,114 @@
 // economy.js
-// Village trade and tool rental.
+// Villages: the favour that earns their trust, and the trade it opens.
 //
-// Carried over from the old game: each village stocks a handful of goods at
-// jittered prices and buys anything back at half. What is new is that a village
-// also *lends* — the rentable tools are what stop a world where you have not yet
-// forged a hammer from being a dead end, which is the same job the any-of tool
-// slots do inside a recipe.
+// A village will not deal with a stranger. Each asks one small favour first,
+// sized to where you are in the game, and once it is done the village trades,
+// lets you work at its station, and tells you about the land around it. That is
+// the whole of the quest system: one more gate among the others.
+//
+// Each village has a kind (farmers, smiths...) which decides what it sells cheap
+// and which station it lends. Not every world has every kind.
 
 import { Rng } from '../core/rng.js';
-import { ITEM_BASE_PRICES, ITEMS } from '../../data/game_data.js';
-import { RECIPES, isBuilding, itemName, isFree } from './state.js';
-import { addItem, removeItem, hasItem, hasRoomFor } from './inventory.js';
-
-/** Structures and one-off goods are not market stock. */
-const UNTRADEABLE = new Set([...Object.values(RECIPES)
-  .filter(r => r.category === 'build')
-  .flatMap(r => Object.keys(r.output))]);
-
-/** Tools plausibly found in a village workshop, cheapest tiers first. */
-const LENDABLE = [
-  'stone_hammer', 'stone_chisel', 'stone_axe', 'quern', 'hearth', 'stone_oven',
-  'pot', 'bone_saw', 'saw', 'knife', 'hammer', 'chisel', 'axe', 'whetstone',
-  'stone_anvil', 'anvil', 'bone_tongs', 'tongs', 'bellows', 'forge', 'smokehouse',
-];
+import { ITEM_BASE_PRICES, ITEMS, VILLAGE_KINDS } from '../../data/game_data.js';
+import { isBuilding, itemName, isFree } from './state.js';
+import { addItem, removeItem, hasItem, hasRoomFor, countItem } from './inventory.js';
 
 export const villageKey = (q, r) => `${q},${r}`;
 
+export const kindOf = feature => VILLAGE_KINDS[feature?.kind] || VILLAGE_KINDS.farmers;
+
+/** Gold a village pays for its favour. */
+export const FAVOUR_REWARD = 12;
+
 /**
- * Fill in a village's stock and workshop the first time it is visited. Seeded
- * off its own coordinates, so a village is the same every time you come back.
+ * Fill in a village's prices and favour the first time it is visited. Prices are
+ * seeded off its coordinates, so they are the same every time you come back.
  */
 export function ensureVillage(state, village, q, r, worldSeed = '') {
   const key = villageKey(q, r);
-  if (state.prices[key]) return state.prices[key];
-
-  const rng = new Rng(`${worldSeed}:village:${key}`);
-
-  const stock = Object.keys(ITEM_BASE_PRICES).filter(id => !UNTRADEABLE.has(id));
-  const chosen = rng.shuffle(stock.slice()).slice(0, rng.irange(5, 8));
-  const prices = {};
-  for (const id of chosen) {
-    prices[id] = Math.max(1, Math.round(ITEM_BASE_PRICES[id] * rng.range(0.8, 1.2)));
+  state.trust ||= {};
+  if (!state.trust[key]) {
+    const kind = kindOf(village);
+    // Your first village asks something easy; later ones expect more of you.
+    const trusted = Object.values(state.trust).filter(t => t.done).length;
+    const favour = kind.favours[Math.min(kind.favours.length - 1, trusted ? 1 : 0)];
+    state.trust[key] = { done: false, favour: { ...favour } };
   }
-  state.prices[key] = prices;
-
-  if (village && !village.rentableTools?.length) {
-    const pool = LENDABLE.filter(id => ITEMS[id]);
-    village.rentableTools = rng.shuffle(pool.slice()).slice(0, rng.irange(2, 4));
+  if (!state.prices[key]) {
+    const rng = new Rng(`${worldSeed}:village:${key}`);
+    const kind = kindOf(village);
+    const extras = rng.shuffle(['berries', 'branch', 'stone', 'reed', 'hide', 'cord', 'meat', 'grain', 'herb', 'clay', 'flint'])
+      .filter(id => !kind.sells.includes(id)).slice(0, 3);
+    const prices = {};
+    for (const id of kind.sells) prices[id] = Math.max(1, Math.round(ITEM_BASE_PRICES[id] * rng.range(0.7, 0.95)));
+    for (const id of extras) prices[id] = Math.max(1, Math.round(ITEM_BASE_PRICES[id] * rng.range(1.0, 1.3)));
+    state.prices[key] = prices;
   }
-  return prices;
+  return state.prices[key];
+}
+
+export const trustOf = (state, q, r) => state.trust?.[villageKey(q, r)] || null;
+export const isTrusted = (state, q, r) => !!trustOf(state, q, r)?.done;
+
+/** A village recently raided is shuttered until the next day. */
+export const isRaided = (state, q, r) => (state.raidedUntil?.[villageKey(q, r)] ?? -1) > (state.time || 0);
+
+/** What crafting needs to know about a village you are standing at. */
+export function villageContext(state, col) {
+  if (!col) return null;
+  return {
+    name: col.feature.name,
+    kind: col.feature.kind,
+    station: kindOf(col.feature).station,
+    trusted: isTrusted(state, col.q, col.r) && !isRaided(state, col.q, col.r),
+  };
+}
+
+/** Hand over the favour. Returns what happened for the UI to say. */
+export function giveFavour(state, col) {
+  const t = trustOf(state, col.q, col.r);
+  if (!t || t.done) return { ok: false, message: 'They already trust you.' };
+  const { item, qty } = t.favour;
+  if (!isFree(state) && countItem(state, item) < qty) {
+    return { ok: false, message: `They need ${qty} ${itemName(item)}. You have ${countItem(state, item)}.` };
+  }
+  if (!isFree(state)) removeItem(state, item, qty);
+  t.done = true;
+  state.gold += FAVOUR_REWARD;
+  return { ok: true, message: `${col.feature.name} trusts you now. They pay you ${FAVOUR_REWARD} gold.` };
 }
 
 export const stockOf = (state, q, r) => state.prices[villageKey(q, r)] || {};
 
-export function buy(state, q, r, itemId) {
+/** What a village pays for something: half its worth, a third if they make it. */
+export function sellPrice(feature, itemId) {
+  const base = ITEM_BASE_PRICES[itemId] ?? 1;
+  const theirs = kindOf(feature).sells.includes(itemId);
+  return Math.max(1, Math.floor(base * (theirs ? 0.34 : 0.5)));
+}
+
+export function buy(state, col, itemId) {
+  const { q, r } = col;
+  if (!isTrusted(state, q, r)) return { ok: false, message: 'They will not trade with a stranger.' };
+  if (isRaided(state, q, r)) return { ok: false, message: 'The stalls are wrecked. Come back tomorrow.' };
   const price = stockOf(state, q, r)[itemId];
   if (price == null) return { ok: false, message: 'They do not sell that.' };
   const free = isFree(state);
   if (!free && state.gold < price) return { ok: false, message: 'Not enough gold.' };
   if (!hasRoomFor(state, itemId, 1)) return { ok: false, message: 'No room to carry it.' };
-
   if (!free) state.gold -= price;
   addItem(state, itemId, 1);
   return { ok: true, message: `Bought ${itemName(itemId)} for ${price}g.`, price };
 }
 
-/** Villages buy at half what they ask — the spread is the point of travelling. */
-export function sell(state, q, r, itemId) {
-  const asking = stockOf(state, q, r)[itemId];
-  if (asking == null) return { ok: false, message: 'They are not buying that.' };
+export function sell(state, col, itemId) {
+  const { q, r } = col;
+  if (!isTrusted(state, q, r)) return { ok: false, message: 'They will not trade with a stranger.' };
+  if (isRaided(state, q, r)) return { ok: false, message: 'The stalls are wrecked. Come back tomorrow.' };
   if (!hasItem(state, itemId, 1)) return { ok: false, message: `You have no ${itemName(itemId)}.` };
-  if (isBuilding(itemId)) return { ok: false, message: 'That is not yours to sell.' };
-
-  const price = Math.max(1, Math.floor(asking / 2));
+  if (isBuilding(itemId) || !ITEMS[itemId]) return { ok: false, message: 'That is not yours to sell.' };
+  const price = sellPrice(col.feature, itemId);
   removeItem(state, itemId, 1);
   state.gold += price;
   return { ok: true, message: `Sold ${itemName(itemId)} for ${price}g.`, price };

@@ -16,6 +16,8 @@ export const menuPanel = {
         <span class="dim">&middot; ${game.map.size} columns</span></p>
       <p class="dim">${skills}</p>
 
+      <button class="line" data-act="help"><span></span><span>How to play</span></button>
+
       <h3>Save</h3>
       <button class="line" data-act="save"><span></span><span>Save to this browser</span></button>
       <button class="line" data-act="load" ${hasLocal() ? '' : 'disabled'}>
@@ -54,6 +56,7 @@ export const menuPanel = {
       import: () => file.click(),
       new: () => game.doNewWorld(body.querySelector('#seed-input').value.trim()),
       free: () => game.doToggleFree(),
+      help: () => game.showHelp(),
     };
     for (const btn of body.querySelectorAll('[data-act]')) {
       btn.addEventListener('click', () => actions[btn.dataset.act]());

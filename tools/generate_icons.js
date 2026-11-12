@@ -8,6 +8,7 @@ import { PALETTE } from './palette.js';
 import { PART1 } from './pixel_art_1.js';
 import { PART2 } from './pixel_art_2.js';
 import { PART3 } from './pixel_art_3.js';
+import { PART4 } from './pixel_art_4.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -76,7 +77,7 @@ function abilitySvg(glyph, level, name) {
 
 // Merge icon definitions; draw functions become validated grids.
 const all = {};
-for (const src of [PART1, PART2, PART3]) {
+for (const src of [PART1, PART2, PART3, PART4]) {
   for (const [name, val] of Object.entries(src)) {
     const grid = typeof val === 'function' ? draw(val) : val;
     if (!validate(`${name}`, grid)) { delete all[name]; continue; }

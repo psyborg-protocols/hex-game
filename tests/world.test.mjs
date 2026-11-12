@@ -38,7 +38,7 @@ function ground(terrain = 'grass', h = 0, w = 7, d = 7) {
 /** A player who is fed and skilled enough not to be the thing under test. */
 function ready() {
   const s = createState({ gold: 500 });
-  addItem(s, 'cooked_meat', 12);
+  addItem(s, 'meal', 12);
   for (const skill of ['woodworking', 'stoneworking', 'homesteading', 'metalworking', 'mind']) {
     addXp(s, skill, 5000);
   }
@@ -84,7 +84,7 @@ test('a tool gate is reported, not hidden', () => {
   const fishing = all.find(h => h.spec.id === 'fish');
   ok(fishing, 'fishing should be listed at the water');
   ok(!fishing.ok, 'but not possible without a rod');
-  ok(fishing.reasons[0].includes('fishing_rod'), `should say why: ${fishing.reasons}`);
+  ok(fishing.reasons[0].includes('fishing rod'), `should say why: ${fishing.reasons}`);
 
   addItem(state, 'fishing_rod', 1);
   ok(offered(shore, state, at(3, 3)).includes('fish'), 'with a rod it should be on offer');
@@ -98,16 +98,16 @@ test('chopping a wood eventually leaves bare forest floor', () => {
   col.feature = { type: 'trees', kind: 'oak', remaining: 2 };
   const state = ready();
 
-  eq(harvest(world, state, at(3, 3), 'chop_rough_log', rng()).ok, false, 'no axe, no logs');
+  eq(harvest(world, state, at(3, 3), 'fell_tree', rng()).ok, false, 'no axe, no logs');
 
   addItem(state, 'stone_axe', 1);
-  ok(harvest(world, state, at(3, 3), 'chop_rough_log', rng()).ok, 'first tree');
+  ok(harvest(world, state, at(3, 3), 'fell_tree', rng()).ok, 'first tree');
   eq(world.map.terrainAt(3, 3), 'oak_wood', 'still wooded with one tree left');
 
-  ok(harvest(world, state, at(3, 3), 'chop_rough_log', rng()).ok, 'last tree');
+  ok(harvest(world, state, at(3, 3), 'fell_tree', rng()).ok, 'last tree');
   eq(world.map.terrainAt(3, 3), 'forest_floor', 'a felled oak wood should become forest floor');
   ok(!world.map.get(3, 3).feature, 'and have nothing left to chop');
-  ok(countItem(state, 'rough_log') >= 2, 'you should be holding the logs');
+  ok(countItem(state, 'log') >= 2, 'you should be holding the logs');
 });
 
 test('pine woods fell to pine floor, not oak', () => {
@@ -115,7 +115,7 @@ test('pine woods fell to pine floor, not oak', () => {
   world.map.get(3, 3).feature = { type: 'trees', kind: 'pine', remaining: 1 };
   const state = ready();
   addItem(state, 'stone_axe', 1);
-  harvest(world, state, at(3, 3), 'chop_rough_log', rng());
+  harvest(world, state, at(3, 3), 'fell_tree', rng());
   eq(world.map.terrainAt(3, 3), 'pine_floor', 'pines should leave pine floor');
 });
 
@@ -125,7 +125,7 @@ test('mining a cliff cuts it down until it can be climbed', () => {
   const world = ground('grass');
   world.map.place(4, 3, 'stony', 5);
   const state = ready();
-  addItem(state, 'pickaxe', 1);
+  addItem(state, 'stone_hammer', 1);
 
   const face = () => world.map.heightAt(4, 3);
   ok(!canStep(world.map, at(3, 3), at(4, 3)), 'a five-high face should be unclimbable');
@@ -140,9 +140,8 @@ test('mining a cliff cuts it down until it can be climbed', () => {
     cuts++;
   }
 
-  eq(face(), 2, 'mining should stop once the face is under three levels');
+  eq(face(), 1, 'mining should stop once the face can be climbed');
   ok(countItem(state, 'stone') > 0, 'and it should have yielded stone');
-  ok(!canStep(world.map, at(3, 3), at(4, 3)), 'two levels is still too high to climb');
   // One more level off by hand and it becomes walkable — the point of the exercise.
   world.map.get(4, 3).h = 1;
   ok(canStep(world.map, at(3, 3), at(4, 3)), 'a one-level step should be walkable');
@@ -166,12 +165,12 @@ test('ore is invisible until Lore finds it, and only nearby', () => {
   for (const col of [near, far]) col.feature = { type: 'ore', remaining: 5, known: false };
 
   const novice = ready();
-  novice.skills.mind.level = 3;
-  eq(prospect(world, novice, at(3, 3), rng()).ok, false, 'prospecting before Lore');
+  novice.skills.mind.level = 2;
+  eq(prospect(world, novice, at(3, 3)).ok, false, 'prospecting before Lore');
   eq(near.feature.known, false, 'the vein should still be hidden');
 
-  const sage = ready();          // mind 7
-  const found = prospect(world, sage, at(3, 3), rng());
+  const sage = ready();          // mind 5
+  const found = prospect(world, sage, at(3, 3));
   ok(found.ok, found.message);
   eq(near.feature.known, true, 'the vein underfoot should be revealed');
   ok(distance(0, 0, 3, 3) > PROSPECT_RADIUS, 'the far vein is out of range for this test to mean anything');
@@ -183,7 +182,7 @@ test('a vein runs out', () => {
   const vein = world.map.get(3, 3);
   vein.feature = { type: 'ore', remaining: 2, known: true };
   const state = ready();
-  addItem(state, 'stone_chisel', 1);
+  addItem(state, 'stone_hammer', 1);
 
   ok(nearbyOre(world.map, vein), 'a known vein should be minable');
   let mined = 0;
@@ -200,7 +199,7 @@ test('you can mine a vein from the hex next door', () => {
   const world = ground('stony', 4);
   world.map.get(4, 3).feature = { type: 'ore', remaining: 3, known: true };
   const state = ready();
-  addItem(state, 'stone_chisel', 1);
+  addItem(state, 'stone_hammer', 1);
   ok(offered(world, state, at(3, 3)).includes('mine_ore'), 'adjacent ore should be reachable');
 });
 
@@ -243,9 +242,7 @@ test('you cannot build on water or out of reach', () => {
 test('a planted field ripens and can then be harvested', () => {
   const world = ground('grass');
   const state = ready();
-  addItem(state, 'seeds', 10);
-  addItem(state, 'branch', 10);
-  addItem(state, 'wood_hoe', 1);
+  addItem(state, 'grain', 10);
 
   const result = build(world, state, at(3, 3), 'field', at(3, 3), { at: at(3, 3), distance });
   ok(result.ok, result.message);
@@ -253,7 +250,7 @@ test('a planted field ripens and can then be harvested', () => {
   eq(world.map.get(3, 3).feature.ripe, false, 'and start unripe');
   ok(!offered(world, state, at(3, 3)).includes('harvest_field'), 'harvested it green');
 
-  state.stepsWalked += FIELD_RIPENS_IN;
+  state.time += FIELD_RIPENS_IN;
   growCrops(world, state);
   eq(world.map.get(3, 3).feature.ripe, true, 'it should come ripe');
   ok(offered(world, state, at(3, 3)).includes('harvest_field'), 'and then be harvestable');
@@ -310,11 +307,12 @@ test('the opening chain works from nothing: forage, reeds, cord, snare', () => {
     && resourcesAt(map, c).includes('forage'));
   ok(shore, 'nowhere on the shore can you both forage and cut reeds');
 
-  eq(state.energy, 0, 'you start with nothing to eat');
+  ok(countItem(state, 'berries') > 0 && state.energy > 0, 'you start with a few berries and a little energy');
   ok(!harvest(world, state, shore, 'forage', r).ok, 'foraged before exploring the hex');
   exploreHex(map, state, shore.q, shore.r);
+  state.energy = 0;
   ok(harvest(world, state, shore, 'forage', r).ok, 'foraging should not itself need energy');
-  ok(state.energy > 0, 'and it should feed you');
+  ok(countItem(state, 'berries') > 6, 'and it should find you food');
 
   for (let i = 0; i < 3; i++) harvest(world, state, shore, 'cut_reeds', r);
   ok(countItem(state, 'reed') >= 2, 'the shore should give reeds');
@@ -325,7 +323,7 @@ test('a ladder is placed against a cliff, and opens it', () => {
   // A 13-level face: unclimbable, undroppable, and the whole point of a ladder.
   world.map.place(4, 3, 'stony', 14);
   const state = ready();
-  addItem(state, 'beam', 10);
+  addItem(state, 'plank', 10);
   addItem(state, 'cord', 10);
   addItem(state, 'stone_axe', 1);
 
@@ -350,7 +348,7 @@ test('a ladder survives a save and reload', () => {
   const world = ground('grass', 1);
   world.map.place(4, 3, 'stony', 12);
   const state = ready();
-  addItem(state, 'beam', 10);
+  addItem(state, 'plank', 10);
   addItem(state, 'cord', 10);
   addItem(state, 'stone_axe', 1);
   build(world, state, at(3, 3), 'ladder', at(4, 3), { at: at(3, 3), distance });

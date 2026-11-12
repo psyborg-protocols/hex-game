@@ -84,6 +84,7 @@ class Generator {
     this.placeVillages(map);
     this.layRoads(map);
     this.seedOre(map);
+    this.placeCamps(map);
     map.spawn = this.spawn;
     resolveAutotiles(map, this.opt.resolvers);
     return map;
@@ -547,6 +548,10 @@ class Generator {
     }));
 
     this.villages = [];
+    // One of each kind of village at most, in a seeded order, so a world with
+    // five villages is missing one trade — sometimes the smiths. That is the
+    // scarcity working, not a bug.
+    const kinds = this.rng.shuffle(['farmers', 'woodcutters', 'masons', 'fishers', 'herbalists', 'smiths']);
     const minGap = Math.max(6, Math.floor(this.radius * 0.32));
     for (const c of candidates) {
       if (this.villages.length >= this.opt.villages) break;
@@ -556,7 +561,7 @@ class Generator {
       col.feature = {
         type: 'village',
         name: villageName(this.rng),
-        rentableTools: [],
+        kind: kinds[this.villages.length % kinds.length],
       };
       this.villages.push({ q: c.q, r: c.r });
     }
@@ -688,11 +693,65 @@ class Generator {
       map.get(c.q, c.r).feature = {
         type: 'ore',
         remaining: this.rng.irange(4, 12),
-        known: false,          // revealed by mind:4
+        known: false,          // revealed by Lore (mind 3)
       };
     }
   }
+
+  /**
+   * Raider camps, on the far bank: the river is what keeps them off you, and the
+   * boat or bridge you need to reach them is the same one that ends the game.
+   * The one farthest from the spawn is the Warlord's hold.
+   */
+  placeCamps(map) {
+    const want = this.opt.camps ?? 3;
+    const ok = (c, strict) => {
+      const col = map.get(c.q, c.r);
+      if (!col || isWater(col.terrain) || col.terrain === 'path') return false;
+      if (col.feature && col.feature.type !== 'trees') return false;
+      if (col.h > this.upland) return false;
+      if (strict && this.nearBank(c.q, c.r)) return false;
+      if (distance(c.q, c.r, this.spawn.q, this.spawn.r) < 10) return false;
+      return neighbors(c.q, c.r).filter(n => {
+        const o = map.get(n.q, n.r);
+        return o && !isWater(o.terrain) && Math.abs(o.h - col.h) <= 1;
+      }).length >= 4;
+    };
+    let pool = this.cells.filter(c => ok(c, true));
+    // A world whose far bank is a sliver still gets its camps: on the near side,
+    // as far from you as they can be.
+    if (pool.length < want * 4) pool = this.cells.filter(c => ok(c, false));
+    // The far half of the candidates, in a seeded order: far from you, but not
+    // all lined up along the rim of the world.
+    const far = c => distance(c.q, c.r, this.spawn.q, this.spawn.r);
+    const sorted = pool.slice().sort((a, b) => far(b) - far(a));
+    pool = this.rng.shuffle(sorted.slice(0, Math.max(want * 6, Math.ceil(sorted.length * 0.5))));
+
+    const camps = [];
+    for (const c of pool) {
+      if (camps.length >= want) break;
+      if (camps.some(o => distance(o.q, o.r, c.q, c.r) < 7)) continue;
+      if ((this.villages || []).some(v => distance(v.q, v.r, c.q, c.r) < 7)) continue;
+      camps.push(c);
+    }
+    // The Warlord sits in the farthest of them.
+    camps.sort((a, b) => far(b) - far(a));
+    camps.forEach((c, i) => {
+      const col = map.get(c.q, c.r);
+      map.place(c.q, c.r, 'steppes', col.h);
+      map.get(c.q, c.r).feature = {
+        type: 'camp',
+        boss: i === 0,
+        name: i === 0 ? "The Warlord's Hold" : `${campName(this.rng)} Camp`,
+        burned: false,
+      };
+    });
+  }
 }
+
+const CAMP_A = ['Ash', 'Black', 'Red', 'Bone', 'Crow', 'Wolf', 'Skull', 'Iron'];
+const CAMP_B = ['fang', 'hand', 'tooth', 'brand', 'claw', 'scar'];
+const campName = rng => rng.pick(CAMP_A) + rng.pick(CAMP_B);
 
 // ---------------------------------------------------------------- helpers
 
