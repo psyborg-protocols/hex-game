@@ -176,15 +176,23 @@ export function distance(q1, r1, q2, r2) {
  * which is exactly the tile the player sees.
  *
  * @param {(q:number, r:number) => number} topHeight  height of a column, or -1 if empty.
+ * @param {number} searchRadius  how far to look either side of the point.
+ * @param {number} peak  the tallest column there is. A column's top face is
+ *   drawn a wall height further up the screen for every level, so the summit of
+ *   a twenty-level peak is drawn nearly seven rows above its own ground line —
+ *   and a search that stops three rows down never finds it, and answers with
+ *   whatever hex is hidden behind the mountain instead. Pass the map's
+ *   `peakHeight()` and the search reaches as far down as anything could stand.
  */
-export function pickHex(px, py, topHeight, searchRadius = 3) {
+export function pickHex(px, py, topHeight, searchRadius = 3, peak = 0) {
   const approxQ = Math.round((px - GEOM.frameWidth / 2) / GEOM.stepX);
   const approxR = Math.round(py / GEOM.stepY);
+  const reach = Math.max(searchRadius, Math.ceil((peak * GEOM.wallHeight) / GEOM.stepY) + 1);
 
   const candidates = [];
   // Tall columns nearby can reach down over this point, so search generously in r.
   for (let q = approxQ - searchRadius; q <= approxQ + searchRadius; q++) {
-    for (let r = approxR - searchRadius; r <= approxR + searchRadius; r++) {
+    for (let r = approxR - searchRadius; r <= approxR + reach; r++) {
       const h = topHeight(q, r);
       candidates.push({ q, r, h, base: columnBaseY(q, r) });
     }

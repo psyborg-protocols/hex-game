@@ -7,8 +7,9 @@
 //   drop at most 2 levels    — you can jump down a bank, not off a cliff
 //   never enter water        — unless a bridge spans it, or you carry a boat
 //
-// Raiders walk by looser rules: they climb and drop further, and float across
-// water on rafts (slowly). What stops them is walls.
+// Raiders walk by looser rules: they climb and drop further, wade streams, and
+// raft across the river (slowly) — but only at the crossings the map marks.
+// What stops them is walls.
 
 import { neighbors, distance, columnKey } from './hexgrid.js';
 import { isWater } from './tileset.js';
@@ -28,35 +29,42 @@ export function canStep(map, from, to, opts = {}) {
   const b = map.get(to.q, to.r);
   if (!a || !b) return false;
 
+  // A bridge is walked at the height of its deck, not of the water under it.
+  const deckA = map.bridgeAt(from.q, from.r);
+  const deckB = map.bridgeAt(to.q, to.r);
+  const climb = (deckB ? deckB.h : b.h) - (deckA ? deckA.h : a.h);
+
   if (opts.raider) {
     if (b.feature?.wall && !opts.breakWalls) return false;
-    const climb = b.h - a.h;
+    // A band wades a stream anywhere, but it poles its rafts over the river
+    // only at a crossing, or walks over on a bridge somebody built.
+    if (isOpenWater(b.terrain) && !deckB && map.hasCrossings() && b.feature?.type !== 'crossing') return false;
     return climb <= 2 && -climb <= 3;
   }
 
   // A ladder joins its two ends whatever the drop between them.
   if (findLadder(map, from, to)) return true;
 
-  const onBridgeA = isBridged(map, from);
-  const onBridgeB = isBridged(map, to);
-  const wetA = isWater(a.terrain) && !onBridgeA;
-  const wetB = isWater(b.terrain) && !onBridgeB;
+  const wetA = isWater(a.terrain) && !deckA;
+  const wetB = isWater(b.terrain) && !deckB;
 
   if (opts.boat) {
     if (wetA && wetB) return true;
-    // Landing: a boat noses up to any bank that is not a cliff.
-    if (wetA && !wetB) return b.h - a.h <= BOAT_LANDING;
+    // Landing: a boat noses up to any bank, or bridge, that is not a cliff.
+    if (wetA && !wetB) return climb <= BOAT_LANDING;
     if (!wetA && wetB) return true;
   } else if (wetA || wetB) {
     return false;
   }
 
-  // A bridge deck is level with itself and with the banks it lands on.
-  if (onBridgeA || onBridgeB) return true;
-
-  const climb = b.h - a.h;
+  // Along a deck is always level. Stepping on or off one is an ordinary step,
+  // measured from the deck: that is what stops a bridge being a way up a cliff.
+  if (deckA && deckB) return true;
   return climb <= MAX_CLIMB && -climb <= MAX_DROP;
 }
+
+/** The river and the lakes: water too wide to wade, as a stream is not. */
+export const isOpenWater = terrain => terrain === 'river' || terrain === 'water';
 
 function findLadder(map, from, to) {
   return map.structures.find(s => s.type === 'ladder' && (
@@ -65,8 +73,7 @@ function findLadder(map, from, to) {
 }
 
 export function isBridged(map, at) {
-  return map.structures.some(s => s.type === 'bridge'
-    && s.tiles.some(t => t.q === at.q && t.r === at.r));
+  return !!map.bridgeAt(at.q, at.r);
 }
 
 /**
@@ -113,7 +120,7 @@ export function findPath(map, from, to, opts = {}) {
 function stepCost(map, from, to, opts) {
   const a = map.get(from.q, from.r);
   const b = map.get(to.q, to.r);
-  let c = 1 + Math.abs(b.h - a.h) * 0.4;
+  let c = 1 + Math.abs(map.surfaceAt(to.q, to.r) - map.surfaceAt(from.q, from.r)) * 0.4;
   if (isWater(b.terrain) && !isBridged(map, to)) c += opts.raider ? 3 : 1;
   if (b.feature?.wall) c += 14;     // only reachable with breakWalls
   if (b.terrain === 'path') c -= 0.3;

@@ -270,9 +270,11 @@ test('a real world offers something to do at the spawn', () => {
     const state = createState();          // level 1, no tools, no food
     const ctx = determineContext(world, state, map.spawn);
     ok(ctx.offers.length > 0, `${seed}: nothing to do where you wake up`);
-    // Foraging is what gets you your first energy, so it must not need energy.
+    // Something you can do on the energy you wake with. (Berries are hidden
+    // until the hex is explored, so foraging is not on the list yet; what is
+    // has to be work the first twenty energy covers.)
     const ids = ctx.offers.map(o => o.id);
-    ok(ids.includes('forage') || ids.includes('find_herb') || ids.includes('gather_stone'),
+    ok(ctx.offers.some(o => o.kind === 'harvest' && harvestSpec(o.id).energy <= state.energy),
       `${seed}: no way to start — offers were ${ids.join(', ')}`);
   }
 });

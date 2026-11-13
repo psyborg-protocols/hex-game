@@ -19,7 +19,7 @@ export const STAGES = [
     blurb: 'You have a handful of berries and the clothes you stand in.',
     goals: [
       { id: 'explore5', text: 'Explore 5 places', hint: 'Stand still on a hex for a moment to explore it.', test: s => Object.keys(s.mind?.explored || {}).length >= 5 },
-      { id: 'cord', text: 'Twist some cord', hint: 'Cut reeds at the water’s edge, then Craft → Woodworking.', test: s => has(s, 'cord') || has(s, 'stone_axe') || has(s, 'stone_hammer') },
+      { id: 'cord', text: 'Twist some cord', hint: 'Reeds grow where a shore is low: a lake, or a stream. Then Craft → Woodworking.', test: s => has(s, 'cord') || has(s, 'stone_axe') || has(s, 'stone_hammer') },
       { id: 'axe', text: 'Make a stone axe', hint: 'Stone + branch + cord. Stone lies under any rise.', test: s => anyOf(s, ['stone_axe', 'iron_axe']) },
       { id: 'hearth', text: 'Build a hearth', hint: 'Fell trees for logs, then Build → Hearth.', test: s => hasBuilt(s, 'hearth') },
     ],
@@ -38,7 +38,7 @@ export const STAGES = [
     id: 'defender', name: 'Hold the Line',
     blurb: 'Smoke across the river. They have seen your fire.',
     goals: [
-      { id: 'repel', text: 'Fight off a raid', hint: 'Raiders come every day or two. Walls slow them; towers shoot them.', test: s => (s.stats?.kills || 0) >= 2 },
+      { id: 'repel', text: 'Fight off a raid', hint: 'They come on the last night of each moon, by the way the omens mark. Walls slow them; towers shoot them.', test: s => (s.stats?.kills || 0) >= 2 },
       { id: 'defence', text: 'Build a watchtower or wall', hint: 'A palisade is logs only. A watchtower doubles your warning.', test: s => ['watchtower', 'palisade', 'stone_wall'].some(i => hasBuilt(s, i)) },
       { id: 'armour', text: 'Arm yourself', hint: 'Hide armour, a shield, or a bow from a workbench.', test: s => anyOf(s, ['hide_armor', 'shield', 'bow', 'iron_mail', 'sword']) },
       { id: 'cross', text: 'Cross the river', hint: 'Build a boat (Woodworking 4) or a bridge (5) — or buy a boat from fishers.', test: (s, w) => !!s.stats?.crossed },

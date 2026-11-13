@@ -72,10 +72,13 @@ export function brightnessAt(level) {
  */
 export function litImage(res, key, img, level, dim = false) {
   const b = brightnessAt(level);
-  if ((b === 1 && !dim) || !img) return img;
+  // `dim` was a flag and is now a mode: true or 'dim' for the eye view's dark,
+  // 'dormant' for ground you have not yet explored.
+  const mode = dim === true ? 'dim' : (dim || '');
+  if ((b === 1 && !mode) || !img) return img;
 
   const cache = (res.litCache ||= new Map());
-  const id = `${key}|${b.toFixed(2)}${dim ? '|dim' : ''}`;
+  const id = `${key}|${b.toFixed(2)}${mode ? `|${mode}` : ''}`;
   const hit = cache.get(id);
   if (hit) return hit;
 
@@ -86,9 +89,12 @@ export function litImage(res, key, img, level, dim = false) {
   c.imageSmoothingEnabled = false;
   // The eye view's unexplored ground: the same exposure, pushed down into the
   // dark and drained of most of its colour, so explored ground stands out.
-  c.filter = dim
-    ? `brightness(${(b * DIM * 100).toFixed(0)}%) saturate(45%)`
-    : `brightness(${(b * 100).toFixed(0)}%)`;
+  // Dormant ground: the same picture with a little of the colour and light
+  // taken out. Not dark, not grey — only less awake than the ground beside it
+  // that you have stood on, so that where you have been looks like somewhere.
+  c.filter = mode === 'dim' ? `brightness(${(b * DIM * 100).toFixed(0)}%) saturate(45%)`
+    : mode === 'dormant' ? `brightness(${(b * DORMANT * 100).toFixed(0)}%) saturate(64%)`
+      : `brightness(${(b * 100).toFixed(0)}%)`;
   c.drawImage(img, 0, 0);
   cache.set(id, canvas);
   return canvas;
@@ -97,15 +103,19 @@ export function litImage(res, key, img, level, dim = false) {
 /** How dark unexplored ground goes in the eye view. */
 export const DIM = 0.38;
 
+/** How much light unexplored ground keeps the rest of the time. */
+export const DORMANT = 0.93;
+
 /**
  * Draw one column, bottom level first so each level covers the one beneath it.
  *
  * @param {CanvasRenderingContext2D} ctx  world-space context (already translated)
  * @param {{images:Object}} res
  * @param {{q,r,h,sprite,frame}} col
- * @param {boolean} dim  draw it darkened, for the eye view
+ * @param {boolean|string} dim  '' as it is, 'dim' for the eye view, 'dormant' for unexplored
+ * @param {number} sway  pixels to push the top level sideways: a wood being shaken
  */
-export function drawColumn(ctx, res, col, dim = false) {
+export function drawColumn(ctx, res, col, dim = false, sway = 0) {
   const img = res.images[col.sprite];
   if (!img) return;
 
@@ -115,6 +125,6 @@ export function drawColumn(ctx, res, col, dim = false) {
   for (let level = 0; level <= col.h; level++) {
     ctx.drawImage(litImage(res, col.sprite, img, level, dim),
       sx, 0, GEOM.frameWidth, GEOM.frameHeight,
-      x, frameOrigin(col.q, col.r, level).y, GEOM.frameWidth, GEOM.frameHeight);
+      x + (level === col.h ? sway : 0), frameOrigin(col.q, col.r, level).y, GEOM.frameWidth, GEOM.frameHeight);
   }
 }

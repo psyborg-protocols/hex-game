@@ -87,8 +87,14 @@ export const DEEP_OPEN_FRAMES = [0];
  */
 export const TERRAIN = {
   grass:        { name: 'Grassland',    sheets: ['Tiles_GrassBase1', 'Tiles_GrassBase2', 'Tiles_GrassBase3'], walk: true },
-  meadow:       { name: 'Meadow',       sheets: ['Tiles_DecorNoTrees'], walk: true, forage: true },
-  oak_wood:     { name: 'Oak Wood',     sheets: ['Tiles_DecorOak'],  walk: true, trees: 'oak',  overhang: true },
+  // A meadow used to draw from Tiles_DecorNoTrees, whose frames have rocks,
+  // branches and bushes painted into them. Those are now things you pick up,
+  // stood on the hex as props (game/nodes.js), and a painted rock cannot be
+  // picked up. So a meadow is clean grass with real rocks on it, and the sheet
+  // is left for the editor. Frames 1 and 5 of the oak sheet have a rock painted
+  // in for the same reason, and are passed over.
+  meadow:       { name: 'Meadow',       sheets: ['Tiles_GrassBase1', 'Tiles_GrassBase2', 'Tiles_GrassBase3'], walk: true, forage: true },
+  oak_wood:     { name: 'Oak Wood',     sheets: ['Tiles_DecorOak'],  frames: [0, 2, 3, 4], walk: true, trees: 'oak',  overhang: true },
   pine_wood:    { name: 'Pine Wood',    sheets: ['Tiles_DecorPine'], walk: true, trees: 'pine', overhang: true },
   forest_floor: { name: 'Forest Floor', sheets: ['Tiles_ForestFloor'], walk: true },
   pine_floor:   { name: 'Pine Floor',   sheets: ['Tiles_PineFloor'], walk: true },
@@ -222,7 +228,8 @@ export function supportedMasks(index) {
 export function variantFor(terrainId, q, r) {
   const t = TERRAIN[terrainId] || TERRAIN.grass;
   const sheet = t.sheets[hashPick(q, r, t.sheets.length, 7)];
-  return { sprite: sheet, frame: hashPick(q, r, FRAMES_PER_SHEET, 13) };
+  const frame = t.frames ? t.frames[hashPick(q, r, t.frames.length, 13)] : hashPick(q, r, FRAMES_PER_SHEET, 13);
+  return { sprite: sheet, frame };
 }
 
 /** Terrain lookup that never returns undefined. */

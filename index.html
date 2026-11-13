@@ -10,26 +10,38 @@
   <div id="stage">
     <canvas id="view"></canvas>
 
-    <!-- World-anchored buttons, dice and floating text; positioned by the camera. -->
+    <!-- Anchored to the world: dice, what you gathered, the names of places. -->
     <div id="worldspace"></div>
 
-    <!-- Top-left: health, energy, gold, day, skills. -->
-    <div id="hud">
-      <div id="hud-stats"></div>
-      <div id="hud-skills"></div>
-      <div id="hud-terrain" class="dim"></div>
+    <!--
+      Everything docked to the screen lives in one grid, each thing in a cell of
+      its own, so nothing can land on anything else. And all of it is quiet: see
+      the top of ui.js for the rule, and the "chrome" section of ui.css.
+    -->
+    <div id="chrome">
+      <!-- Top-left: two bars and the moon. Point at it for the numbers. -->
+      <div id="hud">
+        <div id="hud-stats"></div>
+        <div id="hud-terrain"></div>
+        <div id="hud-more"></div>
+      </div>
+
+      <!-- Top-centre: a chapter's name, when one begins. -->
+      <div id="card" aria-live="polite"></div>
+
+      <!-- Top-right: the one thing to reach for next. Point at it for the rest. -->
+      <aside id="journey" aria-live="polite"></aside>
+
+      <!-- Bottom-left: what just happened, a line at a time. -->
+      <div id="murmurs" aria-live="polite"></div>
+
+      <!-- Bottom-centre: what this hex offers, over the menu buttons. -->
+      <div id="dock">
+        <div id="actions"></div>
+        <nav id="taskbar"></nav>
+      </div>
     </div>
 
-    <!-- Top-right: the chapter you are on and what to reach for next. -->
-    <aside id="journey" aria-live="polite"></aside>
-
-    <!-- A red line while a raid is coming. -->
-    <div id="alert" role="status"></div>
-
-    <nav id="taskbar"></nav>
-
-    <div id="notifications"></div>
-    <div id="pings" aria-live="polite"></div>
     <div id="modal-root"></div>
   </div>
 

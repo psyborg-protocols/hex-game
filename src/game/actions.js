@@ -12,6 +12,8 @@ import { addXp, levelOf } from './skills.js';
 import { recordBuilt, forgetBuilt, itemName, RECIPES, STRUCTURE_HP, ITEMS, DAY_LENGTH, isFree } from './state.js';
 import { craft } from './crafting.js';
 import { harvestsHere } from './discovery.js';
+import { takeNode } from './nodes.js';
+import { regrowsAt } from './harvests.js';
 
 /** How far Lore reaches when you prospect. */
 export const PROSPECT_RADIUS = 4;
@@ -69,6 +71,7 @@ export function harvest(world, state, at, id, rng) {
   if (!gained.length) return { ok: false, message: 'Your pack is full.' };
   spend(state, spec.energy);
   markPicked(state, col, spec.id);
+  takeNode(state, col, spec.id);
 
   // --- what the harvest costs the world ---
 
@@ -112,6 +115,26 @@ export function harvest(world, state, at, id, rng) {
   const levels = addXp(state, spec.skill, spec.xp);
   const what = gained.map(g => `${g.qty} ${itemName(g.id)}`).join(', ');
   return { ok: true, gained, levels, changed, message: `+ ${what}` };
+}
+
+/** How long before a shaken wood has anything loose in it again. */
+const SHAKE_AGAIN = 60;
+
+/**
+ * Shake a tree you have no axe for. It does not come down, but a branch does:
+ * trying the thing you cannot yet do is never nothing, and what falls out is
+ * the first part of what you were missing.
+ * @returns {{ok, gained?, message?}}
+ */
+export function shakeTree(world, state, at) {
+  const col = world.map.get(at.q, at.r);
+  if (!col || col.feature?.type !== 'trees' || !(col.feature.remaining > 0)) return { ok: false };
+  const k = `${col.q},${col.r}:shake`;
+  state.picked ||= {};
+  if ((state.picked[k] ?? -1) > (state.time || 0)) return { ok: true, gained: [] };
+  state.picked[k] = (state.time || 0) + SHAKE_AGAIN;
+  const got = addItem(state, 'branch', 1);
+  return { ok: true, gained: got ? [{ id: 'branch', qty: got }] : [] };
 }
 
 /**
@@ -158,6 +181,8 @@ const bridged = (map, q, r) => map.structures.some(s => s.type === 'bridge'
  * @returns {{edge, tiles, landing}|null}
  */
 export function bridgeSpan(map, at, edge) {
+  const start = map.get(at.q, at.r);
+  if (!start) return null;
   const tiles = [];
   let cur = { q: at.q, r: at.r };
   for (let i = 0; i <= MAX_SPAN; i++) {
@@ -169,7 +194,14 @@ export function bridgeSpan(map, at, edge) {
       tiles.push(col);
       continue;
     }
-    return tiles.length ? { edge, tiles, landing: col } : null;
+    if (!tiles.length) return null;
+    // The deck rests on the lower bank. A far bank more than a step above it
+    // would leave the bridge ending at a wall, and water standing higher than
+    // the deck would drown it, so neither is a crossing.
+    const h = Math.min(start.h, col.h);
+    if (Math.abs(start.h - col.h) > MAX_CLIMB) return null;
+    if (tiles.some(t => t.h > h)) return null;
+    return { edge, tiles, landing: col, h };
   }
   return null;
 }
@@ -251,7 +283,7 @@ export function build(world, state, at, recipeId, target, ctx = {}) {
 
   if (item === 'bridge') {
     const tiles = spot.span.tiles.map(t => ({ q: t.q, r: t.r }));
-    map.addStructure({ type: 'bridge', edge: spot.span.edge, tiles });
+    map.addStructure({ type: 'bridge', edge: spot.span.edge, h: spot.span.h, tiles });
     recordBuilt(state, item, tiles[0].q, tiles[0].r);
     return { ok: true, message: `You lay a ${tiles.length}-hex bridge across the water.`, column: col, levels: result.levelsGained };
   }

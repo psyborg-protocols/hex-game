@@ -24,7 +24,14 @@ const beside = pred => (col, map) =>
     return other && pred(other);
   });
 const water = col => !!TERRAIN[col.terrain]?.water;
-const lowBank = (col, map) => col.h <= 2 && beside(water)(col, map);
+/**
+ * A shore: ground no more than a step above the water it stands beside.
+ *
+ * It used to be "low ground next to water", measured from the bottom of the
+ * world, which called the lip of the river gorge a reed bed because the lip
+ * happened to be at level two. What matters is how far down the water is.
+ */
+const waterside = (col, map) => beside(o => water(o) && col.h - o.h <= 1)(col, map);
 
 /**
  * A harvest is:
@@ -53,7 +60,7 @@ export const HARVESTS = {
     verb: 'Searching',
   },
   gather_branch: {
-    id: 'gather_branch', name: 'Gather Branches', skill: 'woodworking', level: 1, xp: 1, energy: 0.5,
+    id: 'gather_branch', name: 'Gather Branches', skill: 'woodworking', level: 1, xp: 1, energy: 0.5, regrows: 300,
     where: on(...WOODED, ...FOREST, 'meadow'),
     yields: { branch: [2, 3] },
     verb: 'Gathering',
@@ -68,25 +75,28 @@ export const HARVESTS = {
     verb: 'Chopping',
   },
   cut_reeds: {
-    id: 'cut_reeds', name: 'Cut Reeds', skill: 'woodworking', level: 1, xp: 1, energy: 0.5,
-    where: lowBank,
+    id: 'cut_reeds', name: 'Cut Reeds', skill: 'woodworking', level: 1, xp: 1, energy: 0.5, regrows: 180,
+    where: waterside,
     yields: { reed: [2, 3] },
     verb: 'Cutting',
   },
   dig_clay: {
-    id: 'dig_clay', name: 'Dig Clay', skill: 'homesteading', level: 1, xp: 2, energy: 0.5,
-    where: lowBank,
+    id: 'dig_clay', name: 'Dig Clay', skill: 'homesteading', level: 1, xp: 2, energy: 0.5, regrows: 150,
+    where: waterside,
     yields: { clay: [1, 2] },
     verb: 'Digging',
   },
   gather_stone: {
     id: 'gather_stone', name: 'Gather Stone', skill: 'stoneworking', level: 1, xp: 1, energy: 0.5,
-    where: (col, map) => ROCKY.includes(col.terrain) || beside(o => o.h - col.h >= 1)(col, map),
+    // Any ground can have a rock lying on it; which hexes do, and how many are
+    // left, is nodes.js's business. Stone no longer comes off a cliff by hand:
+    // that is what the hammer is for.
+    where: col => !!TERRAIN[col.terrain]?.walk,
     yields: { stone: [2, 2] },
     verb: 'Gathering',
   },
   gather_flint: {
-    id: 'gather_flint', name: 'Pick Flint', skill: 'stoneworking', level: 1, xp: 2, energy: 0.5,
+    id: 'gather_flint', name: 'Pick Flint', skill: 'stoneworking', level: 1, xp: 2, energy: 0.5, regrows: 240,
     where: on(...ROCKY),
     yields: { flint: [1, 2] },
     verb: 'Searching',
@@ -163,7 +173,10 @@ export function cliffTarget(map, col) {
  * gone quiet. Without this, one berry hex fed you forever and nothing ever made
  * you move on.
  */
-const REGROW_TEXT = { forage: 'Picked clean', find_herb: 'Picked clean', hunt: 'The game has fled', fish: 'The fish have gone quiet' };
+const REGROW_TEXT = {
+  forage: 'Picked clean', find_herb: 'Picked clean', hunt: 'The game has fled', fish: 'The fish have gone quiet',
+  gather_branch: 'Nothing left lying here', cut_reeds: 'Cut to the stubble', dig_clay: 'Dug out', gather_flint: 'Picked over',
+};
 const pickKey = (col, id) => `${col.q},${col.r}:${id}`;
 export const regrowsAt = (state, col, id) => state.picked?.[pickKey(col, id)] ?? -1;
 export function markPicked(state, col, id) {

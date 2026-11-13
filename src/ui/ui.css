@@ -19,7 +19,8 @@ html, body {
   overflow: hidden;
   background: #0d0f14;
   color: var(--ink);
-  font-family: 'Cinzel', Georgia, serif;
+  /* Georgia for everything said in passing; Cinzel is kept for titles. */
+  font-family: Georgia, 'Times New Roman', serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -35,264 +36,361 @@ html, body {
   touch-action: none;
 }
 
-/* ---------------------------------------------------------------- HUD */
+/* ------------------------------------------------------------- chrome */
 
-#hud {
+/*
+ * Everything docked to the screen is a cell of this grid:
+ *
+ *     hud      card     journey
+ *     murmurs  murmurs  .
+ *     dock     dock     dock
+ *
+ * Nothing in here is positioned by hand: two things in different cells cannot
+ * land on top of each other, whatever they say and however long it is.
+ *
+ * And none of it has a box. Text sits on the map with a shadow under it; the
+ * corners are a few thin lines. A panel's worth of dark backing appears behind
+ * a corner only while you are pointing at it, when it has more to say.
+ */
+#chrome {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 10px 12px;
-  background: linear-gradient(180deg, rgba(30, 25, 17, 0.9), rgba(18, 15, 11, 0.86));
-  border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-  font-size: 13px;
-  line-height: 1.5;
+  inset: 10px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "hud     card    journey"
+    "murmurs murmurs ."
+    "dock    dock    dock";
+  gap: 8px 12px;
   pointer-events: none;
-  width: 236px;
+  font-size: 13px;
+  text-shadow: 0 1px 2px #000, 0 0 6px rgba(0, 0, 0, 0.75);
 }
 
-#hud b { color: var(--accent); font-weight: 700; }
-#hud .dim { color: var(--ink-dim); font-size: 11px; }
+#hud { grid-area: hud; align-self: start; justify-self: start; }
+#card { grid-area: card; align-self: start; justify-self: center; }
+#journey { grid-area: journey; align-self: start; justify-self: end; }
+#murmurs { grid-area: murmurs; }
+#dock { grid-area: dock; }
 
-.bar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-.bar-row b { min-width: 18px; text-align: right; }
-.glyph { width: 14px; text-align: center; }
-.glyph.hp { color: #e0606e; }
-.glyph.en { color: #f2c94c; }
-.meter { flex: 1; height: 7px; background: #2a2219; border: 1px solid #000; border-radius: 4px; overflow: hidden; }
-.meter i { display: block; height: 100%; transition: width 220ms ease-out; }
-.meter.hp i { background: linear-gradient(90deg, #a83a4a, #e0606e); }
-.meter.en i { background: linear-gradient(90deg, #c4902c, #f2c94c); }
-.meter.day { flex: 1; height: 4px; }
-.meter.day i { background: #d9b45b; }
-.meter.xp { height: 3px; flex: 1; max-width: 60px; }
-.meter.xp i { background: #8fb36a; }
-.hud-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
-.hud-line.day { margin-top: 4px; }
-.hud-line.day.night { color: #9fb0ff; }
+/* A corner: bare until pointed at (or tapped), then backed and opened. */
+#hud, #journey {
+  padding: 6px 9px;
+  border-radius: 6px;
+  pointer-events: auto;
+  cursor: default;
+  transition: background 220ms ease-out;
+}
+#hud:hover, #hud.open, #journey:hover, #journey.open { background: rgba(14, 12, 9, 0.86); }
 
-#hud-skills { margin-top: 6px; padding-top: 6px; border-top: 1px solid #3a3227; }
-#hud-skills .skill { display: flex; align-items: center; gap: 6px; }
-#hud-skills .skill .dim { width: 44px; text-transform: capitalize; }
-#hud-skills img { width: 16px; height: 16px; image-rendering: pixelated; }
-#hud-terrain { margin-top: 4px; min-height: 15px; text-transform: none; }
+/* ---------------------------------------------------------------- HUD */
+
+#hud { width: max-content; max-width: 100%; }
+
+.vital {
+  width: 132px;
+  height: 4px;
+  margin-bottom: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  opacity: 0.85;
+}
+.vital i { display: block; height: 100%; transition: width 220ms ease-out; }
+.vital.hp i { background: #c9566a; }
+.vital.en i { background: #d8b04a; }
+/* Low, and worth a glance: the only time a bar asks for one. */
+.vital.low { opacity: 1; animation: vital-low 1.7s ease-in-out infinite; }
+@keyframes vital-low { 50% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 9px 1px rgba(232, 104, 118, 0.95); } }
+
+/*
+ * The moon dial: the whole moon left to right, quiet until the omens, amber
+ * through them, red for the night the raid comes. The mark is now.
+ */
+.sky { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: #e9d9a6; }
+.sky.night { color: #a9b8ff; }
+.sky .orb { font-size: 11px; line-height: 1; width: 12px; text-align: center; opacity: 0.9; }
+.moon {
+  position: relative;
+  width: 114px;
+  height: 3px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  background: linear-gradient(90deg,
+    rgba(96, 122, 70, 0.9) 0, rgba(96, 122, 70, 0.9) var(--omens),
+    #b08a30 var(--omens), #b08a30 var(--dusk),
+    #b2404f var(--dusk), #b2404f 100%);
+}
+.moon i {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 9px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: #fff6dc;
+  box-shadow: 0 0 4px rgba(255, 246, 220, 0.9);
+  transition: left 240ms linear;
+}
+
+/* What is coming, in a line under the moon. */
+.omen { margin-top: 5px; font-style: italic; font-size: 12px; color: #f0cf7a; }
+.omen.raid { color: #ff9aa5; }
+
+#hud-terrain { min-height: 0; font-size: 12px; font-style: italic; color: var(--ink-dim); }
+#hud-terrain:not(:empty) { margin-top: 4px; }
+
+#hud-more {
+  display: none;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(107, 88, 54, 0.6);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+  text-shadow: none;
+}
+#hud:hover #hud-more, #hud.open #hud-more { display: block; }
+#hud-more b { color: var(--ink); font-weight: 400; }
+#hud-more .skills { margin-top: 6px; }
+#hud-more .skill { display: flex; align-items: center; gap: 6px; }
+#hud-more .skill span { width: 92px; text-transform: capitalize; }
+#hud-more .skill img { width: 14px; height: 14px; image-rendering: pixelated; }
+#hud-more .xp { flex: 1; min-width: 36px; height: 2px; background: #3a3227; border-radius: 1px; overflow: hidden; }
+#hud-more .xp i { display: block; height: 100%; background: #8fb36a; }
+#hud-more .free { margin-top: 6px; color: #f0c46a; font-style: italic; }
 
 /* ------------------------------------------------------------ journey */
 
-#journey {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 270px;
-  padding: 10px 14px 8px;
-  background: linear-gradient(180deg, rgba(30, 25, 17, 0.9), rgba(18, 15, 11, 0.86));
-  border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-  pointer-events: none;
-  font-size: 13px;
-}
-.stage-kicker { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); }
-.stage-name { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
-#journey ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-#journey li { display: flex; gap: 8px; align-items: flex-start; }
-#journey li .box {
-  flex: none; width: 14px; height: 14px; margin-top: 2px; border: 1px solid var(--panel-edge);
-  border-radius: 3px; font-size: 11px; line-height: 12px; text-align: center; color: #9be38a;
-}
-#journey li.done { color: var(--ink-dim); text-decoration: line-through; text-decoration-color: rgba(185, 171, 143, 0.5); }
-#journey li.done .box { border-color: #6aa85b; background: rgba(106, 168, 91, 0.2); }
-#journey li small { display: block; color: #d8c79d; font-size: 11px; line-height: 1.35; margin-top: 2px; font-family: Georgia, serif; }
+#journey { max-width: 270px; text-align: right; }
 
-#alert {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-  padding: 5px 16px; border-radius: 4px; font-size: 14px; font-weight: 700;
-  background: rgba(70, 14, 22, 0.92); border: 1px solid #d1596d; color: #ffd9de;
-  box-shadow: 0 0 18px rgba(209, 89, 109, 0.45);
-  pointer-events: none; display: none;
-  animation: alert-pulse 1.4s ease-in-out infinite;
+/* The one line. It arrives clearly, then settles back. */
+.goal-now { font-style: italic; color: var(--ink); opacity: 0.62; transition: opacity 1600ms ease-out; }
+#journey.fresh .goal-now, #journey:hover .goal-now, #journey.open .goal-now { opacity: 1; }
+.goal-done { font-style: italic; color: #b9e0a8; text-decoration: line-through; animation: goal-done 2400ms ease-in forwards; }
+@keyframes goal-done { 0%, 55% { opacity: 0.95; } 100% { opacity: 0; } }
+
+/* How. Kept back unless asked for, or unless you have been here a while. */
+.goal-hint {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #d8c79d;
+  transition: opacity 900ms ease-out, max-height 900ms ease-out;
 }
-#alert.on { display: block; }
-#alert.on ~ #notifications { top: 48px; }
-@keyframes alert-pulse { 50% { box-shadow: 0 0 6px rgba(209, 89, 109, 0.2); } }
+#journey.stuck .goal-hint { max-height: 80px; opacity: 0.8; }
+#journey:hover .goal-hint, #journey.open .goal-hint { display: none; }
+
+.goal-more { display: none; margin-top: 8px; padding-top: 7px; border-top: 1px solid rgba(107, 88, 54, 0.6); text-align: left; text-shadow: none; }
+#journey:hover .goal-more, #journey.open .goal-more { display: block; }
+.goal-more .chapter { font-family: 'Cinzel', Georgia, serif; font-size: 13px; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 5px; }
+.goal-more .chapter span { color: var(--ink-dim); font-size: 10px; }
+.goal-more ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.goal-more li { font-size: 12px; color: var(--ink-dim); }
+.goal-more li.now { color: var(--ink); }
+.goal-more li.met { text-decoration: line-through; text-decoration-color: rgba(185, 171, 143, 0.5); opacity: 0.7; }
+.goal-more li small { display: block; margin-top: 1px; font-size: 11px; line-height: 1.35; color: #c9b88e; opacity: 0.85; }
+
+/* --------------------------------------------------------------- card */
+
+/* A chapter's name. No box, no kicker: it fades up, holds, and goes. */
+.card { text-align: center; animation: card 5200ms ease-in-out forwards; text-shadow: 0 2px 6px #000, 0 0 26px rgba(0, 0, 0, 0.95); }
+.card b { display: block; font: 400 26px 'Cinzel', Georgia, serif; letter-spacing: 0.16em; color: #f3e6c4; }
+.card span { display: block; margin-top: 2px; font-size: 13px; font-style: italic; color: #d8c79d; }
+@keyframes card { 0% { opacity: 0; letter-spacing: 0.1em; } 18% { opacity: 1; } 76% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ------------------------------------------------------------ murmurs */
+
+/*
+ * The running commentary: one plain line at a time, bottom left. The backing is
+ * a smudge that fades out to the right, enough to read against grass and no
+ * more; it is not a box.
+ */
+#murmurs {
+  align-self: end;
+  justify-self: start;
+  max-width: min(100%, 460px);
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 2px;
+}
+.murmur {
+  padding: 2px 26px 3px 7px;
+  border-radius: 3px;
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--ink);
+  background: linear-gradient(90deg, rgba(10, 9, 7, 0.62), rgba(10, 9, 7, 0.4) 65%, rgba(10, 9, 7, 0));
+  animation: murmur var(--life, 3600ms) ease-in-out forwards;
+}
+.murmur.gain { color: #ffe9a8; }
+.murmur.bad { color: #ffc2c9; }
+.murmur.good { color: #cdeebb; }
+.murmur.level { color: #c3d8ff; }
+.murmur.deed { color: #bfe6d0; }
+@keyframes murmur {
+  0% { opacity: 0; transform: translateY(5px); }
+  7% { opacity: 0.94; transform: none; }
+  82% { opacity: 0.94; }
+  100% { opacity: 0; }
+}
+
+/* --------------------------------------------------------------- dock */
+
+#dock { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; }
+
+/* What the hex you stand on offers: words, in a row. */
+#actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; max-width: 100%; }
+#actions:empty { display: none; }
+
+.context-button {
+  padding: 4px 12px 5px;
+  background: rgba(14, 12, 9, 0.5);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  color: var(--ink);
+  font: 13px Georgia, serif;
+  text-shadow: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 140ms, border-color 140ms, color 140ms;
+}
+.context-button kbd {
+  min-width: 0; padding: 0; margin: 0 6px 0 0; border: none; background: none;
+  font: 10px Georgia, serif; color: var(--ink-dim); opacity: 0.75; vertical-align: 1px;
+}
+.context-button:hover { background: rgba(14, 12, 9, 0.85); border-color: rgba(217, 180, 91, 0.7); color: #ffe7a8; }
+.context-button.important { color: #ffe7a8; border-color: rgba(217, 180, 91, 0.4); }
+
+/* The menu: a glyph each, faint until you reach for them. */
+#taskbar { display: flex; flex-wrap: wrap; max-width: 100%; justify-content: center; gap: 6px; pointer-events: auto; opacity: 0.6; transition: opacity 200ms; }
+#taskbar:hover, #taskbar:focus-within { opacity: 1; }
+#taskbar button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 7px;
+  background: rgba(14, 12, 9, 0.55);
+  border: 1px solid transparent;
+  border-radius: 16px;
+  color: var(--ink);
+  font: italic 12px Georgia, serif;
+  text-shadow: inherit;
+  cursor: pointer;
+  transition: border-color 140ms, color 140ms, background 140ms;
+}
+#taskbar button:hover { border-color: rgba(217, 180, 91, 0.7); color: #ffe7a8; background: rgba(14, 12, 9, 0.85); }
+#taskbar button svg { display: block; flex: none; }
+/* A button says its name until you have opened it once. */
+#taskbar .lbl { display: none; padding-right: 4px; }
+#taskbar button.new .lbl { display: inline; }
+/* Something new behind this one. */
+#taskbar button.nudge { color: #ffe7a8; animation: nudge 2.6s ease-in-out infinite; }
+@keyframes nudge { 50% { box-shadow: 0 0 12px 1px rgba(217, 180, 91, 0.6); border-color: rgba(217, 180, 91, 0.7); } }
+#taskbar button.eye.on { color: #f6cc52; border-color: rgba(246, 204, 82, 0.6); }
 
 kbd {
   display: inline-block; min-width: 14px; padding: 0 3px; margin: 0 4px 0 0;
   border: 1px solid #5a4a2e; border-bottom-width: 2px; border-radius: 3px;
   font: 10px/13px Georgia, serif; color: var(--ink-dim); text-align: center; background: rgba(0, 0, 0, 0.25);
 }
-#taskbar kbd { margin: 0 0 0 6px; }
-#taskbar button { display: flex; align-items: center; white-space: nowrap; }
 
 /* ------------------------------------------------------- world-anchored */
 
 #worldspace {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
   overflow: hidden;
 }
 
-.context-button {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  padding: 4px 10px;
-  background: rgba(20, 17, 12, 0.92);
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.context-button:hover { border-color: var(--accent); color: var(--accent); }
-.context-button.important { border-color: var(--accent); color: #ffe7a8; box-shadow: 0 0 10px rgba(217, 180, 91, 0.45); }
-.context-button kbd { margin-right: 6px; }
-
-/* dice and floating text */
+/* dice */
 .dice {
   position: absolute; transform: translate(-50%, -100%);
-  display: flex; align-items: center; gap: 2px; padding: 3px 5px;
-  background: rgba(16, 12, 10, 0.88); border: 1px solid #5a4a2e; border-radius: 4px;
+  display: flex; align-items: center; gap: 2px; padding: 2px 4px;
+  background: rgba(16, 12, 10, 0.7); border-radius: 4px;
   pointer-events: none; white-space: nowrap; animation: fade-in 120ms ease-out;
 }
 .dice.out { opacity: 0; transition: opacity 280ms; }
 .die {
-  font-style: normal; width: 15px; height: 15px; border-radius: 3px; font: 700 10px/15px Georgia, serif;
-  text-align: center; opacity: 0.45;
+  font-style: normal; width: 13px; height: 13px; border-radius: 3px; font: 700 9px/13px Georgia, serif;
+  text-align: center; opacity: 0.4;
 }
 .die.atk { background: #6e2430; color: #ffd9de; }
 .die.def { background: #c9c3b4; color: #1b1420; }
-.die.on { opacity: 1; box-shadow: 0 0 6px rgba(255, 220, 150, 0.8); }
+.die.on { opacity: 1; box-shadow: 0 0 5px rgba(255, 220, 150, 0.7); }
 .dice .vs { font-size: 9px; color: var(--ink-dim); margin: 0 2px; }
-.dice .dmg { margin-left: 4px; font-size: 13px; color: #ff8a96; }
+.dice .dmg { margin-left: 4px; font-size: 12px; color: #ff8a96; }
 .dice.friendly .dmg { color: #a6f08a; }
-.dice .dmg.miss { color: var(--ink-dim); font-size: 11px; }
+.dice .dmg.miss { color: var(--ink-dim); }
 
+/* What rises off the world: what you gathered, the name of a place. */
 .float {
   position: absolute; transform: translate(-50%, -100%); pointer-events: none;
-  font-size: 13px; font-weight: 700; white-space: nowrap; color: #f6e7b8;
-  text-shadow: 0 1px 0 #000, 0 0 6px rgba(0, 0, 0, 0.8);
-  animation: float-up 1.3s ease-out forwards;
+  font-size: 12px; font-style: italic; white-space: nowrap; color: #f6e7b8;
+  text-shadow: 0 1px 1px #000, 0 0 5px rgba(0, 0, 0, 0.9);
+  animation: float-up var(--life, 1500ms) ease-out forwards;
 }
+/* "+2 log", not "+2 Log": a name is the only thing here that gets a capital. */
+.float:not(.place) { text-transform: lowercase; }
 .float.gain { color: #ffe08a; }
 .float.find { color: #a6f0e8; }
 .float.heal { color: #a6f08a; }
-@keyframes float-up { from { opacity: 0; margin-top: 4px; } 15% { opacity: 1; } to { opacity: 0; margin-top: -26px; } }
-
-/* ---------------------------------------------------------- notifications */
-
-#notifications {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-  pointer-events: none;
-}
-
-.notification {
-  padding: 6px 14px;
-  background: rgba(20, 17, 12, 0.92);
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  font-size: 13px;
-  animation: fade-in 160ms ease-out;
-}
+/* A place naming itself: a little larger, in its tier's colour, and it stays. */
+.float.place { font-size: 14px; letter-spacing: 0.04em; color: #f3e6c4; }
+.float.tier-1 { color: rgb(226, 156, 104); }
+.float.tier-2 { color: rgb(214, 224, 240); }
+.float.tier-3 { color: rgb(250, 212, 98); text-shadow: 0 1px 1px #000, 0 0 10px rgba(246, 204, 82, 0.55); }
+@keyframes float-up { from { opacity: 0; margin-top: 4px; } 12% { opacity: 1; } 75% { opacity: 1; } to { opacity: 0; margin-top: -22px; } }
 
 @keyframes fade-in { from { opacity: 0; transform: translateY(-4px); } }
 
-/* -------------------------------------------------------------- taskbar */
-
-#taskbar {
+/* A piece of work under way: a thin line over your head, and nothing written. */
+.progress {
   position: absolute;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-}
-
-#taskbar button {
-  padding: 6px 16px;
-  background: rgba(20, 17, 12, 0.92);
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-#taskbar button:hover { border-color: var(--accent); color: var(--accent); }
-#taskbar button.nudge { border-color: var(--accent); color: #ffe7a8; box-shadow: 0 0 12px rgba(217, 180, 91, 0.55); }
-.notification.bad { border-color: #d1596d; color: #ffd9de; }
-
-#taskbar button.eye { display: flex; align-items: center; padding: 6px 12px; }
-#taskbar button.eye.on {
-  border-color: #f6cc52;
-  color: #f6cc52;
-  box-shadow: 0 0 12px rgba(246, 204, 82, 0.45);
-}
-
-/* ---------------------------------------------------------------- pings */
-
-/* The tier colours match TIER_COLORS in render/discovery_fx.js. */
-#pings {
-  position: absolute;
-  top: 18%;
-  left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -100%);
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
   pointer-events: none;
-  display: flex;
-  justify-content: center;
 }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); }
 
-.ping {
-  --tone: 240, 230, 210;
-  min-width: 220px;
-  padding: 10px 26px 12px;
-  text-align: center;
-  background: rgba(20, 17, 12, 0.94);
-  border: 1px solid rgb(var(--tone));
-  border-radius: 4px;
-  box-shadow: 0 0 24px rgba(var(--tone), 0.45), inset 0 0 18px rgba(var(--tone), 0.12);
-  animation: ping-in 340ms cubic-bezier(.2, 1.4, .4, 1);
+/* --------------------------------------------------------- raid night */
+
+/*
+ * The night a raid is on, the edges of the screen go dark and red and breathe.
+ * It is the whole of the alarm: no banner, nothing flashing.
+ */
+#stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 150px 34px rgba(140, 16, 36, 0.42);
+  transition: opacity 2400ms ease-in-out;
 }
-.ping.out { opacity: 0; transform: translateY(-6px); transition: all 240ms ease-in; }
-
-.ping-kicker {
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgb(var(--tone));
-  opacity: 0.85;
-}
-.ping-title { font-size: 19px; font-weight: 700; margin: 2px 0; }
-.ping-xp { font-size: 12px; color: rgb(var(--tone)); }
-
-.ping.tier-1 { --tone: 214, 137, 82; }
-.ping.tier-2 { --tone: 206, 218, 236; }
-.ping.tier-3 { --tone: 246, 204, 82; }
-.ping.tier-3 .ping-title { text-shadow: 0 0 12px rgba(246, 204, 82, 0.6); }
-.ping.kind-achievement, .ping.kind-goal { --tone: 150, 214, 180; }
-.ping.kind-level { --tone: 160, 200, 255; }
-.ping.kind-stage, .ping.kind-victory { --tone: 246, 204, 82; }
-.ping.kind-stage .ping-title, .ping.kind-victory .ping-title { font-size: 24px; }
-.ping.kind-raid { --tone: 230, 90, 105; }
-.ping.kind-village,
-.ping.kind-trade { --tone: 217, 180, 91; }
-
-@keyframes ping-in {
-  from { opacity: 0; transform: scale(0.85); }
-}
+#stage.raid-night::after { opacity: 1; animation: dread 3600ms ease-in-out infinite; }
+@keyframes dread { 50% { box-shadow: inset 0 0 120px 22px rgba(140, 16, 36, 0.3); } }
 
 /* --------------------------------------------------------------- modals */
 
@@ -301,35 +399,12 @@ kbd {
 #modal-root {
   position: absolute;
   inset: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.42);
 }
-
-/* ------------------------------------------------------------ progress */
-
-.progress {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  padding: 4px 10px;
-  background: rgba(20, 17, 12, 0.94);
-  border: 1px solid var(--panel-edge);
-  border-radius: 3px;
-  font-size: 12px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.progress .bar {
-  margin-top: 4px;
-  height: 4px;
-  background: #3a3227;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
 
 /* --------------------------------------------------------------- modal */
 
@@ -352,7 +427,7 @@ kbd {
   border-bottom: 1px solid var(--panel-edge);
 }
 
-.modal header h2 { margin: 0; font-size: 18px; flex: 1; text-transform: capitalize; }
+.modal header h2 { margin: 0; font: 400 18px 'Cinzel', Georgia, serif; letter-spacing: 0.06em; flex: 1; text-transform: capitalize; }
 
 .modal .close {
   background: none;
@@ -565,22 +640,40 @@ button.big.primary { background: #5a4520; border-color: var(--accent); color: #f
 button.big:hover { border-color: var(--accent); }
 
 @media (max-width: 900px) {
-  #journey { width: 200px; font-size: 12px; }
-  #hud { width: 200px; }
   .trade-cols { grid-template-columns: 1fr; }
 }
 
-/* Free-resource testing mode: unmissable on purpose. */
-.free-badge {
-  display: inline-block;
-  margin-top: 4px;
-  padding: 1px 6px;
-  border: 1px solid #d9a441;
-  border-radius: 3px;
-  color: #f0c46a;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+/* A phone held upright: the chapter card gets a row of its own. */
+@media (max-width: 620px) {
+  #chrome {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "hud     journey"
+      "card    card"
+      "murmurs murmurs"
+      "dock    dock";
+  }
+  #journey { max-width: 100%; }
+  .card b { font-size: 20px; }
+  /* Room for two lines of news, not four: the rest of the screen is the game. */
+  .murmur:nth-last-child(n+3) { display: none; }
 }
+
+/* What a panel says back while it is open, since the toasts are behind it. */
+.modal-status {
+  min-height: 0;
+  padding: 0 16px;
+  font-size: 13px;
+  color: #ffe7a8;
+  border-top: 1px solid transparent;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 160ms ease-out, padding 160ms ease-out;
+}
+.modal-status.on { max-height: 60px; padding: 8px 16px; border-top-color: var(--panel-edge); }
+.modal-status { font-style: italic; }
+.modal-status.bad { color: #ffd9de; }
 
 /* ------------------------------------------------------- mind discoveries */
 

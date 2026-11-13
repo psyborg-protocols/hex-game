@@ -2,7 +2,7 @@
 
 import { loadTileset, BRIDGE_SHEET, bridgeFrame, isWater } from './world/tileset.js';
 import { loadDecor } from './render/decor.js';
-import { drawStructure, drawVillage, drawCamp, drawBridgeDeck, hpBar } from './render/structures.js';
+import { drawStructure, drawVillage, drawCamp, drawBridgeDeck, drawLadder, drawLadderTop, drawCrossing, hpBar } from './render/structures.js';
 import { drawUnit, unitPos, drawDog } from './render/units.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath, isBridged } from './world/pathfinding.js';
@@ -10,9 +10,9 @@ import { Renderer } from './render/renderer.js';
 import { Camera, pixelScale } from './core/camera.js';
 import { Rng } from './core/rng.js';
 import { Player } from './game/player.js';
-import { pickHex, tileCenter, traceTopFace, distance, neighbors, frameOrigin } from './world/hexgrid.js';
+import { pickHex, pointInHex, tileCenter, traceTopFace, distance, neighbors, GEOM } from './world/hexgrid.js';
 
-import { createState, itemName, RECIPES, ITEMS, dayOf, isNight, DAY_LENGTH, hasBuilt } from './game/state.js';
+import { createState, itemName, RECIPES, ITEMS, dayOf, moonOf, isNight, DAY_LENGTH, hasBuilt } from './game/state.js';
 import { walkOneStep, recomputeEnergy, countItem, removeItem, foodValue } from './game/inventory.js';
 import { craft } from './game/crafting.js';
 import { ensureVillage, buy, sell, giveFavour, villageContext, isTrusted, isRaided } from './game/economy.js';
@@ -28,7 +28,7 @@ import { levelOf } from './game/skills.js';
 import { checkJourney, STAGES } from './game/journey.js';
 import {
   updateUnits, garrisonCamps, guardsAt, hostiles, strike, spoils, rally, burnCamp,
-  campsLeft, ensureRaidState, KINDS,
+  campsLeft, ensureRaidState, raidSize, abroad, KINDS,
 } from './game/raiders.js';
 import { drawExploreCharge, Pings, loadResourceIcons, drawResourceIcons, drawScenicRings } from './render/discovery_fx.js';
 import { chime } from './ui/chime.js';
@@ -123,7 +123,7 @@ async function boot() {
       const result = craft(state, recipeId, game.craftingContext());
       if (!result.ok) return game.ui.notify(result.reasons[0]);
       const made = result.produced.map(p => `${p.qty} ${itemName(p.id)}`).join(', ');
-      game.ui.notify(`You made ${made}.`);
+      game.ui.notify(`+ ${made}`, 3200, 'gain');
       if (/^(cook_|stew|fish_stew)/.test(recipeId)) state.stats.cooked = (state.stats.cooked || 0) + 1;
       if (/^smelt/.test(recipeId)) state.stats.smelted = (state.stats.smelted || 0) + 1;
       chime('tick', 0.05);
@@ -138,17 +138,18 @@ async function boot() {
       if (!placing.spots.length) {
         const out = Object.keys(RECIPES[recipeId].output)[0];
         placing = null;
-        return game.ui.notify(out === 'ladder' ? 'Stand at the foot of a cliff too high to climb.'
-          : out === 'bridge' ? 'Stand at the water’s edge, facing a crossing no wider than 9 hexes.'
-            : 'No level, open ground here to build on.');
+        return game.ui.notify(out === 'ladder' ? 'A ladder wants a cliff beside you, too high to climb.'
+          : out === 'bridge' ? 'A bridge wants the water’s edge, and a far bank within nine hexes.'
+            : 'No level, open ground here.');
       }
-      game.ui.notify('Click a highlighted hex to build. Esc to cancel.');
     },
 
     doHarvest(id) {
       const spec = harvestSpec(id);
       game.ui.clearContext();
       const ms = { fell_tree: 1100, mine_cliff: 1200, mine_ore: 1200, hunt: 1300 }[id] || 800;
+      const animKind = id === 'fell_tree' ? 'chop' : (id === 'mine_cliff' || id === 'mine_ore') ? 'mine' : 'forage';
+      player.triggerAction(animKind, ms / 1000);
       game.ui.showProgress(spec.verb, ms, player).then(ok => {
         if (!ok) return;
         const result = harvest(world, state, player, id, rng);
@@ -167,6 +168,7 @@ async function boot() {
 
     doProspect() {
       game.ui.clearContext();
+      player.triggerAction('forage', 1.4);
       game.ui.showProgress('Reading the rock', 1400, player).then(() => {
         const result = prospect(world, state, player);
         game.ui.notify(result.message);
@@ -189,7 +191,7 @@ async function boot() {
         chime('gold');
         const r = onTrade(world, state, col);
         announceMind(r);
-        game.ui.ping({ kind: 'trade', title: `${col.feature.name} trusts you`, sub: 'Trade, workshop and maps open' });
+        game.ui.murmur(`${col.feature.name} trusts you.`, { tone: 'good', ms: 5200 });
       }
       afterChange();
     },
@@ -213,7 +215,9 @@ async function boot() {
         const { gold } = burnCamp(state, camp);
         rebuildFeatures();
         chime('gold');
-        game.ui.ping({ kind: 'victory', kicker: 'Camp burned', title: camp.feature.name, sub: `+${gold} gold · ${campsLeft(map).length} left` });
+        const left = campsLeft(map).length;
+        game.ui.ping({ kind: 'victory', title: `${camp.feature.name} burns`, sub: left ? `${left} left` : '' });
+        game.ui.floatText(playerPos, `+${gold} gold`, 'gain');
         afterChange();
         if (!campsLeft(map).length && !state.won) victory();
       });
@@ -272,7 +276,7 @@ async function boot() {
   }
 
   function announceLevels(skill, levels) {
-    for (const l of levels || []) game.ui.ping({ kind: 'level', title: `${skill[0].toUpperCase()}${skill.slice(1)} ${l}`, sub: 'New recipes unlocked' });
+    for (const l of levels || []) game.ui.ping({ kind: 'level', title: `${skill} ${l}` });
     if (levels?.length) game.ui.nudge('crafting');
   }
 
@@ -288,7 +292,7 @@ async function boot() {
     if (!result.found.tier) chime('tick', 0.035);
     const finds = result.found.resources.map(id => itemName(HIDDEN[id].icon));
     if (finds.length) game.ui.floatText(playerPos, `found ${finds.join(', ')}`, 'find');
-    if (result.found.oreSign) game.ui.notify('Traces of ore glint in the rock nearby. Read the rock to find the vein.');
+    if (result.found.oreSign) game.ui.notify('Ore glints in the rock near here.');
     announceMind(result);
     afterChange();
   }
@@ -305,19 +309,40 @@ async function boot() {
         features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawVillage(ctx, Math.round(cx), Math.round(cy), performance.now() / 1000, f.kind, { raided: isRaided(state, col.q, col.r) }) });
       } else if (f.type === 'camp') {
         features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawCamp(ctx, Math.round(cx), Math.round(cy), performance.now() / 1000, f) });
+      } else if (f.type === 'structure' && f.item === 'ladder') {
+        // Drawn below from map.structures, against the face it climbs.
       } else if (f.type === 'structure') {
         features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawStructure(ctx, Math.round(cx), Math.round(cy), f.item, performance.now() / 1000, f) });
       } else if (f.type === 'field' && f.hp < f.maxHp) {
         features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => hpBar(ctx, Math.round(cx), Math.round(cy) - 8, f.hp / f.maxHp, '#d9b45b') });
+      } else if (f.type === 'crossing') {
+        features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawCrossing(ctx, Math.round(cx), Math.round(cy), col.q, col.r, performance.now() / 1000) });
       } else if (f.type === 'ore' && f.known && f.remaining > 0) {
         features.push({ q: col.q, r: col.r, draw: (ctx, cx, cy) => drawVein(ctx, Math.round(cx), Math.round(cy)) });
       }
     }
     for (const s of map.structures) {
+      if (s.type === 'ladder') {
+        const edge = neighbors(s.from.q, s.from.r).findIndex(n => n.q === s.to.q && n.r === s.to.r);
+        if (edge < 0) continue;
+        // Heights are read as it is drawn: mining the face shortens the ladder.
+        const centre = c => { const p = tileCenter(c.q, c.r, Math.max(0, map.heightAt(c.q, c.r))); return { x: Math.round(p.cx), y: Math.round(p.cy) }; };
+        if (edge === 0 || edge === 1 || edge === 5) {
+          // The face is turned towards us: the ladder stands on the foot hex.
+          features.push({ q: s.from.q, r: s.from.r, draw: ctx => drawLadder(ctx, centre(s.from), edge,
+            Math.max(0, map.heightAt(s.to.q, s.to.r) - map.heightAt(s.from.q, s.from.r)) * GEOM.wallHeight) });
+        } else {
+          // The face is turned away: only the top shows, over the far lip.
+          features.push({ q: s.to.q, r: s.to.r, draw: ctx => drawLadderTop(ctx, centre(s.to), (edge + 3) % 6) });
+        }
+      }
       if (s.type !== 'bridge') continue;
       for (const t of s.tiles) {
-        const o = frameOrigin(t.q, t.r, 0);
-        features.push({ q: t.q, r: t.r, h: 0, draw: ctx => drawBridgeDeck(ctx, deck, bridgeFrame(s.edge), o.x, o.y) });
+        const at = map.bridgeAt(t.q, t.r);
+        if (!at) continue;
+        const { cx, cy } = tileCenter(t.q, t.r, at.h);
+        const drop = Math.max(0, at.h - Math.max(0, map.heightAt(t.q, t.r))) * GEOM.wallHeight;
+        features.push({ q: t.q, r: t.r, h: at.h, draw: ctx => drawBridgeDeck(ctx, deck, bridgeFrame(s.edge ?? 0), { x: cx, y: cy }, drop, performance.now() / 1000) });
       }
     }
   }
@@ -338,18 +363,25 @@ async function boot() {
     draw: ctx => drawUnit(ctx, map, u, performance.now()),
   }));
 
+  const chargeEntity = now => (explorer.charge
+    ? [{ q: explorer.charge.q, r: explorer.charge.r, draw: ctx => drawExploreCharge(ctx, map, explorer.charge, now) }]
+    : []);
+
   const dogEntity = () => {
     if (!countItem(state, 'dog')) return [];
     const p = player.pos;
     return [{ q: player.q, r: player.r, draw: ctx => drawDog(ctx, p.x - player.facing * 9, p.y + 3, player.facing, performance.now() / 1000) }];
   };
 
+  /** A bridge is highlighted where its deck will be, not down on the water. */
+  const spotHeight = (spot, t) => (spot.span ? spot.span.h : Math.max(0, t.h));
+
   const drawOverlays = (ctx) => {
     if (placing) {
       for (const spot of placing.spots) {
         const tiles = spot.span ? spot.span.tiles : [spot];
         for (const t of tiles) {
-          const { cx, cy } = tileCenter(t.q, t.r, Math.max(0, t.h));
+          const { cx, cy } = tileCenter(t.q, t.r, spotHeight(spot, t));
           traceTopFace(ctx, cx, cy);
           ctx.fillStyle = t === tiles[0] ? 'rgba(217, 180, 91, 0.32)' : 'rgba(217, 180, 91, 0.12)';
           ctx.fill();
@@ -360,15 +392,41 @@ async function boot() {
       }
       return;
     }
-    // Raid target marker: where the band is heading.
+    // The raid that is coming: the way it will take, and what it is after.
     const raid = state.raid;
-    if (raid?.warned && raid.target) {
-      const { cx, cy } = tileCenter(raid.target.q, raid.target.r, Math.max(0, map.heightAt(raid.target.q, raid.target.r)));
+    if (raid && (raid.stage === 'omen' || raid.stage === 'night')) {
       const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 200);
-      traceTopFace(ctx, cx, cy);
-      ctx.strokeStyle = `rgba(209, 89, 109, ${0.5 + pulse * 0.5})`;
-      ctx.lineWidth = 1;
-      ctx.stroke();
+      if (raid.route && raid.route.length > 1) {
+        // A dashed red line from their camp to what they are after, the dashes
+        // marching the way the band will. It has to be legible at a glance
+        // from any zoom: it is the one thing that says where to build.
+        ctx.save();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'butt';
+        ctx.beginPath();
+        raid.route.forEach((s, i) => {
+          const { cx, cy } = tileCenter(s.q, s.r, Math.max(0, map.surfaceAt(s.q, s.r)));
+          if (i) ctx.lineTo(Math.round(cx), Math.round(cy)); else ctx.moveTo(Math.round(cx), Math.round(cy));
+        });
+        ctx.strokeStyle = 'rgba(24, 8, 14, 0.7)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.setLineDash([5, 4]);
+        ctx.lineDashOffset = -(performance.now() / 70) % 9;
+        ctx.strokeStyle = 'rgba(240, 96, 112, 0.95)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (raid.target) {
+        const { cx, cy } = tileCenter(raid.target.q, raid.target.r, Math.max(0, map.surfaceAt(raid.target.q, raid.target.r)));
+        traceTopFace(ctx, cx, cy);
+        ctx.fillStyle = `rgba(209, 89, 109, ${0.12 + pulse * 0.14})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(240, 96, 112, ${0.6 + pulse * 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
     // Your health, over your head, when you are hurt.
     if (state.hp < maxHp(state)) {
@@ -378,7 +436,7 @@ async function boot() {
     if (!preview || preview.length < 2) return;
     ctx.fillStyle = 'rgba(255, 248, 220, 0.5)';
     for (let i = 1; i < preview.length; i++) {
-      const { cx, cy } = tileCenter(preview[i].q, preview[i].r, Math.max(0, map.heightAt(preview[i].q, preview[i].r)));
+      const { cx, cy } = tileCenter(preview[i].q, preview[i].r, Math.max(0, map.surfaceAt(preview[i].q, preview[i].r)));
       ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
     }
   };
@@ -447,7 +505,7 @@ async function boot() {
   player.onStep = () => {
     const col = map.get(player.q, player.r);
     const step = walkOneStep(state, { cartOnRoad: col?.terrain === 'path' && countItem(state, 'cart') > 0 });
-    if (step.exhausted && state.stepsWalked % 10 === 0) game.ui.notify('You are starving. Find food: forage, hunt or fish.', 2600, 'bad');
+    if (step.exhausted && state.stepsWalked % 10 === 0) game.ui.notify('You are starving.', 3600, 'bad');
     if (col && (isWater(col.terrain) || isBridged(map, player)) && !state.stats.crossed) state.stats.crossed = 1;
     announceMind(mindStep(world, state, player));
     maybeRally();
@@ -477,7 +535,7 @@ async function boot() {
     if (!trusted) return;
     state.rallied[k] = 1;
     const n = rally(state, player, map, trusted);
-    if (n) game.ui.ping({ kind: 'raid', kicker: 'The banner is raised', title: `${n} militia join you`, sub: 'For the vale!' });
+    if (n) game.ui.murmur(`${n} from the villages stand with you.`, { tone: 'good', ms: 6000 });
   }
 
   // ----------------------------------------------------------------- combat
@@ -499,6 +557,8 @@ async function boot() {
     if (!foe) return;
     swing = PLAYER_COOLDOWN;
     combatUntil = state.time + 4;
+    if (foe.q !== player.q) player.facing = foe.q > player.q ? 1 : -1;
+    player.triggerAction('attack', 0.45);
     const roll = strike(state, foe, attackDice(state));
     foe.hitAt = performance.now();
     game.ui.showDice(unitAnchor(foe), roll, { friendly: true });
@@ -507,7 +567,7 @@ async function boot() {
 
   function fell(u, by) {
     if (u.faction !== 'raider') {
-      game.ui.notify(`A ${KINDS[u.kind].name.toLowerCase()} from the villages has fallen.`);
+      game.ui.notify('One of the villagers has fallen.', 4200, 'bad');
       return;
     }
     if (by === 'player' || by === 'tower' || by?.faction === 'ally') {
@@ -515,7 +575,7 @@ async function boot() {
       game.ui.floatText(unitAnchor(u), got.text, 'gain');
       if (u.kind === 'warlord') {
         state.stats.warlord = true;
-        game.ui.ping({ kind: 'victory', kicker: 'The Warlord is dead', title: 'Burn the hold', sub: 'His guards will scatter.' });
+        game.ui.ping({ kind: 'victory', title: 'The Warlord is dead' });
       } else chime('copper', 0.05);
     }
     afterChange();
@@ -523,11 +583,20 @@ async function boot() {
 
   function handleEvents(events) {
     for (const e of events) {
-      if (e.type === 'warn') {
+      if (e.type === 'omen') {
         const where = e.target?.kind === 'village' ? 'a village' : 'your homestead';
-        game.ui.ping({ kind: 'raid', kicker: 'Raiders sighted', title: `War band from ${e.from.name}`, sub: `Heading for ${where} — about ${e.seconds}s${e.tower ? ' (your watchtower saw them early)' : ''}` });
+        const waves = e.waves.length > 1 ? ` in ${e.waves.length} waves` : '';
+        game.ui.ping({ kind: 'raid', title: `${e.tower ? 'Fires at' : 'Smoke over'} ${e.from.name}`, sub: `${e.size} of them tonight${waves}, for ${where}` });
+      } else if (e.type === 'nightfall') {
+        chime('raid');
       } else if (e.type === 'raid') {
-        game.ui.notify(`${e.size} raider${e.size > 1 ? 's' : ''} set out from ${e.from.name}!`, 3500, 'bad');
+        // The line under the moon counts them; nothing more needs saying.
+      } else if (e.type === 'held' || e.type === 'dawn') {
+        const felled = e.felled ? `${e.felled} of them fell` : '';
+        const when = e.type === 'dawn' ? 'Dawn' : 'They have gone';
+        if (e.lost) game.ui.ping({ kind: 'raid', title: `${when}. The night cost you`, sub: felled });
+        else game.ui.ping({ kind: 'victory', title: `${when}. The valley held`, sub: felled });
+        afterChange();
       } else if (e.type === 'clash') {
         if (e.target === 'player') {
           combatUntil = state.time + 4;
@@ -544,24 +613,32 @@ async function boot() {
       } else if (e.type === 'fell') {
         fell(e.unit, e.by);
       } else if (e.type === 'destroyed') {
-        game.ui.notify(`Raiders tore down your ${itemName(e.item)}${e.loot?.length ? ' and looted the stash' : ''}!`, 3500, 'bad');
+        game.ui.notify(`The ${itemName(e.item).toLowerCase()} is down${e.loot?.length ? ', and the stash is gone' : ''}.`, 5200, 'bad');
         rebuildFeatures();
         refreshArt(world, [map.get(e.q, e.r)].filter(Boolean));
         afterChange();
       } else if (e.type === 'ransack') {
         // hp bars show it
       } else if (e.type === 'villageRaided') {
-        game.ui.notify(`${e.name} has been raided. Its market is shut until tomorrow.`, 3500, 'bad');
+        game.ui.notify(`${e.name} has been raided.`, 5200, 'bad');
       }
     }
   }
 
   function updateAlert() {
     const raid = state.raid;
-    const out = hostiles(state).filter(u => u.mode !== 'guard').length;
-    if (out) game.ui.setAlert(`⚔ ${out} raider${out > 1 ? 's' : ''} in your lands`);
-    else if (raid?.warned) game.ui.setAlert(`⚠ Raid from ${raid.from?.name} in ${Math.max(0, Math.round(raid.nextAt - state.time))}s`);
-    else game.ui.setAlert('');
+    const m = moonOf(state);
+    const out = abroad(state).length;
+    const clock = s => { const t = Math.max(0, Math.round(s)); return t >= 60 ? `${Math.floor(t / 60)}m ${String(t % 60).padStart(2, '0')}s` : `${t}s`; };
+    if (raid?.stage === 'night') {
+      const left = raid.waves.length - raid.sent;
+      const more = left ? `, ${left} more wave${left > 1 ? 's' : ''} to come` : '';
+      game.ui.setAlert(`${out} abroad${more} · dawn in ${clock(m.dawnAt - state.time)}`, 'raid');
+    } else if (raid?.stage === 'omen') {
+      game.ui.setAlert(`${raidSize(raid.waves)} at dusk · ${clock(m.duskAt - state.time)}`, 'omens');
+    } else if (out) {
+      game.ui.setAlert(`${out} still abroad`, 'omens');
+    } else game.ui.setAlert('');
   }
 
   function healthTick(dt) {
@@ -649,7 +726,37 @@ async function boot() {
   };
   const hexAt = e => {
     const w = worldAt(e);
-    return pickHex(w.x, w.y, (q, r) => map.heightAt(q, r));
+    return pickHex(w.x, w.y, (q, r) => map.surfaceAt(q, r), 3, map.peakHeight());
+  };
+
+  /** Can you actually see this hex, or is taller ground standing in front of it? */
+  const inView = (q, r) => {
+    const { cx, cy } = tileCenter(q, r, Math.max(0, map.surfaceAt(q, r)));
+    const hit = pickHex(cx, cy, (a, b) => map.surfaceAt(a, b), 3, map.peakHeight());
+    return !!hit && hit.q === q && hit.r === r;
+  };
+
+  /**
+   * Which highlighted spot is under the pointer, while placing.
+   *
+   * Not pickHex: that answers with the hex you can *see* there, and a spot is
+   * often behind the ground you are standing on. A river down in its gorge,
+   * due north of you, is drawn under your own hex, and clicking its highlight
+   * used to pick your feet. The highlights are what is on screen, so they are
+   * what gets hit-tested, and any hex of a bridge's span will do.
+   */
+  const spotAt = e => {
+    const w = worldAt(e);
+    let best = null;
+    for (const spot of placing?.spots || []) {
+      for (const t of spot.span ? spot.span.tiles : [spot]) {
+        const { cx, cy } = tileCenter(t.q, t.r, spotHeight(spot, t));
+        if (!pointInHex(w.x, w.y, cx, cy)) continue;
+        const d = Math.hypot(w.x - cx, w.y - cy);
+        if (!best || d < best.d) best = { spot, d };
+      }
+    }
+    return best?.spot || null;
   };
 
   canvas.addEventListener('pointerdown', e => {
@@ -684,13 +791,17 @@ async function boot() {
     drag.active = false;
     if (wasDrag || dead) return;
 
-    const target = hexAt(e);
+    const target = (placing && spotAt(e)) || hexAt(e);
     if (!target) return;
 
     if (placing) {
+      // A click anywhere but a highlight puts the thing away again. The lit
+      // hexes are the whole instruction; there is no other mode to explain.
+      if (!spotAt(e)) { placing = null; refreshContext(); return; }
       const result = build(world, state, player, placing.recipeId, target, game.craftingContext());
-      game.ui.notify(result.message);
+      if (!result.ok) game.ui.notify(result.message);
       if (result.ok) {
+        player.triggerAction('build', 0.45);
         chime('copper', 0.06);
         announceLevels(RECIPES[placing.recipeId].skill, result.levels);
         placing = null;
@@ -750,7 +861,7 @@ async function boot() {
     if (k === 'c') game.ui.togglePanel('crafting');
     if (k === 'b') game.ui.togglePanel('build');
     if (k === 'k') game.ui.togglePanel('skills');
-    if (/^[1-6]$/.test(e.key) && !game.ui.openPanelName) game.ui.pickContext(Number(e.key) - 1);
+    if (/^[1-9]$/.test(e.key) && !game.ui.openPanelName) game.ui.pickContext(Number(e.key) - 1);
   });
 
   // ------------------------------------------------------------ frame loop
@@ -798,12 +909,25 @@ async function boot() {
 
     renderer.render(map, camera, {
       hover: placing ? null : hover,
-      entities: [...features, ...unitEntities(), ...dogEntity(), player],
+      // The exploring glow belongs to the hex you stand on, so it is drawn with
+      // that hex and hidden by whatever hides the hex. As an overlay it was
+      // painted over everything: stand behind a peak and the ring ran round the
+      // mountain's face, as if that were what you were exploring.
+      entities: [...features, ...chargeEntity(now), ...pings.entities(map, now, inView), ...unitEntities(), ...dogEntity(), player],
       overlays: [
         drawOverlays,
-        ctx => drawExploreCharge(ctx, map, explorer.charge, now),
-        ctx => pings.draw(ctx, map, now),
+        ctx => pings.draw(ctx, map, now, inView),
         ...(eye ? [(ctx, cam) => drawScenicRings(ctx, map, state, cam.viewBounds(32))] : []),
+        // You, and anyone else, faintly through whatever stands in front. Over
+        // a figure in plain view this repaints its own pixels and changes
+        // nothing; behind a cliff or a wood it is how you find them again.
+        ctx => {
+          ctx.save();
+          ctx.globalAlpha = 0.38;
+          for (const u of state.units || []) drawUnit(ctx, map, u, performance.now(), true);
+          player.draw(ctx, true);
+          ctx.restore();
+        },
       ],
       screenOverlays: [
         nightShade,
@@ -821,13 +945,14 @@ async function boot() {
       if (col) {
         const f = col.feature;
         const foe = hostiles(state).find(u => u.q === col.q && u.r === col.r);
-        label = foe ? `${KINDS[foe.kind].name} — ${foe.hp}/${foe.maxHp} hp, ${KINDS[foe.kind].atk} atk, ${KINDS[foe.kind].def} def`
-          : f?.type === 'village' ? `${f.name} (${f.kind})${isTrusted(state, col.q, col.r) ? ' — trusts you' : ''}`
-            : f?.type === 'camp' ? `${f.name}${f.burned ? ' (burned)' : ` — ${guardsAt(state, col)} guards`}`
+        label = foe ? `${KINDS[foe.kind].name.toLowerCase()} · ${foe.hp}/${foe.maxHp} · ${KINDS[foe.kind].atk} attack, ${KINDS[foe.kind].def} defence`
+          : f?.type === 'village' ? `${f.name}, ${f.kind}${isTrusted(state, col.q, col.r) ? ' · trusts you' : ''}`
+            : f?.type === 'camp' ? `${f.name}${f.burned ? ', burned' : ` · ${guardsAt(state, col)} guards`}`
               : f?.type === 'structure' ? `${f.name}${f.maxHp ? ` ${f.hp}/${f.maxHp}` : ''}`
-                : `${col.terrain.replace(/_/g, ' ')} · height ${col.h}`;
+                : f?.type === 'crossing' ? 'a raiders’ crossing'
+                  : '';
       }
-      hudTerrain.textContent = label;
+      if (hudTerrain.textContent !== label) hudTerrain.textContent = label;
     }
   }
   requestAnimationFrame(frame);
@@ -842,12 +967,19 @@ async function boot() {
   announceMind(mindStep(world, state, player));
   checkJourney(state, world);
   game.ui.updateHud();
-  if (!restored) game.showHelp(true);
+  // The opening is the first chapter's name and nothing else. How to play is
+  // under the cog for whoever wants it; the corner gives the first hint itself
+  // after a few seconds of standing there.
+  if (!restored) game.ui.showCard(STAGES[0].name, STAGES[0].blurb);
 
-  setInterval(() => { if (!dead) saveLocal(world, state, player); }, 45000);
-  window.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && !dead) saveLocal(world, state, player);
-  });
+  // There is one save slot, and every open tab writes to it. `?nosave=1` keeps
+  // a tab opened to test something from overwriting the game you are playing.
+  if (params.get('nosave') !== '1') {
+    setInterval(() => { if (!dead) saveLocal(world, state, player); }, 45000);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden' && !dead) saveLocal(world, state, player);
+    });
+  }
 
   game.renderer = renderer;
   game.getPlacing = () => placing;

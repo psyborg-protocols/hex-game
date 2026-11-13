@@ -46,12 +46,14 @@ export class Renderer {
    * @param {{hover?:{q,r}, entities?:Array, overlays?:Array, screenOverlays?:Array, dim?:Function}} opts
    *   entities: { q, r, h, draw(ctx, cx, cy) } — drawn interleaved with the
    *   columns by depth, so a player behind a tall hex is correctly hidden.
-   *   dim: (column) => boolean — draw that column darkened (the eye view).
+   *   dim: (column) => '' | 'dim' | 'dormant' — how to draw that column.
+   *   sway: (column) => pixels — a wood being shaken.
+   *   props: (ctx, column, mode) — draw what stands on a column, in depth order.
    *   screenOverlays: (ctx, camera) — drawn on the display canvas after the
    *   upscale, for anything that has to stay crisp.
    */
   render(map, camera, opts = {}) {
-    const { hover = null, entities = [], overlays = [], screenOverlays = [], dim = null } = opts;
+    const { hover = null, entities = [], overlays = [], screenOverlays = [], dim = null, sway = null, props = null } = opts;
     const b = this.bctx;
 
     b.fillStyle = this.sky;
@@ -68,8 +70,12 @@ export class Renderer {
     for (const d of this.drawables) {
       if (d.column) {
         const dark = dim ? dim(d.column) : false;
-        drawColumn(b, this.res, d.column, dark);
-        drawColumnDecor(b, this.res, d.column, dark);
+        const push = sway ? sway(d.column) : 0;
+        // The artist's wooded tiles carry their trees, so the tile itself
+        // sways; the bare floors have theirs stood on top, and those do.
+        drawColumn(b, this.res, d.column, dark, d.column.feature?.type === 'trees' ? push : 0);
+        drawColumnDecor(b, this.res, d.column, dark, push);
+        if (props) props(b, d.column, dark);
       } else {
         d.entity.draw(b, d.cx, d.cy, this.res);
       }
@@ -125,7 +131,7 @@ export class Renderer {
     }
 
     for (const e of entities) {
-      const h = e.h ?? map.heightAt(e.q, e.r);
+      const h = e.h ?? map.surfaceAt(e.q, e.r);
       const { cx, cy } = tileCenter(e.q, e.r, Math.max(0, h));
       list.push({ y: columnBaseY(e.q, e.r), x: e.q, layer: 1, entity: e, cx, cy });
     }
@@ -134,7 +140,7 @@ export class Renderer {
   }
 
   drawHover(ctx, map, hover) {
-    const h = Math.max(0, map.heightAt(hover.q, hover.r));
+    const h = Math.max(0, map.surfaceAt(hover.q, hover.r));
     const { cx, cy } = tileCenter(hover.q, hover.r, h);
     traceTopFace(ctx, cx, cy);
     ctx.fillStyle = 'rgba(255, 248, 220, 0.16)';

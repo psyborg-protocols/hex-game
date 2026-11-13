@@ -26,12 +26,16 @@ const HW = FRAME_W / 2;                  // 16 — to the left and right vertice
 const HH = FACE_H / 2;                   // 12
 const FLAT = HW - 6;                     // 10 — half the flat top run
 
-/** The artist's wood, lifted straight off the jetty. */
-const OUTLINE = [112, 59, 31];   // rails, end boards, post edges
-const SEAM = [132, 73, 42];      // the gap between two planks
+/** The artist's wood, lifted straight off the jetty, plus rich trim tones. */
+const OUTLINE = [92, 46, 24];    // outer dark border & end beams
+const RAIL_TOP = [146, 79, 44];  // lit inner curb / rail edge
+const SEAM = [118, 62, 34];      // the gap between two planks
 const POST = [146, 75, 51];      // a post's shaded face
 const MID = [164, 93, 56];       // plank grain
-const LIGHT = [172, 100, 63];    // plank
+const LIGHT = [178, 106, 66];    // sunlit plank
+const CROWN = [194, 122, 76];    // subtle central arch highlight
+const BOLT = [72, 42, 32];       // iron nail/bolt dot
+const CAP = [214, 152, 86];      // carved timber post cap finial
 
 const RAIL = 2;                  // pixels of dark edge down each side
 const PITCH = 3;                 // a plank is two pixels of face and one of seam
@@ -145,12 +149,27 @@ function planks(f, run, band) {
     const u = runU(run, x + 0.5, y + 0.5);
     const end = !has(x + off[0], y + off[1]) || !has(x - off[0], y - off[1]);
 
-    if (cell.depth < RAIL || end) { f.set(x, y, OUTLINE); continue; }
+    if (cell.depth === 0 || end) { f.set(x, y, OUTLINE); continue; }
+    if (cell.depth === 1) {
+      // Inner curb rail: top-left curb catches the light, opposite curb is shaded,
+      // with iron bolt studs every couple of planks.
+      const plank = Math.floor(u / PITCH);
+      const isBolt = !isSeam(u) && plank % 2 === 0 && Math.floor(u) % PITCH === 0;
+      if (isBolt) { f.set(x, y, BOLT); continue; }
+      const litSide = run.dir[0] === 0 ? x < CX : y < CY + (run.dir[1] / run.dir[0]) * (x + 0.5 - CX);
+      f.set(x, y, litSide ? RAIL_TOP : SEAM);
+      continue;
+    }
     if (isSeam(u)) { f.set(x, y, SEAM); continue; }
-    // Grain: a couple of two-wide streaks per plank, shifted plank to plank, so
-    // the deck reads as boards rather than as noise.
+    // Subtle arch/camber brightness near the middle of the span, plus staggered woodgrain.
     const plank = Math.floor(u / PITCH);
-    f.set(x, y, (cell.across + hash(plank) % 5) % 5 < 2 ? MID : LIGHT);
+    const distFromCenter = Math.abs(u - 64);
+    const grain = (cell.across + (hash(plank * 7 + (run.dir[0] ? 3 : 0)) % 5)) % 5;
+    if (distFromCenter < 4.5 && grain >= 2 && (plank % 2 === 0)) {
+      f.set(x, y, CROWN);
+    } else {
+      f.set(x, y, grain < 2 ? MID : LIGHT);
+    }
   }
 }
 
@@ -169,13 +188,17 @@ function post(f, cx, deckY, far) {
     f.set(cx + 1, y, OUTLINE);
   };
   if (far) {
-    f.set(cx, deckY - 2, OUTLINE);          // capped tip
+    f.set(cx, deckY - 3, OUTLINE);
+    f.set(cx - 1, deckY - 2, OUTLINE);
+    f.set(cx, deckY - 2, CAP);
+    f.set(cx + 1, deckY - 2, OUTLINE);
     col(deckY - 1, LIGHT);
     col(deckY, POST);
     return;
   }
-  col(deckY - 2, LIGHT);
-  for (let y = deckY - 1; y <= deckY + 1; y++) col(y, POST);
+  f.set(cx, deckY - 3, OUTLINE);
+  col(deckY - 2, CAP);
+  for (let y = deckY - 1; y <= deckY + 1; y++) col(y, y === deckY - 1 ? LIGHT : POST);
   f.set(cx, deckY + 2, OUTLINE);            // the foot, standing in the water
 }
 

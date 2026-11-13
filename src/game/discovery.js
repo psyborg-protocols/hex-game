@@ -20,6 +20,7 @@ import { xmur3, hash2 } from '../core/rng.js';
 import { neighbors, distance } from '../world/hexgrid.js';
 import { TERRAIN } from '../world/tileset.js';
 import { harvestSpec, availableHarvests } from './harvests.js';
+import { hasNode, NODE_HARVESTS } from './nodes.js';
 import { levelOf } from './skills.js';
 import { createMindState } from './state.js';
 
@@ -86,9 +87,12 @@ export function resourcesAt(map, col) {
   if (hit) return hit;
 
   const out = [];
+  // Where you wake there is always a berry bush: the first thing you find, the
+  // moment you have sat there long enough to look.
+  const home = !!map.spawn && map.spawn.q === col.q && map.spawn.r === col.r;
   for (const [id, h] of Object.entries(HIDDEN)) {
     if (!harvestSpec(id).where(col, map)) continue;
-    if (roll(map, col.q, col.r, `res:${id}`) < h.chance) out.push(id);
+    if ((home && id === 'forage') || roll(map, col.q, col.r, `res:${id}`) < h.chance) out.push(id);
   }
   cache.set(k, out);
   return out;
@@ -106,7 +110,10 @@ export function harvestsHere(map, state, at) {
   const known = isKnown(state, col.q, col.r);
   const present = known ? new Set(resourcesAt(map, col)) : new Set();
   return availableHarvests(map, state, at)
-    .filter(h => !isHidden(h.spec.id) || present.has(h.spec.id));
+    .filter(h => !isHidden(h.spec.id) || present.has(h.spec.id))
+    // And what is taken off the ground has to be on the ground: a rock, a
+    // branch, a rabbit. A thing that is regrowing stays listed, with its reason.
+    .filter(h => !NODE_HARVESTS.has(h.spec.id) || !h.ok || hasNode(map, state, col, h.spec.id));
 }
 
 /** Mark every hex within `radius` of (q, r) as known. Returns the newly known. */

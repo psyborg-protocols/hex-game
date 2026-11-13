@@ -64,7 +64,7 @@ const PROP_WOODS = { forest_floor: 'oak', pine_floor: 'pine' };
  * order already does the right thing, and the canopies overhang upward into the
  * headroom of the tile behind, which is what the sheets do too.
  */
-export function drawColumnDecor(ctx, res, col, dim = false) {
+export function drawColumnDecor(ctx, res, col, dim = false, sway = 0) {
   const decor = res.decor;
   if (!decor) return;
 
@@ -93,7 +93,7 @@ export function drawColumnDecor(ctx, res, col, dim = false) {
   // reads as pasted on rather than growing there.
   const sheet = litImage(res, 'decor', decor.image, col.h, dim);
   placed.sort((a, b) => a.dy - b.dy);
-  for (const p of placed) drawSprite(ctx, decor, p.name, cx + p.dx, cy + p.dy, sheet);
+  for (const p of placed) drawSprite(ctx, decor, p.name, cx + p.dx + sway, cy + p.dy, sheet);
 }
 
 /** A felled wood keeps its stumps, so you can see where it was. */

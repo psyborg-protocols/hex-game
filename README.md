@@ -12,13 +12,16 @@ play to the end:
 - **Five chapters** with goals always on screen, so there is always a next thing.
 - **56 items instead of 93**, each with a job. Click anything in your pack to see
   what it makes and what it lets you do. A test fails if any item has no job.
-- **Raiders.** Three camps across the river send war bands every day or two after
-  your buildings. Walls, watchtowers and shrines are your strategy; dice decide
-  fights (attack hits on 4+, defence blocks on 5+). Burn every camp to win.
+- **Raiders, by the moon.** A moon is three days. Two of them and a morning are
+  fair: nothing comes, so you can explore and build. On the last afternoon the
+  omens show the raid and the way it will take; at dusk it comes, in waves, over
+  the river crossings, and at dawn it goes home. Walls, watchtowers and shrines
+  are your strategy; dice decide fights (attack hits on 4+, defence blocks on
+  5+). Burn every camp to win.
 - **Villages ask one favour** before they trade, lend you their station (hearth,
   workbench or forge) and show you the land. Each kind sells different things;
   not every world has every kind.
-- **Real clock.** Days and nights, fields that ripen, berries that regrow.
+- **Real clock.** Seven-minute days and nights, fields that ripen, berries that regrow.
 - **Fixed:** bridges now span water and boats now cross it (both used to do
   nothing, so the far bank was unreachable). Starving now has consequences.
   Villages buy anything. Food is eaten from your pack as you need it, ready food
@@ -36,7 +39,8 @@ node tests/all.mjs           # 12 suites
 In the browser console, `game.advance(seconds)` runs the world forward by hand.
 
 `http://localhost:8080/?seed=alpha` generates a named world;
-`?load=1` restores the saved game; `?free=1` turns on free-resource mode for
+`?load=1` restores the saved game; `?nosave=1` stops a tab autosaving over it
+(there is one save slot, and every open tab writes to it); `?free=1` turns on free-resource mode for
 testing; `/editor.html` is the map editor.
 
 ## Layout
@@ -118,11 +122,30 @@ by a whole number, with smoothing off. Fractional device pixel ratios are floore
 for the same reason. `docs/new_tiles.md` is explicit that this art crawls at
 fractional zoom.
 
+**The UI whispers.** Nothing on screen announces itself: no banners, no boxes
+round the numbers, no checklist of instructions (`src/ui/ui.js` states the rule
+at the top). What the game has to say it says once, quietly, as near the thing
+as it can: a place's name rises from the hex you found it on; what you gathered
+rises from your head; anything else is one plain line bottom-left that fades.
+The corners hold two thin bars and the moon, and the one thing to reach for
+next. Each opens when you point at it (or tap it) to give the numbers, the
+skills, the chapter and how to do each goal. They speak first only when it
+matters: a bar pulses when it runs low, a goal's hint surfaces if you have been
+stuck on it for over a minute, a menu button keeps its name beside it until you
+have opened it once, and a raid night darkens the edges of the screen.
+
 **The economy.** `data/game_data.js` is the source of truth. Recipes carry
 `tools` (a list of slots, each one item or an any-of) and `needs` (world gates:
 `skill:x:n` or `built:item`). A tool slot naming something with a `build` recipe
 means "stand at one", not "carry one". `checkRecipe` returns its reasons rather
 than a boolean — with this many gates, a list that only says no is unplayable.
+
+**Lakes and reeds.** Lakes sit at the level of the ground they are in, not at
+the bottom of the world, and the ring of ground round each is eased to within a
+step of the water. Reeds and clay want exactly that: a shore no more than one
+level over the water beside it (`harvests.js: waterside`). So they are found
+round lakes and along streams, and not on the lip of the river gorge. One lake
+is always put a short walk from where you start.
 
 **Where things come from.** Ten raw materials are inputs to recipes and the
 output of none, so the world supplies them. `src/game/harvests.js` binds every
@@ -151,7 +174,14 @@ you have not explored and shows what you have found.
 **The river.** It divides the board and is meant to. The far bank, where the
 raider camps are, waits on a boat (woodworking 4, or bought from fishers) or a
 bridge (woodworking 5, three planks a hex). The generator therefore puts the spawn
-and every village on the near one. Raiders cross on rafts, slowly.
+and every village on the near one. Raiders cross on rafts, slowly, and only at
+the crossings the generator marks (`worldgen.js: placeCrossings`) or over a
+bridge of yours, so a raid has a route and a defence has somewhere to stand.
+
+**Bridges.** A deck rests on its lower bank rather than on the water, on
+trestles, so a hex under a bridge has two heights: the water's (`heightAt`)
+and the one you walk at (`surfaceAt`). Anything that puts a figure on the map
+asks the second.
 
 **The mountains.** Base terrain gets its own low ceiling (`baseHeight`) and the
 massifs get the rest, up to 20 levels — the split the old three.js generator used,
@@ -205,7 +235,7 @@ No framework — `tests/_harness.mjs` is thirty lines.
 | `worldgen` | determinism, the low country is all walkable, the high ground stays gated, peaks reach 20 |
 | `pathfinding` | climb 1 / drop 2, ladders, bridges, and every returned step is legal |
 | `economy` | the graph is consistent, every item has a job, the redundancy pairs and the tongs cycle exist, and everything is reachable from an empty pack |
-| `raids` | camps and guards, the warning-then-raid clock, walls, towers, shrines, burning camps, the death penalty |
+| `raids` | camps and guards, the moon (fair days, omens, the raid night, dawn), crossings, walls, towers, shrines, burning camps, the death penalty |
 | `world` | harvesting, felling, mining, prospecting and building change the map correctly |
 | `save` | a save restores the world you left, not the world the seed would generate |
 | `freemode` | the testing switch lifts every cost and not one rule |

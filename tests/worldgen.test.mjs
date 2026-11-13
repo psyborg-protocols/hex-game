@@ -10,6 +10,8 @@ import { generateWorld, DEFAULTS } from '../src/world/worldgen.js';
 import { WorldMap } from '../src/world/mapformat.js';
 import { makeResolvers, TERRAIN, SHEET_NAMES, FRAMES_PER_SHEET, isWater } from '../src/world/tileset.js';
 import { neighbors, distance } from '../src/world/hexgrid.js';
+import { reachableWithin } from '../src/world/pathfinding.js';
+import { harvestSpec } from '../src/game/harvests.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const index = JSON.parse(readFileSync(join(root, 'new_tiles', 'index.json'), 'utf8'));
@@ -72,11 +74,61 @@ test('every column is real terrain drawn from a real sheet', () => {
   }
 });
 
-test('the board is a hex, and water sits at the bottom of it', () => {
+test('the board is a hex, the river runs along the bottom, and no water stands over its banks', () => {
   for (const [i, map] of worlds.entries()) {
     for (const col of map) {
       ok(distance(col.q, col.r, 0, 0) <= 20, `${SEEDS[i]}: ${col.q},${col.r} is off the board`);
-      if (isWater(col.terrain)) eq(col.h, 0, `${SEEDS[i]}: water at height ${col.h}`);
+      if (col.terrain === 'river') eq(col.h, 0, `${SEEDS[i]}: river at height ${col.h}`);
+      if (!isWater(col.terrain)) continue;
+      for (const n of neighbors(col.q, col.r)) {
+        const o = map.get(n.q, n.r);
+        if (!o || isWater(o.terrain)) continue;
+        ok(o.h >= col.h, `${SEEDS[i]}: ${col.terrain} at ${col.q},${col.r} (level ${col.h}) stands over the ground beside it (level ${o.h})`);
+      }
+    }
+  }
+});
+
+test('lakes sit in the country at their own level, each all at one height', () => {
+  let raised = 0;
+  for (const [i, map] of worlds.entries()) {
+    const seen = new Set();
+    for (const start of map) {
+      if (start.terrain !== 'water' || seen.has(`${start.q},${start.r}`)) continue;
+      const body = [];
+      const queue = [start];
+      seen.add(`${start.q},${start.r}`);
+      let joinsRiver = false;
+      while (queue.length) {
+        const cur = queue.pop();
+        body.push(cur);
+        for (const n of neighbors(cur.q, cur.r)) {
+          const o = map.get(n.q, n.r);
+          if (o?.terrain === 'river') joinsRiver = true;
+          if (o?.terrain !== 'water' || seen.has(`${o.q},${o.r}`)) continue;
+          seen.add(`${o.q},${o.r}`);
+          queue.push(o);
+        }
+      }
+      eq(new Set(body.map(c => c.h)).size, 1, `${SEEDS[i]}: a lake at ${start.q},${start.r} is not level`);
+      if (!joinsRiver && body[0].h > 0) raised++;
+    }
+  }
+  ok(raised >= worlds.length, `only ${raised} lakes across ${worlds.length} worlds sit above the bottom of the world`);
+});
+
+test('reeds grow on a shore within a short walk of where you start', () => {
+  const reeds = harvestSpec('cut_reeds').where;
+  for (const [i, map] of worlds.entries()) {
+    const near = reachableWithin(map, map.spawn, 12);
+    const beds = [...near.keys()].map(k => map.get(...k.split(',').map(Number))).filter(c => !isWater(c.terrain) && reeds(c, map));
+    ok(beds.length >= 4, `${SEEDS[i]}: only ${beds.length} reed beds within twelve steps of the start`);
+
+    // And never on a bank that looks down on the water from a height.
+    for (const col of map) {
+      if (isWater(col.terrain) || !reeds(col, map)) continue;
+      const drop = Math.min(...neighbors(col.q, col.r).map(n => map.get(n.q, n.r)).filter(o => o && isWater(o.terrain)).map(o => col.h - o.h));
+      ok(drop <= 1, `${SEEDS[i]}: reeds at ${col.q},${col.r}, ${drop} levels over the water`);
     }
   }
 });

@@ -1,8 +1,8 @@
 // context.js
 // What you can do from where you are standing.
 //
-// The game does not open a menu of verbs; it floats the two or three that this
-// hex actually affords over the hex itself.
+// The game does not open a menu of verbs; it offers the two or three that this
+// hex actually affords, as a row of buttons over the menu bar.
 
 import { neighbors } from '../world/hexgrid.js';
 import { nearbyOre, cliffTarget } from './harvests.js';

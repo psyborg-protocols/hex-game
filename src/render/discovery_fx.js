@@ -57,13 +57,19 @@ function strokePartial(ctx, cx, cy, frac) {
  */
 export function drawExploreCharge(ctx, map, charge, now) {
   if (!charge) return;
-  const h = Math.max(0, map.heightAt(charge.q, charge.r));
+  const h = Math.max(0, map.surfaceAt(charge.q, charge.r));
   const { cx, cy } = tileCenter(charge.q, charge.r, h);
   const { phase, frac } = phaseAt(charge.t);
   const color = TIER_COLORS[phase];
   const pulse = 0.5 + 0.5 * Math.sin(now / 160);
 
   ctx.save();
+  // Drawn a little inside the face. This is painted with its own hex, before
+  // the hexes in front of it, and a ring on the very edge would have its lower
+  // half painted over by them.
+  ctx.translate(cx, cy);
+  ctx.scale(0.9, 0.9);
+  ctx.translate(-cx, -cy);
   // The glow grows across the whole dwell, not per circuit, so a long one
   // visibly builds.
   traceTopFace(ctx, cx, cy);
@@ -126,13 +132,31 @@ export class Pings {
     this.list.push({ q, r, tier, born: now, sparks, life: tier ? 1.6 : 0.7 });
   }
 
-  draw(ctx, map, now) {
+  /**
+   * Pings on hexes you cannot see, as entities for the renderer to sort in with
+   * the columns, so the mountain in front hides them. `inView(q, r)` says which.
+   */
+  entities(map, now, inView) {
+    return this.list.filter(p => !inView(p.q, p.r))
+      .map(p => ({ q: p.q, r: p.r, draw: ctx => this.drawOne(ctx, map, now, p) }));
+  }
+
+  /**
+   * Pings on hexes in plain view, over everything: the ring spreads across the
+   * neighbouring hexes, which only an overlay can do.
+   */
+  draw(ctx, map, now, inView = () => true) {
     this.list = this.list.filter(p => (now - p.born) / 1000 < p.life);
-    for (const p of this.list) {
+    for (const p of this.list) if (inView(p.q, p.r)) this.drawOne(ctx, map, now, p);
+  }
+
+  drawOne(ctx, map, now, p) {
+    {
       const age = (now - p.born) / 1000;
+      if (age >= p.life) return;
       const k = age / p.life;
       const color = TIER_COLORS[p.tier];
-      const h = Math.max(0, map.heightAt(p.q, p.r));
+      const h = Math.max(0, map.surfaceAt(p.q, p.r));
       const { cx, cy } = tileCenter(p.q, p.r, h);
 
       ctx.save();
@@ -192,7 +216,7 @@ export function drawScenicRings(ctx, map, state, view) {
   for (const [k, tier] of Object.entries(explored)) {
     if (!tier) continue;
     const [q, r] = k.split(',').map(Number);
-    const h = Math.max(0, map.heightAt(q, r));
+    const h = Math.max(0, map.surfaceAt(q, r));
     const { cx, cy } = tileCenter(q, r, h);
     if (cx < view.left || cx > view.right || cy < view.top || cy > view.bottom) continue;
     traceTopFace(ctx, cx, cy);
@@ -236,7 +260,7 @@ export function drawResourceIcons(ctx, camera, map, state, icons, now) {
 
   for (const [k, list] of marks) {
     const [q, r] = k.split(',').map(Number);
-    const h = Math.max(0, map.heightAt(q, r));
+    const h = Math.max(0, map.surfaceAt(q, r));
     const { cx, cy } = tileCenter(q, r, h);
     const p = camera.worldToScreen(cx, cy);
     if (p.x < -size * 3 || p.y < -size * 3 || p.x > W + size * 3 || p.y > H + size * 3) continue;

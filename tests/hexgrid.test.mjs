@@ -163,6 +163,25 @@ test('picking prefers the tall column in front over the one behind it', () => {
   eq({ q: hit.q, r: hit.r }, { q: 0, r: 1 }, 'the raised top face should win');
 });
 
+test('picking finds a summit drawn far above its own ground line', () => {
+  // Twenty levels lift a top face 160px: nearly seven rows up the screen, over
+  // the hexes that stand behind the mountain. A search three rows deep never
+  // reaches the mountain and hands back one of the hexes it hides.
+  const topHeight = (q, r) => (q === 0 && r === 0) ? 20 : (q === 0 && r >= -9 && r <= 3) ? 1 : -1;
+  const top = tileCenter(0, 0, 20);
+
+  const near = pickHex(top.cx, top.cy, topHeight);
+  ok(near && !(near.q === 0 && near.r === 0), 'the short search was expected to miss the summit');
+
+  const hit = pickHex(top.cx, top.cy, topHeight, 3, 20);
+  eq({ q: hit.q, r: hit.r }, { q: 0, r: 0 }, 'told how tall the map is, the summit should win');
+
+  // And it must not start finding mountains that are not there.
+  const clear = tileCenter(0, -9, 1);
+  const behind = pickHex(clear.cx, clear.cy, topHeight, 3, 20);
+  eq({ q: behind.q, r: behind.r }, { q: 0, r: -9 }, 'a hex well clear of the peak was given to the peak');
+});
+
 test('frame origin puts the top face where tileCenter says it is', () => {
   const { x, y } = frameOrigin(3, 2, 1);
   const { cx, cy } = tileCenter(3, 2, 1);

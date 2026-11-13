@@ -18,8 +18,8 @@ gates naturally fall.
 | 4 | **The Iron Age** | Lore (Mind 3) · find ore · smelt an ingot · forge iron | swords, mail, pickaxes |
 | 5 | **The Reckoning** | burn a camp · kill the Warlord · burn every camp | victory |
 
-Raids start on day 2 whatever chapter you are in, so chapter 3 tends to arrive
-on its own.
+The first raid comes on the last night of the first moon whatever chapter you
+are in, so chapter 3 tends to arrive on its own.
 
 ## The skills
 
@@ -64,14 +64,29 @@ METALWORKING            MIND (from exploring, not crafting)
 | Scarcity | finite veins; five villages, six kinds — some worlds have no smiths | worldgen, raids |
 | Food is never "used" | the pack tops your energy up; raw food is saved for the hearth | `food is eaten on its own…` |
 
-## Raids
+## The moon, and the raids
+
+Time runs in **moons** of three seven-minute days (`state.js: moonOf`). Each
+part of a moon belongs to one way of playing:
+
+| Part | When | What it is for |
+|---|---|---|
+| **Fair days** | days 1 and 2, and the third morning | exploring, homesteading. No raid ever sets out. |
+| **Omens** | the third afternoon | getting ready: the camp, the numbers and the route are shown |
+| **Raid night** | the third night | defence, until dawn |
 
 - Three camps on the far bank; the farthest is the **Warlord's Hold**.
-- First raid partway into day 2, then every 1.3–1.8 days from a random camp.
-  A warning comes first: 35s, or 70s with a watchtower.
-- Bands grow: 1 raider on day 2, up to 6 later, with brutes from day 6.
+- One raid a moon, from a random camp. The omens draw its route on the map; a
+  **watchtower** brings them at first light instead of after noon.
+- Raiders raft the river only at the **crossings** the map marks (about three a
+  world), and walk over any **bridge** you build. That is where a defence goes.
+- Waves set out at dusk, 25 seconds apart. At dawn whoever is left goes home.
+- Bands grow: 2 raiders in one wave on the first moon, two more each moon up to
+  16 in three waves, with a brute for every second moon. Each camp you burn
+  takes a quarter off.
 - They go for what you built (hut and fields first), never anything within 2 hexes
-  of a shrine. With nothing to burn, they raid a village and shut its market.
+  of a shrine. With nothing to burn, they raid a village and shut its market
+  for a day.
 - **Walls** are hacked through or walked round. **Watchtowers** shoot (2 dice, range 3).
 - **Combat** is dice: attack dice hit on 4+, defence dice block on 5+.
 - Burning every camp wins the game.

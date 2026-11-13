@@ -14,7 +14,8 @@
 //     vein is finite (skill_map.md). Veins are placed here but stay hidden.
 
 import { Rng, SeededPerlin } from '../core/rng.js';
-import { distance, neighbors } from './hexgrid.js';
+import { distance, neighbors, neighbor } from './hexgrid.js';
+import { findPath, isOpenWater } from './pathfinding.js';
 import { WorldMap } from './mapformat.js';
 import { variantFor, isWater } from './tileset.js';
 
@@ -77,6 +78,7 @@ class Generator {
     this.chooseSpawn();
     this.connectByRamps();
     this.settleLedges();
+    this.settleWater();
 
     const map = new WorldMap({ seed: this.opt.seed, name: `world ${this.opt.seed}` });
     this.paintTerrain(map);
@@ -86,6 +88,7 @@ class Generator {
     this.seedOre(map);
     this.placeCamps(map);
     map.spawn = this.spawn;
+    this.placeCrossings(map);
     resolveAutotiles(map, this.opt.resolvers);
     return map;
   }
@@ -203,54 +206,103 @@ class Generator {
   }
 
   /**
-   * A few still ponds out in the low country, most of them with a short stream
-   * running down to the river.
+   * Lakes out in the country, most of them with a stream running down to the
+   * river.
    *
-   * A pond is ordinary `water`, so it draws from the lake shoreline set — a
-   * one-hex pond is exactly the enclosed piece, land on all six edges, which the
-   * shipped art never had. A stream is its own terrain, one hex wide, autotiled
-   * from which of its neighbours are water, so it joins whatever it runs into.
+   * A lake sits at the level of the ground it is in, not at the bottom of the
+   * world: its surface is the lowest point of the hollow it fills, and the ring
+   * of ground around it is eased to within a step of the water. That ring is
+   * the point. A river in its gorge has cliffs for banks; a lake has a shore,
+   * and a shore is where reeds grow and clay is dug (harvests.js: waterside).
+   * There are enough of them that one is always within a walk of the start.
    *
-   * Streams only ever hang off a pond and stop when they reach water. That keeps
+   * A lake is ordinary `water`, so it draws from the lake shoreline set — a
+   * one-hex pond is exactly the enclosed piece, land on all six edges. A stream
+   * is its own terrain, one hex wide, autotiled from which of its neighbours
+   * are water, so it joins whatever it runs into. It leaves at the lake's level
+   * and only ever steps down.
+   *
+   * Streams only ever hang off a lake and stop when they reach water. That keeps
    * them from fencing anything off: a chain that dead-ends, or that ends at the
    * river, can always be walked around at its head.
    */
   addPondsAndStreams() {
-    const wantPonds = this.rng.irange(3, 5);
+    const wantLakes = this.rng.irange(LAKES[0], LAKES[1]);
     const seats = [];
+    const home = this.spawnSite();
 
     const dry = (q, r) => this.inBoard(q, r) && !this.water.has(this.key(q, r));
-    // far enough from the river to read as its own thing, and low enough to hold
-    const candidate = c =>
-      dry(c.q, c.r)
-      && this.h(c.q, c.r) <= 5
-      && Math.abs(c.q - (this.riverQ.get(c.r) ?? 0)) > 4
-      && seats.every(p => distance(p.q, p.r, c.q, c.r) > 5);
+    // Low enough to hold water, clear of the river, and not touching any other
+    // water: two bodies at different levels side by side would show a wall of
+    // lake standing over the lower one.
+    const holds = (q, r) => dry(q, r)
+      && this.h(q, r) <= LAKE_CEILING
+      && distance(q, r, home.q, home.r) > 2
+      && Math.abs(q - (this.riverQ.get(r) ?? 0)) > 4
+      && neighbors(q, r).every(n => !this.water.has(this.key(n.q, n.r)));
+    const candidate = c => holds(c.q, c.r) && seats.every(p => distance(p.q, p.r, c.q, c.r) > 6);
 
-    for (let attempt = 0; attempt < 40 && seats.length < wantPonds; attempt++) {
-      const open = this.cells.filter(candidate);
+    // The first lake is yours: a short walk from where you will start, on your
+    // side of the river. The opening needs reeds before it needs anything, and
+    // a world whose nearest shore is twenty hexes off has no opening.
+    const homely = c => this.nearBank(c.q, c.r)
+      && distance(c.q, c.r, home.q, home.r) >= 4 && distance(c.q, c.r, home.q, home.r) <= 7;
+
+    for (let attempt = 0; attempt < 60 && seats.length < wantLakes; attempt++) {
+      let open = this.cells.filter(candidate);
+      if (!seats.length) {
+        const near = open.filter(homely);
+        if (near.length) open = near;
+      }
       if (!open.length) break;
       const seat = this.rng.pick(open);
       seats.push(seat);
 
-      // the pond: the seat plus a neighbour or two, so most come out 1-3 hexes
-      const size = this.rng.irange(1, 3);
+      // The lake: grown a hex at a time from the seat. A hex that touches more
+      // of the lake is in the frontier more often, so it comes out as a rounded
+      // body rather than a snake.
+      const size = Math.max(seats.length === 1 ? 4 : 0, this.rng.irange(LAKE_SIZE[0], LAKE_SIZE[1]));
       const body = [seat];
-      for (const n of neighbors(seat.q, seat.r)) {
-        if (body.length >= size) break;
-        if (dry(n.q, n.r) && this.h(n.q, n.r) <= 5) body.push(n);
-      }
-      const bodyKeys = new Set(body.map(c => this.key(c.q, c.r)));
-      for (const c of body) {
-        this.setH(c.q, c.r, 0);
-        this.water.set(this.key(c.q, c.r), 'water');
+      const bodyKeys = new Set([this.key(seat.q, seat.r)]);
+      while (body.length < size) {
+        const frontier = [];
+        for (const c of body) {
+          for (const n of neighbors(c.q, c.r)) {
+            if (bodyKeys.has(this.key(n.q, n.r)) || !holds(n.q, n.r)) continue;
+            if (Math.abs(this.h(n.q, n.r) - this.h(seat.q, seat.r)) > 2) continue;
+            frontier.push(n);
+          }
+        }
+        if (!frontier.length) break;
+        const next = this.rng.pick(frontier);
+        body.push(next);
+        bodyKeys.add(this.key(next.q, next.r));
       }
 
-      // The outflow heads for the river, preferring downhill. It stops the
-      // moment it is beside water that is not its own pond, so the last hex
-      // reads as a mouth. One pond in four is left with no outlet at all.
+      // Its shore, and the level it settles at: the lowest of the hollow.
+      const ring = [];
+      const ringKeys = new Set();
+      for (const c of body) {
+        for (const n of neighbors(c.q, c.r)) {
+          const k = this.key(n.q, n.r);
+          if (!this.inBoard(n.q, n.r) || bodyKeys.has(k) || ringKeys.has(k)) continue;
+          ringKeys.add(k);
+          ring.push(n);
+        }
+      }
+      const level = Math.min(...body.map(c => this.h(c.q, c.r)), ...ring.map(c => this.h(c.q, c.r)));
+      for (const c of body) {
+        this.setH(c.q, c.r, level);
+        this.water.set(this.key(c.q, c.r), 'water');
+      }
+      for (const c of ring) if (this.h(c.q, c.r) > level + 1) this.setH(c.q, c.r, level + 1);
+
+      // The outflow heads for the river, preferring downhill, and never climbs.
+      // It stops the moment it is beside water that is not its own lake, so the
+      // last hex reads as a mouth. One lake in four is left with no outlet.
       if (this.rng.range(0, 1) < 0.25) continue;
       let cur = seat;
+      let surface = level;
       for (let step = 0; step < 16; step++) {
         const around = neighbors(cur.q, cur.r).filter(n => this.inBoard(n.q, n.r));
         const met = around.some(n => {
@@ -265,21 +317,63 @@ class Generator {
         const score = n => Math.abs(n.q - (this.riverQ.get(n.r) ?? 0)) * 3 + this.h(n.q, n.r);
         const next = open.reduce((a, b) => (score(b) < score(a) ? b : a));
         if (score(next) >= score(cur) + 3) break;    // nowhere better to go
-        this.setH(next.q, next.r, 0);
+        surface = Math.min(surface, this.h(next.q, next.r));
+        this.setH(next.q, next.r, surface);
         this.water.set(this.key(next.q, next.r), 'stream');
         cur = next;
       }
     }
   }
 
-  /** Water sits at height 0, and its banks must not be sheer everywhere. */
+  /** A bank must not be sheer everywhere: nothing beside water stands more than three over it. */
   smoothShores() {
     for (const { q, r } of this.cells) {
       if (!this.water.has(this.key(q, r))) continue;
+      const top = this.h(q, r) + 3;
       for (const n of neighbors(q, r)) {
         if (!this.inBoard(n.q, n.r) || this.water.has(this.key(n.q, n.r))) continue;
-        if (this.h(n.q, n.r) > 3) this.setH(n.q, n.r, 3);
+        if (this.h(n.q, n.r) > top) this.setH(n.q, n.r, top);
       }
+    }
+  }
+
+  /**
+   * Water never stands above the ground beside it.
+   *
+   * The ramp carver runs after the lakes are laid and is free to cut a bank
+   * down. Where it has, the lake comes down with it; a stream settles to the
+   * lowest ground it touches. Run last, when the land has stopped moving.
+   */
+  settleWater() {
+    const seen = new Set();
+    for (const start of this.cells) {
+      const k0 = this.key(start.q, start.r);
+      if (this.water.get(k0) !== 'water' || seen.has(k0)) continue;
+      const body = [];
+      const queue = [start];
+      seen.add(k0);
+      let level = Infinity;
+      while (queue.length) {
+        const cur = queue.pop();
+        body.push(cur);
+        level = Math.min(level, this.h(cur.q, cur.r));
+        for (const n of neighbors(cur.q, cur.r)) {
+          if (!this.inBoard(n.q, n.r)) continue;
+          const k = this.key(n.q, n.r);
+          const kind = this.water.get(k);
+          if (kind === 'water') { if (!seen.has(k)) { seen.add(k); queue.push(n); } }
+          else level = Math.min(level, this.h(n.q, n.r));
+        }
+      }
+      for (const c of body) this.setH(c.q, c.r, level);
+    }
+    for (const { q, r } of this.cells) {
+      if (this.water.get(this.key(q, r)) !== 'stream') continue;
+      let low = this.h(q, r);
+      for (const n of neighbors(q, r)) {
+        if (this.inBoard(n.q, n.r) && !this.water.has(this.key(n.q, n.r))) low = Math.min(low, this.h(n.q, n.r));
+      }
+      this.setH(q, r, low);
     }
   }
 
@@ -323,13 +417,20 @@ class Generator {
   }
 
   /** Open, low, dry ground near the middle of the near bank. */
-  chooseSpawn() {
+  chooseSpawn() { this.spawn = this.spawnSite(); }
+
+  /**
+   * Where you would start, as the land lies now: low ground on the near bank,
+   * as close to the middle of the board as there is. Asked once before the
+   * lakes are laid, so one can be put within reach, and again after.
+   */
+  spawnSite() {
     const candidates = this.cells
       .filter(c => !this.water.has(this.key(c.q, c.r))
         && this.h(c.q, c.r) <= 2
         && this.nearBank(c.q, c.r))
       .sort((a, b) => distance(a.q, a.r, 0, 0) - distance(b.q, b.r, 0, 0));
-    this.spawn = candidates[0]
+    return candidates[0]
       || this.cells.find(c => !this.water.has(this.key(c.q, c.r)))
       || { q: 0, r: 0 };
   }
@@ -477,8 +578,9 @@ class Generator {
       const h = this.h(q, r);
       const kind = this.water.get(this.key(q, r));
       if (kind) {
-        // `kind` is already a terrain id: 'water', 'river' or 'stream'
-        map.place(q, r, kind, 0);
+        // `kind` is already a terrain id: 'water', 'river' or 'stream'. The
+        // river runs along the bottom of the world; a lake sits where it is.
+        map.place(q, r, kind, h);
         continue;
       }
 
@@ -747,7 +849,95 @@ class Generator {
       };
     });
   }
+
+  /**
+   * Where the raiders cross the river.
+   *
+   * A war band used to pole its rafts over wherever the water happened to be,
+   * so there was no approach to hold and nowhere worth putting a wall. Now the
+   * river is closed to them except at a few crossings: narrow water between two
+   * banks low enough to land on. That is what turns "they are coming" into
+   * "they are coming *that way*". Your own bridges are crossings too, which is
+   * the price of one.
+   *
+   * A crossing is a straight run of river hexes, each marked with a feature so
+   * it saves with the map. They are for rafts: you still need a boat or a
+   * bridge, and the far bank stays as gated as it was.
+   *
+   * Three are wanted, spread along the river. More are opened if a camp would
+   * otherwise have no way to the near bank at all, and a world where even that
+   * fails is left with the whole river open, as it used to be.
+   */
+  placeCrossings(map) {
+    const step = (a, b) => { const d = b.h - a.h; return d <= 2 && d >= -2; };
+    const spans = [];
+    for (const c of this.cells) {
+      const start = map.get(c.q, c.r);
+      if (!start || isWater(start.terrain) || !this.nearBank(c.q, c.r)) continue;
+      for (let e = 0; e < 6; e++) {
+        const tiles = [];
+        let cur = start, land = null;
+        for (let i = 0; i <= CROSSING_SPAN; i++) {
+          const n = neighbor(cur.q, cur.r, e);
+          const col = map.get(n.q, n.r);
+          if (!col || !step(cur, col)) break;
+          if (isOpenWater(col.terrain)) { tiles.push(col); cur = col; continue; }
+          if (!isWater(col.terrain)) land = col;
+          break;
+        }
+        if (!land || !tiles.length || this.nearBank(land.q, land.r)) continue;
+        spans.push({ start, land, tiles });
+      }
+    }
+    if (!spans.length) return;
+
+    // Narrowest first, in a seeded order among equals.
+    const order = this.rng.shuffle(spans).sort((a, b) => a.tiles.length - b.tiles.length);
+    const gap = Math.max(6, Math.floor(this.radius * 0.3));
+    const chosen = [];
+    const open = span => {
+      chosen.push(span);
+      for (const t of span.tiles) t.feature = { type: 'crossing' };
+      map.crossings = null;
+    };
+    // Not on your doorstep: a band that lands beside the hearth has no approach
+    // to defend, and the first night is over before you have seen it coming.
+    const clear = span => distance(span.start.q, span.start.r, this.spawn.q, this.spawn.r) >= CROSSING_CLEAR;
+    for (const span of order) {
+      if (chosen.length >= CROSSINGS) break;
+      if (!clear(span)) continue;
+      if (chosen.some(o => distance(o.start.q, o.start.r, span.start.q, span.start.r) < gap)) continue;
+      open(span);
+    }
+
+    const camps = [...map].filter(c => c.feature?.type === 'camp');
+    const stranded = () => camps.filter(c => !findPath(map, c, this.spawn, { raider: true, limit: 8000 }));
+    for (const span of order) {
+      if (!stranded().length || chosen.length >= CROSSINGS * 3) break;
+      if (!chosen.includes(span) && !span.tiles.some(t => t.feature)) open(span);
+    }
+    if (stranded().length) {
+      for (const span of chosen) for (const t of span.tiles) delete t.feature;
+      map.crossings = null;
+    }
+  }
 }
+
+/** How many lakes a world gets, and how many hexes each. */
+const LAKES = [5, 8];
+const LAKE_SIZE = [2, 8];
+
+/** The highest ground a lake will sit in: the rolling country, not the hills. */
+const LAKE_CEILING = 5;
+
+/** How many places the raiders can cross the river. */
+export const CROSSINGS = 3;
+
+/** How far from where you start the nearest crossing may be. */
+const CROSSING_CLEAR = 8;
+
+/** The widest water a crossing spans. */
+const CROSSING_SPAN = 4;
 
 const CAMP_A = ['Ash', 'Black', 'Red', 'Bone', 'Crow', 'Wolf', 'Skull', 'Iron'];
 const CAMP_B = ['fang', 'hand', 'tooth', 'brand', 'claw', 'scar'];

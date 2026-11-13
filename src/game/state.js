@@ -17,8 +17,25 @@ export const MAX_SLOTS = 40;
 export const BASE_MAX_ENERGY = 20;
 export const BASE_MAX_HP = 10;
 
-/** Seconds in a day. The last quarter of each one is night. */
-export const DAY_LENGTH = 180;
+/**
+ * Seconds in a day: seven minutes. It was three, and with a raid every day or
+ * two that left no stretch of the game in which nothing was coming.
+ */
+export const DAY_LENGTH = 420;
+
+/** How far through a day dusk falls. Night is everything after it. */
+export const DUSK = 0.72;
+
+/**
+ * Days in a moon. Time is counted in moons because the three ways of playing
+ * each get a part of one: two fair days and a morning in which no raid ever sets
+ * out, an afternoon of omens when the next one is shown on the map, and the
+ * night it comes. See moonOf, and raiders.js for what the night brings.
+ */
+export const MOON_DAYS = 3;
+
+/** How far through the moon's last day the omens begin. */
+export const OMENS_AT = 0.4;
 
 /**
  * Items that are structures rather than carryable goods: anything a recipe with
@@ -87,7 +104,39 @@ export function dayOf(state) {
   const t = state.time || 0;
   return { day: Math.floor(t / DAY_LENGTH) + 1, frac: (t % DAY_LENGTH) / DAY_LENGTH };
 }
-export const isNight = state => dayOf(state).frac >= 0.75;
+export const isNight = state => dayOf(state).frac >= DUSK;
+
+/**
+ * Where we are in the moon.
+ *
+ *   phase   'fair'   nothing is coming
+ *           'omens'  the last afternoon: tonight's raid is known
+ *           'raid'   the last night
+ *
+ * The times are world seconds, for anything that has to count down to them.
+ * @returns {{moon:number, day:number, frac:number, phase:string, progress:number,
+ *            startAt:number, omensAt:number, duskAt:number, dawnAt:number}}
+ */
+export function moonOf(state) {
+  const t = state.time || 0;
+  const span = MOON_DAYS * DAY_LENGTH;
+  const index = Math.floor(t / span);
+  const startAt = index * span;
+  const day = Math.floor((t - startAt) / DAY_LENGTH) + 1;
+  const frac = (t % DAY_LENGTH) / DAY_LENGTH;
+  const last = day === MOON_DAYS;
+  return {
+    moon: index + 1,
+    day,
+    frac,
+    phase: last && frac >= DUSK ? 'raid' : last && frac >= OMENS_AT ? 'omens' : 'fair',
+    progress: (t - startAt) / span,
+    startAt,
+    omensAt: startAt + (MOON_DAYS - 1 + OMENS_AT) * DAY_LENGTH,
+    duskAt: startAt + (MOON_DAYS - 1 + DUSK) * DAY_LENGTH,
+    dawnAt: startAt + span,
+  };
+}
 
 // ------------------------------------------------------------- structures
 

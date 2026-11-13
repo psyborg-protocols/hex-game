@@ -17,7 +17,7 @@ import { neighbors, distance } from '../world/hexgrid.js';
 import { isWater } from '../world/tileset.js';
 import { findPath } from '../world/pathfinding.js';
 import { clash } from './combat.js';
-import { DAY_LENGTH, dayOf, itemName } from './state.js';
+import { DAY_LENGTH, dayOf, moonOf, itemName } from './state.js';
 import { destroyStructure } from './actions.js';
 import { villageKey } from './economy.js';
 import { addItem, countItem } from './inventory.js';
@@ -25,17 +25,14 @@ import { defenseDice } from './gear.js';
 
 export const KINDS = {
   // Slower than you on purpose: you can always outrun a war band, and you can
-  // watch one coming across the map and decide what to do about it.
-  raider:  { name: 'Raider',  hp: 4,  atk: 2, def: 1, speed: 1.15, cd: 1.6, gold: [2, 4] },
-  brute:   { name: 'Brute',   hp: 7,  atk: 3, def: 2, speed: 0.95, cd: 1.8, gold: [5, 8] },
-  warlord: { name: 'Warlord', hp: 14, atk: 4, def: 3, speed: 1.0, cd: 1.7, gold: [30, 30] },
+  // watch one coming across the map and decide what to do about it. Not so slow
+  // that a band setting out at dusk is still on the road at dawn: the longest
+  // march a world gives them is fifty-odd hexes, and the night is two minutes.
+  raider:  { name: 'Raider',  hp: 4,  atk: 2, def: 1, speed: 1.6, cd: 1.6, gold: [2, 4] },
+  brute:   { name: 'Brute',   hp: 7,  atk: 3, def: 2, speed: 1.35, cd: 1.8, gold: [5, 8] },
+  warlord: { name: 'Warlord', hp: 14, atk: 4, def: 3, speed: 1.2, cd: 1.7, gold: [30, 30] },
   militia: { name: 'Militia', hp: 7,  atk: 2, def: 2, speed: 2.4, cd: 1.5, gold: [0, 0] },
 };
-
-/** The first raid comes partway into the second day. */
-export const FIRST_RAID_AT = DAY_LENGTH * 1.55;
-/** Seconds of warning before a raid sets out; a watchtower doubles it. */
-export const WARNING = 35;
 
 const AGGRO = 2;           // raiders turn on you this close
 const GUARD_AGGRO = 3;
@@ -117,20 +114,55 @@ export function garrisonCamps(map, state) {
 }
 
 // ---------------------------------------------------------------- raids
+//
+// Raids keep to the moon (state.js: moonOf). For two days and a morning nothing
+// sets out, and that is a promise, not an average: it is what lets you walk to
+// the far end of the map, or stand in a field, without the hut burning behind
+// you. On the last afternoon come the omens — which camp, how many, and the way
+// they will come. At dusk the first wave sets out, the rest behind it, and at
+// dawn whoever is still in your lands turns for home.
+//
+// state.raid.stage runs idle -> omen -> night -> done, once a moon.
+
+const freshRaid = moon => ({
+  moon, stage: 'idle', from: null, target: null, waves: [], sent: 0,
+  startedAt: 0, route: null, routeAt: 0, felled: 0, lost: 0,
+});
 
 export function ensureRaidState(state) {
-  state.raid ||= { nextAt: FIRST_RAID_AT, warned: false, count: 0, from: null, target: null };
+  // A save from before the moon carried a countdown instead; start it over.
+  if (!state.raid || state.raid.stage == null) state.raid = freshRaid(0);
   return state.raid;
 }
 
-/** How big the next band is, by the day. */
-export function raidRoster(day) {
-  const n = Math.min(6, 1 + Math.floor(day / 2.5));
-  const roster = Array.from({ length: n }, () => 'raider');
-  if (day >= 6) roster[0] = 'brute';
-  if (day >= 10) roster[1] = 'brute';
-  return roster;
+/**
+ * The band a moon sends, as waves of kinds.
+ *
+ * The first moon is two raiders in one wave: enough to learn what a raid is on.
+ * After that it grows by two a moon to sixteen, splits into two waves and then
+ * three, and brings a brute for every second moon. Every camp you have burned
+ * takes a quarter off it, which is the reason to cross the river before the end.
+ */
+export function raidWaves(moon, burned = 0) {
+  const size = Math.max(2, Math.round(Math.min(16, 2 * moon) * Math.max(0.25, 1 - 0.25 * burned)));
+  const count = moon <= 1 ? 1 : moon <= 3 ? 2 : 3;
+  const waves = Array.from({ length: count }, () => []);
+  // The later waves are the bigger ones.
+  for (let i = 0; i < size; i++) waves[count - 1 - (i % count)].push('raider');
+  const brutes = Math.min(4, Math.floor((moon - 1) / 2), size - 1);
+  for (let i = 0; i < brutes; i++) {
+    const w = waves[count - 1 - (i % count)];
+    const at = w.indexOf('raider');
+    if (at >= 0) w[at] = 'brute';
+  }
+  return waves.filter(w => w.length);
 }
+
+/** Everyone a set of waves adds up to. */
+export const raidSize = waves => (waves || []).reduce((n, w) => n + w.length, 0);
+
+/** Seconds between one wave setting out and the next. */
+export const WAVE_GAP = 25;
 
 /** What a band goes for: something you built, far from any shrine, else a village. */
 function chooseTarget(map, state, from) {
@@ -152,42 +184,102 @@ function chooseTarget(map, state, from) {
   return best ? { kind: 'village', q: best.col.q, r: best.col.r } : null;
 }
 
-/** Tick the raid clock. Emits warn / raid events. */
+/** Raiders out in your lands, as against the guards who stay by their fires. */
+export const abroad = state => hostiles(state).filter(u => u.mode !== 'guard');
+
+/** The moon turned: whoever is still raiding goes home, and the night is told. */
+function dawn(state, raid, events) {
+  for (const u of state.units || []) {
+    if (u.faction === 'raider' && u.mode === 'raid') { u.mode = 'return'; u.target = null; u.path = []; }
+  }
+  // A night that ended before dawn has already been told, by `held`.
+  if (raid.stage === 'night' && raid.sent > 0) endNight(state, raid, events, 'dawn');
+}
+
+/** The night is over, one way or the other. A night nothing was lost in is held. */
+function endNight(state, raid, events, type) {
+  if (!raid.lost) state.stats.nightsHeld = (state.stats.nightsHeld || 0) + 1;
+  events.push({ type, moon: raid.moon, felled: raid.felled || 0, lost: raid.lost || 0 });
+}
+
+/** Send out the next wave. */
+function sendWave(world, state, raid, events) {
+  const from = world.map.get(raid.from.q, raid.from.r);
+  const kinds = raid.waves[raid.sent];
+  raid.sent++;
+  if (!from || from.feature?.burned) return;
+  // Chosen again for each wave: what the last one burned is no longer there.
+  const target = chooseTarget(world.map, state, from) || raid.target;
+  if (!target) return;
+  raid.target = target;
+  const spots = standingRoom(world.map, from, kinds.length, new Set((state.units || []).map(u => key(u.q, u.r))));
+  kinds.forEach((kind, i) => {
+    state.units.push(makeUnit(kind, 'raider', spots[i] || from, { mode: 'raid', target: { ...target }, home: { q: from.q, r: from.r } }));
+  });
+  events.push({ type: 'raid', from: raid.from, target, size: kinds.length, wave: raid.sent, waves: raid.waves.length });
+}
+
+/** The way the band will come, for the map to show. Reworked as walls go up. */
+function scoutRoute(world, state, raid) {
+  if (state.time < (raid.routeAt || 0)) return;
+  raid.routeAt = state.time + 4;
+  if (!raid.from || !raid.target) { raid.route = null; return; }
+  const from = { q: raid.from.q, r: raid.from.r, faction: 'raider' };
+  const p = pathFor(world.map, from, besideHex(world.map, from, raid.target));
+  raid.route = p ? p.map(s => ({ q: s.q, r: s.r })) : null;
+}
+
+/** Tick the moon. Emits omen / nightfall / raid / held / dawn events. */
 function tickSchedule(world, state, events) {
   const raid = ensureRaidState(state);
+  state.stats ||= {};
+  const m = moonOf(state);
+
+  if (raid.moon !== m.moon) {
+    if (raid.moon) dawn(state, raid, events);
+    Object.assign(raid, freshRaid(m.moon));
+  }
+
   const camps = campsLeft(world.map).filter(c => !c.feature.boss);
   const sources = camps.length ? camps : campsLeft(world.map);
-  if (!sources.length) return;
+  if (!sources.length) { raid.stage = 'done'; raid.route = null; return; }
 
+  // A watchtower sees the fires being lit: the omens come at first light.
   const tower = state.built.some(b => b.item === 'watchtower');
-  const lead = WARNING * (tower ? 2 : 1);
+  const omensAt = tower ? m.dawnAt - DAY_LENGTH : m.omensAt;
 
-  if (!raid.warned && state.time >= raid.nextAt - lead) {
-    raid.warned = true;
+  if (raid.stage === 'idle' && state.time >= omensAt) {
     const from = sources[Math.floor(Math.random() * sources.length)];
+    const burned = allCamps(world.map).length - campsLeft(world.map).length;
     raid.from = { q: from.q, r: from.r, name: from.feature.name };
     raid.target = chooseTarget(world.map, state, from);
-    events.push({ type: 'warn', from: raid.from, target: raid.target, seconds: Math.round(raid.nextAt - state.time), tower });
+    raid.waves = raidWaves(m.moon, burned);
+    raid.stage = 'omen';
+    raid.routeAt = 0;
+    events.push({
+      type: 'omen', from: raid.from, target: raid.target, waves: raid.waves, size: raidSize(raid.waves),
+      seconds: Math.max(0, Math.round(m.duskAt - state.time)), tower,
+    });
   }
 
-  if (raid.warned && state.time >= raid.nextAt) {
-    const from = world.map.get(raid.from.q, raid.from.r);
-    raid.warned = false;
-    raid.count++;
-    raid.nextAt = state.time + DAY_LENGTH * (1.3 + Math.random() * 0.5);
-    if (!from || from.feature?.burned) return;
-    // Recheck the target: what you had when warned may be gone or sheltered now.
-    const target = chooseTarget(world.map, state, from) || raid.target;
-    if (!target) return;
-    const roster = raidRoster(dayOf(state).day);
-    const spots = standingRoom(world.map, from, roster.length,
-      new Set((state.units || []).map(u => key(u.q, u.r))));
-    roster.forEach((kind, i) => {
-      const at = spots[i] || from;
-      state.units.push(makeUnit(kind, 'raider', at, { mode: 'raid', target: { ...target }, home: { q: from.q, r: from.r } }));
-    });
-    events.push({ type: 'raid', from: raid.from, target, size: roster.length });
+  if (raid.stage === 'omen' && state.time >= m.duskAt) {
+    raid.stage = 'night';
+    raid.startedAt = state.time;
+    events.push({ type: 'nightfall', from: raid.from, waves: raid.waves.length, size: raidSize(raid.waves) });
   }
+
+  if (raid.stage === 'night') {
+    while (raid.sent < raid.waves.length && state.time >= raid.startedAt + raid.sent * WAVE_GAP) {
+      sendWave(world, state, raid, events);
+    }
+    if (raid.sent >= raid.waves.length && !abroad(state).length) {
+      raid.stage = 'done';
+      raid.route = null;
+      endNight(state, raid, events, 'held');
+    }
+  }
+
+  if (raid.stage === 'omen' || raid.stage === 'night') scoutRoute(world, state, raid);
 }
 
 // ------------------------------------------------------------- movement
@@ -337,7 +429,10 @@ export function updateUnits(ctx, dt) {
           state.raidedUntil ||= {};
           const k2 = villageKey(t.q, t.r);
           if (!(state.raidedUntil[k2] > state.time)) {
-            state.raidedUntil[k2] = (dayOf(state).day) * DAY_LENGTH;
+            // Shut for the whole of the next day: a raid comes at night, and
+            // "until tomorrow" measured from then would be no time at all.
+            state.raidedUntil[k2] = (dayOf(state).day + 1) * DAY_LENGTH;
+            if (state.raid) state.raid.lost = (state.raid.lost || 0) + 1;
             events.push({ type: 'villageRaided', name: tcol.feature.name, q: t.q, r: t.r });
           }
           u.mode = 'return';
@@ -348,6 +443,7 @@ export function updateUnits(ctx, dt) {
         events.push({ type: 'ransack', who: u, q: t.q, r: t.r });
         if (tcol.feature.hp <= 0) {
           const fallen = destroyStructure(world, state, tcol);
+          if (state.raid) state.raid.lost = (state.raid.lost || 0) + 1;
           if (fallen) {
             u.carry.push(...fallen.loot);
             events.push({ type: 'destroyed', item: fallen.item, q: t.q, r: t.r, loot: fallen.loot });
@@ -367,6 +463,7 @@ export function updateUnits(ctx, dt) {
       events.push({ type: 'ransack', who: u, q: wall.q, r: wall.r });
       if (wall.feature.hp <= 0) {
         const fallen = destroyStructure(world, state, wall);
+        if (state.raid) state.raid.lost = (state.raid.lost || 0) + 1;
         events.push({ type: 'destroyed', item: fallen?.item || 'palisade', q: wall.q, r: wall.r, loot: [] });
         u.path = [];
       }
@@ -375,7 +472,12 @@ export function updateUnits(ctx, dt) {
 
   towers(ctx, dt);
 
-  // The dead and the departed leave the board.
+  // The dead and the departed leave the board. A raider that fell, rather than
+  // went home, is one for the night's tally.
+  if (state.raid) {
+    state.raid.felled = (state.raid.felled || 0)
+      + units.filter(u => !alive(u) && !u.gone && u.faction === 'raider' && u.mode !== 'guard').length;
+  }
   state.units = units.filter(u => alive(u));
 }
 

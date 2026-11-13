@@ -6,7 +6,7 @@
 // are kept here so a hand-edited map opens in the game and a generated map opens
 // in the editor.
 
-import { columnKey, neighbors, EDGE_BITS, EDGE_ORDER } from './hexgrid.js';
+import { columnKey, neighbors, neighbor as neighborAcross, EDGE_BITS, EDGE_ORDER } from './hexgrid.js';
 import { TERRAIN, CROPS, SHEET_NAMES, variantFor, terrainOf, isWater } from './tileset.js';
 
 export const MAP_VERSION = 2;
@@ -164,7 +164,74 @@ export class WorldMap {
 
   // ------------------------------------------------------------ structures
 
-  addStructure(s) { this.structures.push(s); return s; }
+  addStructure(s) { this.structures.push(s); this.decks = null; return s; }
+
+  /**
+   * The bridge deck over this column, if one spans it.
+   *
+   * A deck does not lie on the water: it rests on its lower bank, which is what
+   * lets it meet the ground at both ends instead of running into the foot of a
+   * cliff. So a bridged hex has two heights — the water's, and the one you walk
+   * at — and everything that puts a figure on the map asks `surfaceAt`.
+   *
+   * @returns {{h:number, edge:number, structure:Object}|null}
+   */
+  bridgeAt(q, r) {
+    if (!this.decks || this.decksFor !== this.structures) {
+      this.decks = new Map();
+      this.decksFor = this.structures;
+      for (const s of this.structures) {
+        if (s.type !== 'bridge' || !s.tiles?.length) continue;
+        const h = s.h ?? this.deckHeight(s);
+        for (const t of s.tiles) this.decks.set(columnKey(t.q, t.r), { h, edge: s.edge ?? 0, structure: s });
+      }
+    }
+    return this.decks.get(columnKey(q, r)) || null;
+  }
+
+  /**
+   * The height a bridge's deck sits at: its lower bank, and never under the
+   * water it crosses. Worked out for bridges saved before decks carried one.
+   */
+  deckHeight(s) {
+    const first = s.tiles[0], last = s.tiles[s.tiles.length - 1];
+    let water = 0;
+    for (const t of s.tiles) water = Math.max(water, this.heightAt(t.q, t.r));
+    const banks = [];
+    if (s.edge != null) {
+      const a = neighborAcross(first.q, first.r, (s.edge + 3) % 6);
+      const b = neighborAcross(last.q, last.r, s.edge);
+      for (const n of [a, b]) {
+        const col = this.get(n.q, n.r);
+        if (col && !isWater(col.terrain)) banks.push(col.h);
+      }
+    }
+    return Math.max(water, banks.length ? Math.min(...banks) : water);
+  }
+
+  /**
+   * Does this world mark where raiders cross the river?
+   *
+   * A generated world does: a few crossings, and open water is closed to a war
+   * band everywhere else, which is what gives a defence somewhere to stand. A
+   * map without any — an older save, one drawn in the editor, a test's plain —
+   * leaves the whole river open to them, as it always was.
+   */
+  hasCrossings() {
+    if (this.crossings == null) {
+      this.crossings = false;
+      for (const c of this.columns.values()) {
+        if (c.feature?.type === 'crossing') { this.crossings = true; break; }
+      }
+    }
+    return this.crossings;
+  }
+
+  /** The height you stand at on a column: the deck if it is bridged, else the ground. */
+  surfaceAt(q, r) {
+    const deck = this.bridgeAt(q, r);
+    return deck ? deck.h : this.heightAt(q, r);
+  }
 
   structureAt(q, r) {
     return this.structures.find(s =>

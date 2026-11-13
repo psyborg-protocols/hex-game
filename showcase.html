@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hex Quest — Art Revamp Showcase</title>
+  <style>
+    :root {
+      --bg: #14171f;
+      --panel: #1d222e;
+      --border: #31394d;
+      --text: #eef1f7;
+      --muted: #98a2b8;
+      --accent: #e5c165;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.4;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 24px;
+      background: rgba(20, 23, 31, 0.94);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .title h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .title p {
+      margin: 2px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    button, .play-link {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    button:hover, .play-link:hover {
+      border-color: var(--accent);
+    }
+    button.active {
+      background: #2f2a20;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .play-link {
+      background: #3a2e19;
+      border-color: var(--accent);
+      color: #f7df94;
+      font-weight: 600;
+    }
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 20px 24px 64px;
+    }
+    section {
+      margin-top: 28px;
+    }
+    section h2 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .diorama-wrap {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: auto;
+    }
+    .diorama-caption {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .card canvas {
+      border-radius: 4px;
+      background: #171a21;
+    }
+    .card .label {
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+    }
+    .card .sub {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: -4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>Hex Quest — Art Revamp Showcase</h1>
+      <p>Isolated branch <code>art-revamp</code> in <code>HexGame-mind</code> · Integer-scaled 1x pixel art</p>
+    </div>
+    <div class="controls">
+      <span>Zoom:</span>
+      <button data-zoom="2">2x</button>
+      <button data-zoom="3">3x</button>
+      <button data-zoom="4" class="active">4x</button>
+      <button data-zoom="5">5x</button>
+      <button id="toggle-pause">Pause</button>
+      <button id="toggle-night">Dusk Shade</button>
+      <button id="toggle-raid">Raided Villages</button>
+      <a class="play-link" href="/?free=1&nosave=1">Play Live Build &rarr;</a>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Live Valley Diorama</h2>
+      <div class="diorama-wrap">
+        <canvas id="diorama"></canvas>
+        <div class="diorama-caption">
+          Showing river crossings, timber trestle bridge, cliff ladders (N, NE &amp; far-lip), homestead structures, trade villages, raider camp, and animated characters.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Huts &amp; Homestead Structures</h2>
+      <div class="grid" id="grid-structures"></div>
+    </section>
+
+    <section>
+      <h2>Trade Villages &amp; Raider Camps</h2>
+      <div class="grid" id="grid-villages"></div>
+    </section>
+
+    <section>
+      <h2>Player Animations</h2>
+      <div class="grid" id="grid-player"></div>
+    </section>
+
+    <section>
+      <h2>Ladders on Cliffs (All Orientations)</h2>
+      <div class="grid" id="grid-ladders"></div>
+    </section>
+
+    <section>
+      <h2>Bridges &amp; River Crossings</h2>
+      <div class="grid" id="grid-bridges"></div>
+    </section>
+
+    <section>
+      <h2>Units &amp; Companion</h2>
+      <div class="grid" id="grid-units"></div>
+    </section>
+  </main>
+
+  <script type="module" src="src/showcase.js"></script>
+</body>
+</html>

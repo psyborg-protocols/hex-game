@@ -11,6 +11,7 @@ import { WorldMap } from '../src/world/mapformat.js';
 import { generateWorld } from '../src/world/worldgen.js';
 import { makeResolvers, isWater } from '../src/world/tileset.js';
 import { neighbors } from '../src/world/hexgrid.js';
+import { bridgeSpan } from '../src/game/actions.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const index = JSON.parse(readFileSync(join(root, 'new_tiles', 'index.json'), 'utf8'));
@@ -110,6 +111,56 @@ test('a river splits the map until a bridge spans it', () => {
   const path = findPath(bridged, at(0, 4), at(8, 4));
   ok(path, 'the bridge did not carry the route');
   ok(path.some(s => s.q === 4 && s.r === 4), 'the route should cross on the bridge');
+});
+
+/** Banks two levels up, with a river in a gorge along r = 3..5 of every column. */
+function gorge(farBank = 2) {
+  const map = plain(7, 9, 2);
+  for (let q = 0; q < 7; q++) {
+    for (let r = 3; r <= 5; r++) map.place(q, r, 'river', 0);
+    for (let r = 6; r < 9; r++) map.place(q, r, 'grass', farBank);
+  }
+  return map;
+}
+
+test('a bridge rests on its lower bank, not on the water', () => {
+  const map = gorge();
+  const span = bridgeSpan(map, at(3, 2), 'S');
+  ok(span, 'no crossing offered over a three-hex gorge');
+  eq(span.tiles.length, 3, 'the span is the water between the banks');
+  eq(span.h, 2, 'the deck should sit level with the banks');
+
+  map.addStructure({ type: 'bridge', edge: span.edge, h: span.h, tiles: span.tiles.map(t => at(t.q, t.r)) });
+  eq(map.heightAt(3, 4), 0, 'the water under the deck is still where it was');
+  eq(map.surfaceAt(3, 4), 2, 'you stand on the deck, two levels over the water');
+  eq(map.surfaceAt(2, 4), 0, 'the hex beside the bridge is just water');
+
+  const path = findPath(map, at(3, 0), at(3, 8));
+  ok(path, 'the bridge did not carry the route across the gorge');
+  ok(path.some(s => s.q === 3 && s.r === 4), 'the route should cross on the deck');
+});
+
+test('a bridge is not a way up a cliff, or out of the water', () => {
+  // The far bank stands five levels over the near one: no deck reaches it.
+  eq(bridgeSpan(gorge(7), at(3, 2), 'S'), null, 'a crossing was offered onto a five-level wall');
+  // One level of difference is a step, and the deck takes the lower side.
+  eq(bridgeSpan(gorge(3), at(3, 2), 'S')?.h, 2, 'a one-level step should still be a crossing');
+
+  // A deck someone did lay against a wall — an old save, a mined bank — still
+  // only lets you off where an ordinary step would.
+  const map = gorge(7);
+  map.addStructure({ type: 'bridge', edge: 3, h: 2, tiles: [at(3, 3), at(3, 4), at(3, 5)] });
+  ok(canStep(map, at(3, 2), at(3, 3)), 'you should be able to walk onto the deck from its own bank');
+  ok(!canStep(map, at(3, 5), at(3, 6)), 'the deck let you step up a five-level face');
+  ok(!canStep(map, at(3, 4), at(2, 4)), 'stepped off the side of the bridge into the river');
+});
+
+test('a bridge saved before decks had a height works out its own', () => {
+  const map = gorge();
+  map.addStructure({ type: 'bridge', edge: 3, tiles: [at(3, 3), at(3, 4), at(3, 5)] });
+  eq(map.bridgeAt(3, 4)?.h, 2, 'the deck should have found its banks');
+  const back = WorldMap.fromJSON(JSON.parse(JSON.stringify(map.toJSON())));
+  eq(back.surfaceAt(3, 4), 2, 'the deck was lost in the save');
 });
 
 test('a ladder joins two columns a cliff apart', () => {
