@@ -21,7 +21,8 @@ import { harvest, shakeTree, prospect, build, relightCampfire, placementSpots, g
 import { harvestSpec } from './game/harvests.js';
 import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile } from './game/save.js';
 import { ensureMind, isKnown, isExplored, isMeditated, scenicOf, harvestsHere, HIDDEN } from './game/discovery.js';
-import { nodeNear } from './game/nodes.js';
+import { resolveClick } from './game/pick.js';
+import { makeMasks } from './render/masks.js';
 import { createFx, drawColumnNodes, drawCampfire, SHAKE_MS } from './render/resources.js';
 import { onStep as mindStep, onExplored, onMeditated, onTrade } from './game/mind.js';
 import { Explorer } from './game/explorer.js';
@@ -75,6 +76,8 @@ async function boot() {
   const canvas = document.getElementById('view');
   const [tileset, decor] = await Promise.all([loadTileset(), loadDecor()]);
   const res = { images: tileset.images, decor, resolvers: tileset.resolvers, index: tileset.index };
+  // Per-asset hit regions, measured from the art's own alpha (see pick.js).
+  res.masks = makeMasks(res);
 
   const params = new URLSearchParams(location.search);
   const restored = params.get('load') === '1' ? loadLocal() : null;
@@ -969,28 +972,11 @@ async function boot() {
   const hitNodeAt = (e, hex) => {
     if (!hex) return null;
     const w = worldAt(e);
-    const col = map.get(hex.q, hex.r);
-    if (col) {
-      const { cx, cy } = tileCenter(col.q, col.r, col.h);
-      const direct = nodeNear(map, state, col, w.x - cx, w.y - cy, performance.now() / 1000);
-      if (direct && (direct.kind === 'tree' || direct.kind === 'field' || isKnown(state, direct.q, direct.r))) {
-        return direct;
-      }
-      if (col.feature?.type === 'ore' && col.feature.known && col.feature.remaining > 0) {
-        if (Math.hypot(w.x - cx, w.y - (cy - 1)) <= 8) {
-          return { kind: 'ore', harvest: 'mine_ore', q: col.q, r: col.r, dx: 0, dy: -1, ready: true };
-        }
-      }
-    }
-    for (const nb of neighbors(hex.q, hex.r)) {
-      const ncol = map.get(nb.q, nb.r);
-      if (ncol?.feature?.type !== 'trees' || !(ncol.feature.remaining > 0)) continue;
-      if (Math.abs(ncol.h - (col?.h ?? 0)) > 1) continue;
-      const nc = tileCenter(ncol.q, ncol.r, ncol.h);
-      if (Math.hypot(w.x - nc.cx, w.y - (nc.cy - 10)) <= 13) {
-        return { kind: 'tree', harvest: 'fell_tree', q: ncol.q, r: ncol.r, dx: 0, dy: -6, ready: true, variant: 0 };
-      }
-    }
+    // Trees are picked by their drawn art, not by the hex under the pointer:
+    // a canopy overhangs into the tiles around it. The whole decision lives in
+    // pick.js so it is testable without a browser.
+    const node = resolveClick(w.x, w.y, map, state, hex, res.decor.index, res.masks, performance.now() / 1000);
+    if (node) return node;
     if (map.spawn && hex.q === map.spawn.q && hex.r === map.spawn.r) {
       const spawnCol = map.get(map.spawn.q, map.spawn.r);
       if (spawnCol && !spawnCol.feature) {
