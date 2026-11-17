@@ -74,6 +74,12 @@ export class Renderer {
         // The artist's wooded tiles carry their trees, so the tile itself
         // sways; the bare floors have theirs stood on top, and those do.
         drawColumn(b, this.res, d.column, dark, d.column.feature?.type === 'trees' ? push : 0);
+        // The highlight is part of this column's depth slot, not a screen-wide
+        // overlay: it lies on the tile's top face, so whatever stands on or
+        // overhangs that face must be painted over it. Drawing it here means
+        // the column's own trees (decor, next) and every tree in front of it
+        // — which is what overhangs into it — cover the outline naturally.
+        if (hover && d.column.q === hover.q && d.column.r === hover.r) this.drawHover(b, map, hover);
         drawColumnDecor(b, this.res, d.column, dark, push);
         if (props) props(b, d.column, dark);
       } else {
@@ -81,7 +87,6 @@ export class Renderer {
       }
     }
 
-    if (hover) this.drawHover(b, map, hover);
     for (const o of overlays) o(b, camera);
 
     b.restore();

@@ -57,24 +57,22 @@ export function drawSprite(ctx, decor, name, cx, cy, sheet = decor.image) {
 const PROP_WOODS = { forest_floor: 'oak', pine_floor: 'pine' };
 
 /**
- * Stand the trees a wooded column still has on it.
+ * The trees a wooded column draws, with their spots and sprite names.
  *
- * Sorted near-to-far *within* the hex so a tree at the back of the top face is
- * drawn behind one at the front. Between hexes the renderer's own back-to-front
- * order already does the right thing, and the canopies overhang upward into the
- * headroom of the tile behind, which is what the sheets do too.
+ * Pure — no canvas — so the renderer and the picker can both ask it and agree
+ * on what is where. Sorted near-to-far *within* the hex so a tree at the back
+ * of the top face is drawn behind one at the front. Between hexes the
+ * renderer's own back-to-front order already does the right thing, and the
+ * canopies overhang upward into the headroom of the tile behind, which is what
+ * the sheets do too.
  */
-export function drawColumnDecor(ctx, res, col, dim = false, sway = 0) {
-  const decor = res.decor;
-  if (!decor) return;
-
+export function placeTrees(col) {
   const kind = PROP_WOODS[col.terrain];
-  if (!kind) return;
+  if (!kind) return [];
 
   const trees = col.feature?.type === 'trees' ? col.feature.remaining : 0;
-  if (!trees) return;
+  if (!trees) return [];
 
-  const { cx, cy } = tileCenter(col.q, col.r, col.h);
   const count = Math.min(MAX_TREES, trees);
 
   // A stable per-hex rotation of the spot list, so neighbouring hexes do not all
@@ -88,11 +86,45 @@ export function drawColumnDecor(ctx, res, col, dim = false, sway = 0) {
     const stage = 1 + hashPick(col.q * 7 + i, col.r * 13 + i, 3, 41);
     placed.push({ ...spot, name: `${kind}_${stage}` });
   }
+  placed.sort((a, b) => a.dy - b.dy);
+  return placed;
+}
+
+/**
+ * The screen-space box of every tree `col` draws, in draw order. Measured from
+ * the same placement and index the renderer uses, so a click is tested against
+ * exactly what is on screen — including the part that overhangs into the tiles
+ * around it.
+ */
+export function treeBoxes(col, index) {
+  const { cx, cy } = tileCenter(col.q, col.r, col.h);
+  return placeTrees(col).map(p => {
+    const box = index.sprites[p.name];
+    if (!box) return null;
+    return {
+      q: col.q, r: col.r,
+      x: cx + p.dx - box.footX,
+      y: cy + p.dy - box.footY,
+      w: box.w, h: box.h,
+      dy: p.dy, name: p.name,
+    };
+  }).filter(Boolean);
+}
+
+/**
+ * Stand the trees a wooded column still has on it.
+ */
+export function drawColumnDecor(ctx, res, col, dim = false, sway = 0) {
+  const decor = res.decor;
+  if (!decor) return;
+
+  const placed = placeTrees(col);
+  if (!placed.length) return;
 
   // Lit with the tile they stand on. A tree at full brightness on a shadowed hex
   // reads as pasted on rather than growing there.
+  const { cx, cy } = tileCenter(col.q, col.r, col.h);
   const sheet = litImage(res, 'decor', decor.image, col.h, dim);
-  placed.sort((a, b) => a.dy - b.dy);
   for (const p of placed) drawSprite(ctx, decor, p.name, cx + p.dx + sway, cy + p.dy, sheet);
 }
 
