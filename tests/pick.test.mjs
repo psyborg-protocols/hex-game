@@ -13,7 +13,8 @@ import { dirname, join } from 'node:path';
 import { test, run, eq, ok } from './_harness.mjs';
 import { treeAt, resolveClick } from '../src/game/pick.js';
 import { treeBoxes } from '../src/render/decor.js';
-import { tileCenter, pointInHex, neighbors } from '../src/world/hexgrid.js';
+import { tileCenter, pointInHex, neighbors, distance, compareDrawOrder } from '../src/world/hexgrid.js';
+import { nodesAt, nodeNear } from '../src/game/nodes.js';
 import { generateWorld } from '../src/world/worldgen.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -138,62 +139,125 @@ test('treeBoxes agree with placeTrees and the sprite index', () => {
   }
 });
 
+// ------------------------------------------------------------- reach and sway
+
+test('a canopy on a plateau reaches over a hex two rows back', () => {
+  // The tree stands four levels up, so its art is drawn 32px higher than its
+  // ground line and covers a point whose hex (by pickHex) is not even a neighbour.
+  const tall = wood(0, 2, 'forest_floor', 2, { h: 4 });
+  const map = makeMap([tall]);
+  const b = treeBoxes(tall, index)[0];
+  const p = { x: b.x + Math.floor(b.w / 2), y: b.y + 1 };
+  const behind = { q: 0, r: 0 };
+  ok(distance(behind.q, behind.r, 0, 2) >= 2, 'the hex under the pointer is not next to the tree');
+  const hit = treeAt(p.x, p.y, map, behind, index);
+  eq(hit && { q: hit.q, r: hit.r }, { q: 0, r: 2 }, 'the plateau tree is found anyway');
+});
+
+test('a canopy over open sky is still the tree', () => {
+  const col = wood(0, 0, 'forest_floor', 2);
+  const map = makeMap([col]);
+  const b = treeBoxes(col, index)[0];
+  const hit = resolveClick(b.x + Math.floor(b.w / 2), b.y + 1, map, {}, null, index);
+  eq(hit && { q: hit.q, r: hit.r, kind: hit.kind }, { q: 0, r: 0, kind: 'tree' }, 'no hex under the pointer, but a tree is drawn there');
+});
+
+test('a shaken tree is hit where it is drawn, not where it stood', () => {
+  const col = wood(0, 0, 'forest_floor', 2);
+  const map = makeMap([col]);
+  const boxes = treeBoxes(col, index);
+  const right = boxes.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a));
+  // One pixel past the rightmost edge of the still art...
+  const p = { x: right.x + right.w, y: right.y + Math.floor(right.h / 2) };
+  eq(treeAt(p.x, p.y, map, { q: 0, r: 0 }, index), null, 'clear of the tree when it is still');
+  // ...is inside it while the renderer pushes it two pixels right.
+  const hit = treeAt(p.x, p.y, map, { q: 0, r: 0 }, index, null, () => 2);
+  eq(hit && { q: hit.q, r: hit.r }, { q: 0, r: 0 }, 'the swaying tree is under the pointer');
+});
+
 // ---------------------------------------------------------------- integration
-// resolveClick is the whole click decision; these run it against a real
-// generated world (columns are generated per coordinate, so any seed gives
-// the same columns).
+// resolveClick is the whole click decision; these run it against real
+// generated worlds. Each test searches for the situation it needs rather than
+// naming coordinates, so a change to worldgen or tree placement moves the
+// example instead of breaking the test.
 
-const world = generateWorld(1);
-const knownState = { mind: { known: { '-5,-20': true } } };
+const SEEDS = ['hexworld', 'alpha', 'beta', 'gamma', 'delta', 'epsilon'];
+const worlds = SEEDS.map(seed => generateWorld({ seed }));
 
-/** The same map, with one column's trees felled. */
-function worldWithoutTrees(q, r) {
-  const m = world.get(q, r);
-  const cols = new Map([...world.columns].map(([k, c]) => k === `${q},${r}` ? [k, { ...c, feature: null }] : [k, c]));
-  return { seed: world.seed, spawn: world.spawn, get: (a, b) => cols.get(`${a},${b}`) || null };
+/** Every hex counts as known, so ground nodes are claimable. */
+const knowAll = { time: 0, picked: {}, taken: {}, mind: { known: new Proxy({}, { get: () => true }) } };
+
+/** The same map with one column's trees felled. */
+function felled(map, q, r) {
+  const view = Object.create(map);
+  view.get = (a, b) => {
+    const c = map.get(a, b);
+    return c && a === q && b === r ? { ...c, feature: null } : c;
+  };
+  return view;
+}
+
+/**
+ * Somewhere a front wood's drawn canopy covers a ground node on the column
+ * behind it: the node is claimable, and the canopy is the only art over it.
+ */
+function canopyOverNode() {
+  for (const map of worlds) {
+    for (const back of map) {
+      for (const n of nodesAt(map, knowAll, back)) {
+        if (['tree', 'field', 'grain', 'game', 'bee'].includes(n.kind) || n.on) continue;
+        const { cx, cy } = tileCenter(back.q, back.r, back.h);
+        const p = { x: cx + n.dx, y: cy + n.dy - 2 };   // where nodeNear looks for it
+        if (nodeNear(map, knowAll, back, p.x - cx, p.y - cy, 0)?.kind !== n.kind) continue;
+        const tree = treeAt(p.x, p.y, map, back, index);
+        if (!tree) continue;
+        const front = map.get(tree.q, tree.r);
+        if (compareDrawOrder(front, back) <= 0) continue;
+        if (treeAt(p.x, p.y, felled(map, front.q, front.r), back, index)) continue;
+        return { map, back, front, node: n, p };
+      }
+    }
+  }
+  return null;
 }
 
 test('resolveClick: a front canopy beats the node standing under it', () => {
-  // In this world (-5,-20) is a pine_wood with a branch at (dx -9, dy 6), and
-  // the pine_floor in front of it (-5,-19) draws a tree whose box covers the
-  // branch. The branch is claimable (the hex is known), but the canopy is on
-  // top of it.
-  const back = world.get(-5, -20);
-  const front = world.get(-5, -19);
-  ok(back?.feature?.type === 'trees' && front?.feature?.type === 'trees',
-    'the test columns are both woods in this world');
-  const { cx, cy } = tileCenter(back.q, back.r, back.h);
-  const px = cx - 9, py = cy + 4; // the branch, as nodeNear considers it
-  ok(treeBoxes(front, index).some(b => px >= b.x && px < b.x + b.w && py >= b.y && py < b.y + b.h),
-    'the front canopy actually covers the branch');
-  const hit = resolveClick(px, py, world, knownState, { q: -5, r: -20 }, index);
-  eq(hit && { kind: hit.kind, q: hit.q, r: hit.r }, { kind: 'tree', q: -5, r: -19 },
-    'the tree drawn on top wins over the branch under it');
+  const found = canopyOverNode();
+  ok(found, 'no canopy covers a ground node in any test world');
+  const { map, back, front, p } = found;
+  const hit = resolveClick(p.x, p.y, map, knowAll, back, index);
+  eq(hit && { kind: hit.kind, q: hit.q, r: hit.r }, { kind: 'tree', q: front.q, r: front.r },
+    'the tree drawn on top wins over the node under it');
 });
 
 test('resolveClick: with the canopy gone, the node under it is clickable again', () => {
-  const back = world.get(-5, -20);
-  const { cx, cy } = tileCenter(back.q, back.r, back.h);
-  const px = cx - 9, py = cy + 4;
-  const hit = resolveClick(px, py, worldWithoutTrees(-5, -19), knownState, { q: -5, r: -20 }, index);
-  eq(hit && { kind: hit.kind, q: hit.q, r: hit.r }, { kind: 'branch', q: -5, r: -20 },
-    'the branch is what you see and click');
+  const { map, back, front, node, p } = canopyOverNode();
+  const hit = resolveClick(p.x, p.y, felled(map, front.q, front.r), knowAll, back, index);
+  eq(hit && { kind: hit.kind, q: hit.q, r: hit.r }, { kind: node.kind, q: back.q, r: back.r },
+    'the node is what you see and click');
 });
 
 test('resolveClick: open ground inside the old radius-13 circle is not a tree', () => {
-  // (1,-26) draws one small oak. (42, -589) lies on its top face, 5px from the
-  // old circle centre — the old code called it a tree. No drawn art covers it
-  // (no box of its own or a neighbour's, no baked-wood headroom band), so the
-  // tile is what gets clicked.
-  const col = world.get(1, -26);
-  ok(col?.feature?.type === 'trees' && col.feature.remaining === 1, 'the test column has one tree');
-  const { cx, cy } = tileCenter(col.q, col.r, col.h);
-  ok(pointInHex(42, -589, cx, cy), 'point is on the top face');
-  ok(Math.hypot(42 - cx, -589 - (cy - 10)) <= 13, 'point is inside the old radius-13 circle');
-  const nb = [col, ...neighbors(col.q, col.r).map(n => world.get(n.q, n.r)).filter(Boolean)];
-  ok(!nb.flatMap(n => treeBoxes(n, index)).some(b => 42 >= b.x && 42 < b.x + b.w && -589 >= b.y && -589 < b.y + b.h),
-    'no drawn sprite covers the point');
-  eq(resolveClick(42, -589, world, knownState, { q: 1, r: -26 }, index), null,
+  // The old picker called anything within 13px of (cx, cy - 10) the tree.
+  let found = null;
+  for (const map of worlds) {
+    for (const col of map) {
+      if (found) break;
+      if (col.feature?.type !== 'trees' || !['forest_floor', 'pine_floor'].includes(col.terrain)) continue;
+      const { cx, cy } = tileCenter(col.q, col.r, col.h);
+      for (let x = cx - 12; x <= cx + 12 && !found; x++) {
+        for (let y = cy - 11; y <= cy + 11 && !found; y++) {
+          if (!pointInHex(x, y, cx, cy) || Math.hypot(x - cx, y - (cy - 10)) > 13) continue;
+          if (treeAt(x, y, map, col, index)) continue;
+          const near = nodeNear(map, knowAll, col, x - cx, y - cy, 0);
+          if (!near || near.kind !== 'tree') continue;   // the old radius test claimed it; nothing else is there
+          found = { map, col, x, y };
+        }
+      }
+    }
+  }
+  ok(found, 'no open ground inside the old circle in any test world');
+  eq(resolveClick(found.x, found.y, found.map, knowAll, found.col, index), null,
     'open space targets the tile, not the tree');
 });
 

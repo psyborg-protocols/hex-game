@@ -969,14 +969,25 @@ async function boot() {
     return best?.spot || null;
   };
 
+  /** How far a wood being shaken is pushed sideways at time `now` (ms). */
+  function swayOf(col, now) {
+    const k = `${col.q},${col.r}`;
+    const t0 = fx.shake.get(k);
+    if (t0 == null) return 0;
+    const elapsed = now - t0;
+    if (elapsed >= SHAKE_MS) { fx.shake.delete(k); return 0; }
+    return Math.round(Math.sin(elapsed / 35) * 2 * (1 - elapsed / SHAKE_MS));
+  }
+
   const hitNodeAt = (e, hex) => {
-    if (!hex) return null;
     const w = worldAt(e);
     // Trees are picked by their drawn art, not by the hex under the pointer:
     // a canopy overhangs into the tiles around it. The whole decision lives in
-    // pick.js so it is testable without a browser.
-    const node = resolveClick(w.x, w.y, map, state, hex, res.decor.index, res.masks, performance.now() / 1000);
-    if (node) return node;
+    // pick.js so it is testable without a browser. It is handed the same sway
+    // the renderer draws with, so a shaken tree is hit where it is.
+    const node = resolveClick(w.x, w.y, map, state, hex, res.decor.index, res.masks,
+      performance.now() / 1000, col => swayOf(col, performance.now()));
+    if (node || !hex) return node;
     if (map.spawn && hex.q === map.spawn.q && hex.r === map.spawn.r) {
       const spawnCol = map.get(map.spawn.q, map.spawn.r);
       if (spawnCol && !spawnCol.feature) {
@@ -1141,11 +1152,12 @@ async function boot() {
     const moved = !hit !== !hover || (hit && hover && (hit.q !== hover.q || hit.r !== hover.r));
     hover = hit;
     hoverWorld = hit ? worldAt(e) : null;
-    fx.hover = (!placing && !dead && hit) ? hitNodeAt(e, hit) : null;
+    // A canopy can be under the pointer with no hex at all (over the sky past
+    // the world's edge), so the node is asked for even when `hit` is null.
+    fx.hover = (!placing && !dead) ? hitNodeAt(e, hit) : null;
     const hoverCol = hit && map.get(hit.q, hit.r);
-    const interactive = !placing && !dead && hit && (
-      !!fx.hover
-      || (hoverCol?.feature?.type === 'village')
+    const interactive = !placing && !dead && (!!fx.hover || !!hit && (
+      (hoverCol?.feature?.type === 'village')
       || (hoverCol?.feature?.type === 'structure' && ['hut', 'hearth', 'workbench', 'forge'].includes(hoverCol.feature.item))
       || (hoverCol?.feature?.type === 'camp' && !hoverCol.feature.burned && !guardsAt(state, hoverCol))
       || !!cliffInfoAt(hoverWorld, hit)
@@ -1153,7 +1165,7 @@ async function boot() {
         (scenicOf(map, hoverCol).tier > 0 && isExplored(state, player.q, player.r) && !isMeditated(state, player.q, player.r))
         || (['stony', 'steppes'].includes(hoverCol?.terrain) && (levelOf(state, 'mind') >= 3 || state.free))
       ))
-    );
+    ));
     canvas.style.cursor = interactive ? 'pointer' : '';
     if (moved && !placing) preview = hover && !player.moving ? findPath(map, player, hover, pathOpts()) : null;
   });
@@ -1165,7 +1177,12 @@ async function boot() {
     if (wasDrag || dead) return;
 
     const chosen = placing ? spotAt(e) : null;
-    const target = chosen || hexAt(e);
+    let target = chosen || hexAt(e);
+    // Nothing but sky under the pointer — unless a canopy reaches over it.
+    if (!target && !placing) {
+      const tree = hitNodeAt(e, null);
+      if (tree) target = { q: tree.q, r: tree.r, h: map.get(tree.q, tree.r)?.h ?? 0 };
+    }
     if (!target) return;
 
     if (placing) {
@@ -1418,13 +1435,7 @@ async function boot() {
         edgeArrows,
       ],
       dim: col => eye ? (!isKnown(state, col.q, col.r) ? 'dim' : '') : (!isKnown(state, col.q, col.r) ? 'dormant' : ''),
-      sway: col => {
-        const t0 = fx.shake.get(`${col.q},${col.r}`);
-        if (t0 == null) return 0;
-        const elapsed = now - t0;
-        if (elapsed >= SHAKE_MS) { fx.shake.delete(`${col.q},${col.r}`); return 0; }
-        return Math.round(Math.sin(elapsed / 35) * 2 * (1 - elapsed / SHAKE_MS));
-      },
+      sway: col => swayOf(col, now),
       props: (ctx, col, mode) => drawColumnNodes(ctx, res, map, state, col, now, fx, mode),
     });
 

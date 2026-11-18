@@ -96,8 +96,9 @@ export function placeTrees(col) {
  * exactly what is on screen — including the part that overhangs into the tiles
  * around it.
  */
-export function treeBoxes(col, index) {
-  const { cx, cy } = tileCenter(col.q, col.r, col.h);
+export function treeBoxes(col, index, sway = 0) {
+  const { cy } = tileCenter(col.q, col.r, col.h);
+  const cx = tileCenter(col.q, col.r, col.h).cx + sway;   // drawColumnDecor shifts by the same
   return placeTrees(col).map(p => {
     const box = index.sprites[p.name];
     if (!box) return null;

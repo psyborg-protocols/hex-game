@@ -12,7 +12,7 @@
 // browser; passing none degrades to bounding-box tests, which are still far
 // tighter than a circle of guesswork.
 
-import { tileCenter, pointInHex, neighbors, columnBaseY, compareDrawOrder } from '../world/hexgrid.js';
+import { GEOM, tileCenter, pointInHex, columnBaseY, compareDrawOrder } from '../world/hexgrid.js';
 import { treeBoxes } from '../render/decor.js';
 import { nodeNear } from './nodes.js';
 import { isKnown } from './discovery.js';
@@ -20,26 +20,54 @@ import { isKnown } from './discovery.js';
 /** Terrains whose trees are baked into the tile sheet itself. */
 const BAKED_WOODS = new Set(['oak_wood', 'pine_wood']);
 
+/** The tallest tree sprite, in pixels above its foot — how far art can reach up. */
+const TREE_REACH = 32;
+
+/**
+ * Every column whose trees could be drawn over world point (px, py).
+ *
+ * Not "the hex under the pointer and its neighbours": a tree on a plateau
+ * stands above lower ground, so its canopy can reach over a hex two rows
+ * back, or over open sky where pickHex finds no hex at all. So the window is
+ * worked out from the point itself — the columns whose top face, lifted by
+ * their height, sits within a tree's reach below it.
+ */
+function columnsNear(px, py, map) {
+  const peak = typeof map.peakHeight === 'function' ? map.peakHeight() : 20;
+  const q0 = Math.round((px - GEOM.frameWidth / 2) / GEOM.stepX);
+  const rLo = Math.floor((py - GEOM.frameHeight) / GEOM.stepY) - 1;
+  const rHi = Math.ceil((py + TREE_REACH + peak * GEOM.wallHeight) / GEOM.stepY) + 1;
+  const out = [];
+  for (let q = q0 - 1; q <= q0 + 1; q++) {
+    for (let r = rLo; r <= rHi; r++) {
+      const col = map.get(q, r);
+      if (col?.feature?.type === 'trees' && col.feature.remaining > 0) out.push(col);
+    }
+  }
+  return out;
+}
+
 /**
  * Which drawn tree, if any, stands at world point (px, py)?
  *
  * @param {number} px, py  world-space point (1x pixels).
- * @param {WorldMap} map   the map; only `get` is used.
- * @param {{q,r}} hex      the column pickHex answered for this point. Trees can
- *   only overhang one tile, so it and its six neighbours are the whole
- *   candidate set.
+ * @param {WorldMap} map   the map; `get` and (if present) `peakHeight` are used.
+ * @param {?{q,r}} hex     the column pickHex answered for this point, if any.
+ *   It is not what decides the candidates — see columnsNear.
  * @param {object} decorIndex  decor/index.json — the sprite boxes.
  * @param {?{sprite:Function, headroom:Function}} masks  per-pixel alpha tests,
  *   `fn(x, y) -> true | false | null` (null = no mask built; treated as opaque).
+ * @param {?Function} swayOf  (column) => pixels the renderer is pushing it
+ *   sideways right now (a wood being shaken), so the hit region moves with the art.
  * @returns {?{kind:'tree', harvest:string, q:number, r:number, dx:number, dy:number, ready:boolean, variant:number}}
  */
-export function treeAt(px, py, map, hex, decorIndex, masks = null) {
+export function treeAt(px, py, map, hex, decorIndex, masks = null, swayOf = null) {
   const candidates = [];
 
-  for (const n of [hex, ...neighbors(hex.q, hex.r)]) {
-    const col = map.get(n.q, n.r);
-    if (!col || col.feature?.type !== 'trees' || !(col.feature.remaining > 0)) continue;
-    const { cx, cy } = tileCenter(col.q, col.r, col.h);
+  for (const col of columnsNear(px, py, map)) {
+    const sway = swayOf ? swayOf(col) || 0 : 0;
+    const { cy } = tileCenter(col.q, col.r, col.h);
+    const cx = tileCenter(col.q, col.r, col.h).cx + sway;
 
     if (BAKED_WOODS.has(col.terrain)) {
       // The whole top face is forest art, and the canopy keeps going up into
@@ -54,7 +82,7 @@ export function treeAt(px, py, map, hex, decorIndex, masks = null) {
       }
     } else {
       // Composited trees: the drawn sprite box is the hit region.
-      for (const b of treeBoxes(col, decorIndex)) {
+      for (const b of treeBoxes(col, decorIndex, sway)) {
         if (px < b.x || px >= b.x + b.w || py < b.y || py >= b.y + b.h) continue;
         const m = masks?.sprite?.(b.name, Math.floor(px - b.x), Math.floor(py - b.y));
         if (m !== false) candidates.push({ col, dy: b.dy });
@@ -85,15 +113,18 @@ export function treeAt(px, py, map, hex, decorIndex, masks = null) {
  *     drawn art actually covers the pointer.
  * Returns null for nothing clickable (the tile itself is then the target).
  */
-export function resolveClick(px, py, map, state, hex, decorIndex, masks = null, t = 0) {
+export function resolveClick(px, py, map, state, hex, decorIndex, masks = null, t = 0, swayOf = null) {
+  const tree = treeAt(px, py, map, hex, decorIndex, masks, swayOf);
+  // No hex under the pointer (open sky past the edge of the world): only
+  // drawn art can be hit there, and the only art that reaches is a canopy.
+  if (!hex) return tree;
+
   const col = map.get(hex.q, hex.r);
   let direct = null;
   if (col) {
     const { cx, cy } = tileCenter(col.q, col.r, col.h);
     direct = nodeNear(map, state, col, px - cx, py - cy, t);
   }
-
-  const tree = treeAt(px, py, map, hex, decorIndex, masks);
   if (direct?.kind === 'tree' && !tree) direct = null;
   if (tree && col && compareDrawOrder(map.get(tree.q, tree.r), col) > 0) {
     return tree;
