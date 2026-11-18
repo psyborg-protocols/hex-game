@@ -1243,15 +1243,7 @@ async function boot() {
     const onPlayer = Math.hypot(clickWorld.x - clickPos.x, clickWorld.y - (clickPos.y - 7)) <= 9;
 
     if (dogSelected) {
-      if (onDog) {
-        if (state.dog?.mode === 'guard') {
-          commandDogFollow(state);
-          game.ui.notify('Your dog trots back to follow you.');
-        }
-        dogSelected = false;
-        return;
-      }
-      if (onPlayer) {
+      if (onDog || onPlayer) {
         dogSelected = false;
         return;
       }
@@ -1267,11 +1259,14 @@ async function boot() {
       const dDog = Math.hypot(clickWorld.x - dogP.x, clickWorld.y - (dogP.y - 4));
       const dPly = Math.hypot(clickWorld.x - clickPos.x, clickWorld.y - (clickPos.y - 7));
       if (!onPlayer || dDog <= dPly) {
+        if (state.dog?.mode === 'guard') {
+          commandDogFollow(state);
+          game.ui.notify('Your dog trots back to follow you.');
+          return;
+        }
         dogSelected = true;
         preview = null;
-        game.ui.notify(state.dog?.mode === 'guard'
-          ? 'Dog selected — click a hex to guard, or click the dog again to call it back.'
-          : 'Dog selected — click a hex to set it to guard.');
+        game.ui.notify('Dog selected — click a hex to set it to guard.');
         return;
       }
     }
