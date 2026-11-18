@@ -94,8 +94,13 @@ export const TERRAIN = {
   // is left for the editor. Frames 1 and 5 of the oak sheet have a rock painted
   // in for the same reason, and are passed over.
   meadow:       { name: 'Meadow',       sheets: ['Tiles_GrassBase1', 'Tiles_GrassBase2', 'Tiles_GrassBase3'], walk: true, forage: true },
-  oak_wood:     { name: 'Oak Wood',     sheets: ['Tiles_DecorOak'],  frames: [0, 2], walk: true, trees: 'oak',  overhang: true },
-  pine_wood:    { name: 'Pine Wood',    sheets: ['Tiles_DecorPine'], walk: true, trees: 'pine', overhang: true },
+  // Dense woods draw the same bare floor as the sparse ones and stand their
+  // trees on it as sprites (render/decor.js), just more of them. The artist's
+  // Tiles_DecorOak/Pine sheets bake the trees into the tile, which made them
+  // the one place a hover outline could not go under the trees, and kept a
+  // wood looking untouched until its last tree fell.
+  oak_wood:     { name: 'Oak Wood',     sheets: ['Tiles_ForestFloor'], walk: true, trees: 'oak',  overhang: true },
+  pine_wood:    { name: 'Pine Wood',    sheets: ['Tiles_PineFloor'], walk: true, trees: 'pine', overhang: true },
   forest_floor: { name: 'Forest Floor', sheets: ['Tiles_ForestFloor'], walk: true },
   pine_floor:   { name: 'Pine Floor',   sheets: ['Tiles_PineFloor'], walk: true },
   steppes:      { name: 'Steppes',      sheets: ['Tiles_Steppes'], frames: [0, 1, 2], walk: true },

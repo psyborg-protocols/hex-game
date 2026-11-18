@@ -26,7 +26,7 @@ const SPOTS = [
 ];
 
 /** Most trees a single hex draws, however much wood is left on it. */
-export const MAX_TREES = 4;
+export const MAX_TREES = 5;
 
 export async function loadDecor(basePath = DECOR_DIR) {
   const index = await fetch(`${basePath}/index.json`).then(r => r.json());
@@ -51,13 +51,14 @@ export function drawSprite(ctx, decor, name, cx, cy, sheet = decor.image) {
 }
 
 /**
- * Which terrains grow their trees as props. The artist's wooded sheets are left
- * alone — they already have trees, and better ones.
+ * Which terrains stand trees on them, and what kind. Every wood does, dense or
+ * sparse: the dense woods used to use the artist's Tiles_DecorOak/Pine sheets
+ * with the trees drawn into the tile, which no hover outline could go under.
  */
-const PROP_WOODS = { forest_floor: 'oak', pine_floor: 'pine' };
+const PROP_WOODS = { forest_floor: 'oak', pine_floor: 'pine', oak_wood: 'oak', pine_wood: 'pine' };
 
-/** The dense woods, whose trees are drawn into the tile sheet itself. */
-export const BAKED_WOODS = new Set(['oak_wood', 'pine_wood']);
+/** Sheets with trees drawn into the tile. Old saves still name them. */
+export const BAKED_SHEETS = new Set(['Tiles_DecorOak', 'Tiles_DecorPine']);
 
 /**
  * The trees a wooded column draws, with their spots and sprite names.
@@ -115,21 +116,63 @@ export function treeBoxes(col, index, sway = 0) {
   }).filter(Boolean);
 }
 
+/** Where litter lies: low on the face, round the edges, clear of the trunks. */
+const LITTER_SPOTS = [
+  { dx: -11, dy: 2 }, { dx: 10, dy: -1 }, { dx: 2, dy: 8 },
+  { dx: -3, dy: -7 }, { dx: 12, dy: 5 }, { dx: -7, dy: 8 },
+];
+
 /**
- * Stand the trees a wooded column still has on it.
+ * The small things on a woodland floor: mushrooms, and fallen logs under oaks.
+ * The artist's dense-wood tiles had them drawn in; drawn from the decor sheet
+ * instead, they stay when the trees are felled, the way they would.
+ *
+ * Only mushrooms and logs. Bushes and rocks are left out on purpose: in this
+ * game a bush is berries and a rock is stone, and scenery that looks like
+ * something you can gather is a trap.
  */
-export function drawColumnDecor(ctx, res, col, dim = false, sway = 0) {
+export function placeLitter(col) {
+  const kind = PROP_WOODS[col.terrain];
+  if (!kind) return [];
+  const dense = col.terrain === 'oak_wood' || col.terrain === 'pine_wood';
+  const roll = hashPick(col.q, col.r, 6, 53);            // 0..5
+  const count = dense ? (roll < 2 ? 1 : roll < 5 ? 2 : 3) : (roll < 3 ? 0 : 1);
+  const names = kind === 'oak'
+    ? ['mushroom_0', 'mushroom_1', 'mushroom_2', 'log_0', 'log_1']
+    : ['mushroom_0', 'mushroom_1', 'mushroom_2', 'mushroom_1'];
+  const shift = hashPick(col.q, col.r, LITTER_SPOTS.length, 67);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    out.push({ ...LITTER_SPOTS[(shift + i * 2) % LITTER_SPOTS.length],
+      name: names[hashPick(col.q * 5 + i, col.r * 3 + i, names.length, 71)], litter: true });
+  }
+  return out;
+}
+
+/**
+ * Stand the trees a wooded column still has on it, and its litter.
+ * @param {string|null} treeMode  a lighting mode for the trees alone ('glow'
+ *   when hovered); the litter keeps `dim`
+ */
+export function drawColumnDecor(ctx, res, col, dim = false, sway = 0, treeMode = null) {
   const decor = res.decor;
   if (!decor) return;
 
-  const placed = placeTrees(col);
+  const placed = [...placeTrees(col), ...placeLitter(col)];
   if (!placed.length) return;
+  // Near-to-far within the hex, litter and trunks alike, so a mushroom in front
+  // of a tree is drawn over its foot.
+  placed.sort((a, b) => a.dy - b.dy);
 
   // Lit with the tile they stand on. A tree at full brightness on a shadowed hex
   // reads as pasted on rather than growing there.
   const { cx, cy } = tileCenter(col.q, col.r, col.h);
   const sheet = litImage(res, 'decor', decor.image, col.h, dim);
-  for (const p of placed) drawSprite(ctx, decor, p.name, cx + p.dx + sway, cy + p.dy, sheet);
+  const trees = treeMode ? litImage(res, 'decor', decor.image, col.h, treeMode) : sheet;
+  for (const p of placed) {
+    // Litter lies on the ground and does not sway with a shaken tree.
+    drawSprite(ctx, decor, p.name, cx + p.dx + (p.litter ? 0 : sway), cy + p.dy, p.litter ? sheet : trees);
+  }
 }
 
 /** A felled wood keeps its stumps, so you can see where it was. */

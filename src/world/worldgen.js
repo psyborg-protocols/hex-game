@@ -606,8 +606,8 @@ class Generator {
   /**
    * Woods, thick on the far side of the river and scattered in patches on the
    * near side — the same split the old generator used to make the two banks feel
-   * like different country. The wooded sheets carry their own trees, so a wooded
-   * hex is one tile, not a base plus props.
+   * like different country. Every wood is a bare floor with its trees stood on
+   * it as sprites (render/decor.js); a dense one just has more of them.
    */
   growForests(map) {
     for (const { q, r } of this.cells) {
@@ -627,10 +627,8 @@ class Generator {
         : (pine ? 'pine_floor' : 'forest_floor');
 
       map.place(q, r, terrain, col.h);
-      // Both kinds of wood carry their trees. The dense sheets have them drawn
-      // in; the bare floors get them stood on top from decor/ at draw time, so a
-      // sparse wood reads as a wood rather than as ground somebody already
-      // cleared. Felling either one down to nothing leaves the bare floor.
+      // The feature is the trees themselves: how many there are is how many are
+      // drawn, and each one felled thins the wood until only the floor is left.
       map.get(q, r).feature = {
         type: 'trees',
         kind: pine ? 'pine' : 'oak',

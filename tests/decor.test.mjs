@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { test, run, eq, ok } from './_harness.mjs';
-import { MAX_TREES } from '../src/render/decor.js';
+import { MAX_TREES, placeLitter } from '../src/render/decor.js';
 import { generateWorld } from '../src/world/worldgen.js';
 import { makeResolvers } from '../src/world/tileset.js';
 
@@ -90,6 +90,24 @@ test('generated woods carry trees, and only in amounts that can be drawn', () =>
   const sparse = wooded.filter(c => c.terrain === 'forest_floor' || c.terrain === 'pine_floor');
   ok(sparse.length > 0, 'no sparse woods, so the decor sheet draws nothing');
   ok(MAX_TREES >= 1, 'the renderer caps trees at zero');
+});
+
+test('woodland litter is mushrooms and logs, never something that looks gatherable', () => {
+  // A bush reads as berries and a rock as stone; scenery must not pass for either.
+  const map = generateWorld({ seed: 'litter' });
+  let dense = 0, total = 0;
+  for (const col of map) {
+    const litter = placeLitter(col);
+    for (const p of litter) {
+      ok(/^(mushroom|log)_/.test(p.name), `${p.name} on ${col.terrain}`);
+      ok(decor.sprites[p.name], `${p.name} is in the sprite index`);
+    }
+    if (litter.length) total++;
+    if (['oak_wood', 'pine_wood'].includes(col.terrain) && litter.length) dense++;
+    eq(placeLitter(col), litter, 'litter is the same every time it is asked');
+  }
+  ok(dense > 0 && total > dense, 'dense woods carry litter, and some sparse ones do too');
+  ok(placeLitter({ q: 0, r: 0, terrain: 'grass' }).length === 0, 'no litter outside the woods');
 });
 
 run('decor');

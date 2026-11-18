@@ -96,21 +96,30 @@ test('when two canopies cover the same point, the front-most drawn wins', () => 
   eq(hit && { q: hit.q, r: hit.r }, { q: 0, r: 1 }, 'front column drawn on top wins');
 });
 
-test('a baked wood: the whole top face is tree art', () => {
-  const col = wood(0, 0, 'oak_wood', 4, { sprite: 'Tiles_DecorOak', frame: 0 });
-  const map = makeMap([col]);
-  const hit = treeAt(16, 28, map, { q: 0, r: 0 }, index);
-  eq(hit && { q: hit.q, r: hit.r, kind: hit.kind }, { q: 0, r: 0, kind: 'tree' }, 'centre of a baked wood is the tree');
+test('a dense wood stands its trees as sprites, more of them than a sparse one', () => {
+  for (const [dense, sparse] of [['oak_wood', 'forest_floor'], ['pine_wood', 'pine_floor']]) {
+    const thick = treeBoxes(wood(0, 0, dense, 5), index);
+    const thin = treeBoxes(wood(0, 0, sparse, 2), index);
+    eq(thick.length, 5, `${dense} draws a sprite per tree`);
+    ok(thick.length > thin.length, `${dense} is thicker than ${sparse}`);
+  }
 });
 
-test('a baked wood: headroom is tree only where the sheet is opaque', () => {
-  const col = wood(0, 0, 'oak_wood', 4, { sprite: 'Tiles_DecorOak', frame: 0 });
+test('a dense wood is hit on its trees, not on the floor between them', () => {
+  const col = wood(0, 0, 'oak_wood', 2);
   const map = makeMap([col]);
-  // (16, 8) sits in the headroom band above the top face.
-  const opaque = { headroom: () => true };
-  const clear = { headroom: () => false };
-  eq(treeAt(16, 8, map, { q: 0, r: 0 }, index, opaque) && { q: 0, r: 0 }, { q: 0, r: 0 }, 'opaque canopy pixel is the tree');
-  eq(treeAt(16, 8, map, { q: 0, r: 0 }, index, clear), null, 'a gap in the canopy shows the tile behind');
+  const b = treeBoxes(col, index)[0];
+  const hit = treeAt(b.x + Math.floor(b.w / 2), b.y + Math.floor(b.h / 2), map, { q: 0, r: 0 }, index);
+  eq(hit && { q: hit.q, r: hit.r, kind: hit.kind }, { q: 0, r: 0, kind: 'tree' }, 'the tree is the tree');
+  // Find a point of the face that no tree covers: that is floor.
+  const { cx, cy } = tileCenter(0, 0, 0);
+  let floor = null;
+  for (let x = cx - 14; x <= cx + 14 && !floor; x++) {
+    for (let y = cy - 10; y <= cy + 10 && !floor; y++) {
+      if (pointInHex(x, y, cx, cy) && !treeAt(x, y, map, { q: 0, r: 0 }, index)) floor = { x, y };
+    }
+  }
+  ok(floor, 'some of a two-tree wood’s face is open floor');
 });
 
 test('sprite alpha masks can veto a bounding-box hit', () => {

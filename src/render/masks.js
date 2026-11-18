@@ -4,21 +4,17 @@
 // Picking must agree with what is drawn, so both are derived from the same
 // pixels: a tree is clickable where its sprite is opaque, and nothing else —
 // including the corners of the bounding box that are only sky. The masks are
-// built once per sheet at boot and cached; each is a tiny grid (a sprite is at
-// most 16x27, a headroom band is 32x16).
-
-import { GEOM } from '../world/hexgrid.js';
+// built lazily, once per sprite, and cached; each is a tiny grid (a sprite is
+// at most 16x27).
 
 /**
- * @param {{images:Object, decor:{index:object, image:Image}}} res  the loaded art.
- * @returns {{sprite:Function, headroom:Function}}
- *   `sprite(name, x, y)` — is pixel (x, y) of that sprite opaque?
- *   `headroom(sheet, frame, x, y)` — is pixel (x, y) of the sheet's headroom band opaque?
- *   Both answer `null` where no mask exists (treated as opaque by the picker).
+ * @param {{decor:{index:object, image:Image}}} res  the loaded art.
+ * @returns {{sprite:Function}}
+ *   `sprite(name, x, y)` — is pixel (x, y) of that sprite opaque? `null` where
+ *   no mask exists (treated as opaque by the picker).
  */
 export function makeMasks(res) {
   const sprites = new Map();
-  const headrooms = new Map();
 
   /** Opaque-pixel test for one w x h region of an image, row-major. */
   const grid = (img, sx, sy, w, h) => {
@@ -40,17 +36,6 @@ export function makeMasks(res) {
       if (!m) {
         m = grid(res.decor.image, box.x, box.y, box.w, box.h);
         sprites.set(name, m);
-      }
-      return m(x, y);
-    },
-    headroom: (sheet, frame, x, y) => {
-      const img = res.images?.[sheet];
-      if (!img) return null;
-      const k = `${sheet}|${frame}`;
-      let m = headrooms.get(k);
-      if (!m) {
-        m = grid(img, frame * GEOM.frameWidth, 0, GEOM.frameWidth, GEOM.topFaceTop);
-        headrooms.set(k, m);
       }
       return m(x, y);
     },

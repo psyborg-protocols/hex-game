@@ -13,7 +13,7 @@
 // tighter than a circle of guesswork.
 
 import { GEOM, tileCenter, pointInHex, columnBaseY, compareDrawOrder } from '../world/hexgrid.js';
-import { treeBoxes, BAKED_WOODS } from '../render/decor.js';
+import { treeBoxes } from '../render/decor.js';
 import { nodeNear } from './nodes.js';
 import { isKnown } from './discovery.js';
 
@@ -53,7 +53,7 @@ function columnsNear(px, py, map) {
  * @param {?{q,r}} hex     the column pickHex answered for this point, if any.
  *   It is not what decides the candidates — see columnsNear.
  * @param {object} decorIndex  decor/index.json — the sprite boxes.
- * @param {?{sprite:Function, headroom:Function}} masks  per-pixel alpha tests,
+ * @param {?{sprite:Function}} masks  per-pixel alpha tests,
  *   `fn(x, y) -> true | false | null` (null = no mask built; treated as opaque).
  * @param {?Function} swayOf  (column) => pixels the renderer is pushing it
  *   sideways right now (a wood being shaken), so the hit region moves with the art.
@@ -64,27 +64,12 @@ export function treeAt(px, py, map, hex, decorIndex, masks = null, swayOf = null
 
   for (const col of columnsNear(px, py, map)) {
     const sway = swayOf ? swayOf(col) || 0 : 0;
-    const { cy } = tileCenter(col.q, col.r, col.h);
-    const cx = tileCenter(col.q, col.r, col.h).cx + sway;
-
-    if (BAKED_WOODS.has(col.terrain)) {
-      // The whole top face is forest art, and the canopy keeps going up into
-      // the headroom band above it — where the sheet's own alpha decides what
-      // is tree and what is the tile behind showing through.
-      if (pointInHex(px, py, cx, cy)) {
-        candidates.push({ col, dy: 0 });
-      } else if (py >= cy - 28 && py < cy - 12 && Math.abs(px - cx) <= 16) {
-        const m = masks?.headroom?.(col.sprite, col.frame,
-          Math.floor(px - (cx - 16)), Math.floor(py - (cy - 28)));
-        if (m !== false) candidates.push({ col, dy: 0 });
-      }
-    } else {
-      // Composited trees: the drawn sprite box is the hit region.
-      for (const b of treeBoxes(col, decorIndex, sway)) {
-        if (px < b.x || px >= b.x + b.w || py < b.y || py >= b.y + b.h) continue;
-        const m = masks?.sprite?.(b.name, Math.floor(px - b.x), Math.floor(py - b.y));
-        if (m !== false) candidates.push({ col, dy: b.dy });
-      }
+    // Every tree is a sprite (dense woods too), so its drawn box is the hit
+    // region and its alpha decides the edges.
+    for (const b of treeBoxes(col, decorIndex, sway)) {
+      if (px < b.x || px >= b.x + b.w || py < b.y || py >= b.y + b.h) continue;
+      const m = masks?.sprite?.(b.name, Math.floor(px - b.x), Math.floor(py - b.y));
+      if (m !== false) candidates.push({ col, dy: b.dy });
     }
   }
 

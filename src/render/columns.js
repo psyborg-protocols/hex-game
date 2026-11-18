@@ -92,9 +92,8 @@ export function litImage(res, key, img, level, dim = false) {
   // Dormant ground: the same picture with a little of the colour and light
   // taken out. Not dark, not grey — only less awake than the ground beside it
   // that you have stood on, so that where you have been looks like somewhere.
-  // Glow: the thing under the pointer that a click would act on, lit up. Used
-  // instead of an outline where the art itself is the target — a tree — since
-  // an outline can only ever be drawn over or under it, and both look wrong.
+  // Glow: a hovered tree, lit up on top of the outline under it, so it is plain
+  // which wood a click would fell.
   c.filter = mode === 'dim' ? `brightness(${(b * DIM * 100).toFixed(0)}%) saturate(45%)`
     : mode === 'dormant' ? `brightness(${(b * DORMANT * 100).toFixed(0)}%) saturate(64%)`
       : mode === 'glow' ? `brightness(${(b * GLOW * 100).toFixed(0)}%)`
@@ -120,11 +119,9 @@ export const GLOW = 1.1;
  * @param {{images:Object}} res
  * @param {{q,r,h,sprite,frame}} col
  * @param {boolean|string} dim  '' as it is, 'dim' for the eye view, 'dormant' for unexplored
- * @param {number} sway  pixels to push the top level sideways: a wood being shaken
- * @param {string} topMode  a mode for the top level only ('glow' for a hovered
- *   wood whose trees are part of the tile); the walls below keep `dim`
+ * @param {number} sway  pixels to push the top level sideways
  */
-export function drawColumn(ctx, res, col, dim = false, sway = 0, topMode = null) {
+export function drawColumn(ctx, res, col, dim = false, sway = 0) {
   const img = res.images[col.sprite];
   if (!img) return;
 
@@ -132,7 +129,7 @@ export function drawColumn(ctx, res, col, dim = false, sway = 0, topMode = null)
   const x = frameOrigin(col.q, col.r, 0).x;
 
   for (let level = 0; level <= col.h; level++) {
-    ctx.drawImage(litImage(res, col.sprite, img, level, level === col.h && topMode ? topMode : dim),
+    ctx.drawImage(litImage(res, col.sprite, img, level, dim),
       sx, 0, GEOM.frameWidth, GEOM.frameHeight,
       x + (level === col.h ? sway : 0), frameOrigin(col.q, col.r, level).y, GEOM.frameWidth, GEOM.frameHeight);
   }

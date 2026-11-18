@@ -1,7 +1,7 @@
 // main.js — bootstrap, the frame loop, and the wiring between world and UI.
 
-import { loadTileset, BRIDGE_SHEET, bridgeFrame, isWater } from './world/tileset.js';
-import { loadDecor } from './render/decor.js';
+import { loadTileset, BRIDGE_SHEET, bridgeFrame, isWater, variantFor } from './world/tileset.js';
+import { loadDecor, BAKED_SHEETS } from './render/decor.js';
 import { drawStructure, drawVillage, drawCamp, drawBridgeDeck, drawLadder, drawLadderTop, drawCrossing, hpBar } from './render/structures.js';
 import { drawUnit, unitPos, drawDog } from './render/units.js';
 import { generateWorld } from './world/worldgen.js';
@@ -84,6 +84,12 @@ async function boot() {
 
   const seed = restored?.seed || params.get('seed') || String(Date.now());
   const map = restored ? restored.map : generateWorld({ seed, resolvers: res.resolvers });
+  // A save from before every tree was a sprite still has dense woods drawn
+  // with the trees baked into the tile; drawn as they are now, that would be
+  // two sets of trees. Give them the bare floor the trees now stand on.
+  for (const col of map) {
+    if (BAKED_SHEETS.has(col.sprite)) Object.assign(col, variantFor(col.terrain, col.q, col.r));
+  }
   const world = { map, resolvers: res.resolvers, seed };
   const rng = new Rng(`${seed}:play`);
 
