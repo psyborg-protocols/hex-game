@@ -167,40 +167,148 @@ export function drawUnit(ctx, map, u, now, ghost = false) {
   }
 }
 
-/** Your companion shepherd dog: trots beside you with a wagging tail & red collar. */
-export function drawDog(ctx, x, y, facing = 1, t = 0) {
+/** Screen position of the companion dog: linear interpolation across legs (no per-hex hop/pause) plus sub-hex offset. */
+export function dogPos(map, dog) {
+  if (!dog.leg) {
+    const { cx, cy } = tileCenter(dog.q, dog.r, Math.max(0, map.surfaceAt(dog.q, dog.r)));
+    return { x: cx + (dog.ox || 0), y: cy + (dog.oy || 0) };
+  }
+  const { from, to, t } = dog.leg;
+  const ah = Math.max(0, map.surfaceAt(from.q, from.r));
+  const bh = Math.max(0, map.surfaceAt(to.q, to.r));
+  const a = tileCenter(from.q, from.r, ah);
+  const b = tileCenter(to.q, to.r, bh);
+  const k = Math.min(1, Math.max(0, t));
+  const climb = Math.abs(bh - ah) >= 2 ? Math.sin(k * Math.PI) * 1.5 : 0;
+  return {
+    x: a.cx + (b.cx - a.cx) * k + (dog.ox || 0),
+    y: a.cy + (b.cy - a.cy) * k - climb + (dog.oy || 0),
+  };
+}
+
+/**
+ * Your companion shepherd dog: painterly pixel art matching the rabbit's
+ * soft-shaded silhouette, with trotting, standing, sitting, tail-wagging,
+ * and lunging poses.
+ */
+export function drawDog(ctx, x, y, opts = 1, legacyT = 0) {
+  const o = typeof opts === 'object' && opts !== null
+    ? opts
+    : { facing: opts, t: legacyT, moving: true, legT: legacyT * 1.4 };
+  const f = (o.facing ?? 1) >= 0 ? 1 : -1;
+  const t = o.t ?? 0;
+  const stance = o.stance || (o.moving ? 'move' : 'idle');
+  const moving = !!o.moving;
+  const legT = o.legT ?? 0;
+  const wag = !!o.wag;
+  const attacking = !!o.attacking;
+  const selected = !!o.selected;
+
   x = Math.round(x);
   y = Math.round(y);
-  const f = facing >= 0 ? 1 : -1;
-  const bob = Math.floor(t * 7) % 2;
-  const wag = Math.floor(t * 10) % 2;
 
-  ctx.fillStyle = 'rgba(20, 16, 30, 0.3)';
-  ctx.fillRect(x - 4, y, 8, 2);
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 244, 196, 0.92)';
+    ctx.fillStyle = 'rgba(255, 244, 196, 0.22)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 6, 2.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
 
-  // Trotting legs
-  px(ctx, INK, x - 3, y - 2 - (bob ? 0 : 1), 2, 3);
-  px(ctx, '#7c4c2c', x - 3, y - 2 - (bob ? 0 : 1), 1, 2);
-  px(ctx, INK, x + 2, y - 2 - bob, 2, 3);
-  px(ctx, '#a87a45', x + 2, y - 2 - bob, 1, 2);
+  const lunge = attacking ? 2 : 0;
+  const bob = moving ? (Math.abs(Math.cos(legT * Math.PI * 2)) > 0.65 ? 1 : 0) : 0;
+  const dyBase = y - bob;
 
-  // Body + sunlit back
-  px(ctx, INK, x - 4, y - 6 - bob, 8, 5);
-  px(ctx, '#a87a45', x - 3, y - 5 - bob, 6, 3);
-  px(ctx, '#cf9b5e', x - 3, y - 5 - bob, 4, 1);
+  const dot = (c, dx, dy, w = 1, h = 1) => {
+    const pxX = f > 0 ? x + dx + lunge : x - dx - lunge - (w - 1);
+    px(ctx, c, pxX, dyBase + dy, w, h);
+  };
 
-  // Red collar
-  px(ctx, '#d1596d', x + f * 2, y - 6 - bob, 1, 3);
+  // Soft ground shadow
+  ctx.fillStyle = 'rgba(33, 24, 27, 0.24)';
+  ctx.fillRect(x - 4 + (f * lunge), y, stance === 'sit' ? 8 : 9, 1);
 
-  // Head, muzzle & pointed ear
-  const hx = x + f * 3;
-  px(ctx, INK, hx - 2, y - 9 - bob, 5, 4);
-  px(ctx, '#a87a45', hx - 1, y - 8 - bob, 3, 2);
-  px(ctx, '#cf9b5e', hx - 1, y - 8 - bob, 2, 1);
-  px(ctx, INK, hx - f, y - 10 - bob, 2, 2); // ear
-  px(ctx, INK, hx + f * 2, y - 8 - bob, 1, 1); // nose
+  const wagShift = wag ? (Math.floor(t * 10) % 2) : 0;
 
-  // Wagging tail
-  px(ctx, INK, x - f * 5, y - 6 - bob - wag, 2, 2);
-  px(ctx, '#cf9b5e', x - f * 5, y - 6 - bob - wag, 1, 1);
+  if (stance === 'sit') {
+    // Tail resting low behind haunches, lifting to wag
+    dot('#4a2e1b', -4, -2 - wagShift, 2, 1);
+    dot('#c88d4e', -5, -2 - wagShift * 2, 1, 1);
+
+    // Seated haunches & tucked hind paw
+    dot('#7c4b27', -3, -4, 3, 3);
+    dot('#9e6538', -2, -4, 2, 2);
+    dot('#e0ae6e', -1, -1, 2, 1);
+    dot('#f0cfa0', 0, -1, 1, 1);
+
+    // Upright chest, dark saddle & straight front legs
+    dot('#4a2e1b', -2, -5, 2, 1);
+    dot('#9e6538', -1, -6, 3, 3);
+    dot('#c88d4e', 0, -6, 2, 3);
+    dot('#e0ae6e', 1, -5, 1, 4);
+    dot('#c88d4e', 0, -3, 1, 2);
+    dot('#f0cfa0', 1, -1, 1, 1);
+
+    // Red collar + brass tag
+    dot('#c94356', 0, -6, 2, 1);
+    dot('#eb6c7d', 1, -6, 1, 1);
+    dot('#f2cc68', 2, -5, 1, 1);
+
+    // Alert head, muzzle & pointed shepherd ears
+    dot('#4a2e1b', 0, -10, 1, 2);
+    dot('#7c4b27', 1, -10, 1, 1);
+    dot('#9e6538', 0, -9, 3, 3);
+    dot('#c88d4e', 1, -9, 2, 2);
+    dot('#e0ae6e', 3, -8, 2, 2);
+    dot('#2c1b12', 4, -8, 1, 1); // nose
+    dot('#2c1b12', 2, -8, 1, 1); // eye
+    return;
+  }
+
+  // Standing, trotting, pacing, or lunging
+  const stride = moving ? Math.sin(legT * Math.PI * 2) : 0;
+  const backStep = stride > 0.25 ? -1 : stride < -0.25 ? 1 : 0;
+  const frontStep = -backStep;
+  const breathe = !moving && !attacking && Math.sin(t * 2.5 + x) > 0.5 ? 1 : 0;
+
+  // Far-side legs (darker)
+  dot('#4a2e1b', -3 - backStep, -2, 1, 2);
+  dot('#4a2e1b', 1 - frontStep, -2, 1, 2);
+
+  // Bushy tail (wags when happy/idle)
+  dot('#4a2e1b', -5, -5 - wagShift, 2, 1);
+  dot('#9e6538', -6, -6 - wagShift, 2, 1);
+  dot('#f0cfa0', -6, -6 - wagShift, 1, 1);
+
+  // Body & shepherd saddle
+  dot('#4a2e1b', -4, -6 + breathe, 5, 1);
+  dot('#7c4b27', -4, -5 + breathe, 6, 2);
+  dot('#9e6538', -3, -5 + breathe, 5, 2);
+  dot('#c88d4e', -2, -4 + breathe, 4, 1);
+  dot('#e0ae6e', 1, -4 + breathe, 2, 2);
+
+  // Near-side legs & pale paws
+  dot('#9e6538', -3 + backStep, -3, 1, 2);
+  dot('#f0cfa0', -3 + backStep, -1, 1, 1);
+  dot('#c88d4e', 1 + frontStep, -3, 1, 2);
+  dot('#f0cfa0', 1 + frontStep, -1, 1, 1);
+
+  // Red collar + brass tag
+  dot('#c94356', 1, -6 + breathe, 2, 2);
+  dot('#eb6c7d', 2, -6 + breathe, 1, 1);
+  dot('#f2cc68', 2, -4 + breathe, 1, 1);
+
+  // Head, muzzle, nose, eye & pointed ears
+  const headDrop = attacking ? 1 : 0;
+  dot('#4a2e1b', 1, -10 + breathe + headDrop, 1, 2);
+  dot('#7c4b27', 2, -10 + breathe + headDrop, 1, 1);
+  dot('#9e6538', 1, -9 + breathe + headDrop, 3, 3);
+  dot('#c88d4e', 2, -9 + breathe + headDrop, 2, 2);
+  dot('#e0ae6e', 4, -8 + breathe + headDrop, 2, 2);
+  dot('#2c1b12', 5, -8 + breathe + headDrop, 1, 1); // nose
+  dot('#2c1b12', 3, -8 + breathe + headDrop, 1, 1); // eye
 }

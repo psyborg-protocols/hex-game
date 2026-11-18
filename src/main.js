@@ -3,7 +3,8 @@
 import { loadTileset, BRIDGE_SHEET, bridgeFrame, isWater, variantFor } from './world/tileset.js';
 import { loadDecor, BAKED_SHEETS } from './render/decor.js';
 import { drawStructure, drawVillage, drawCamp, drawBridgeDeck, drawLadder, drawLadderTop, drawCrossing, hpBar } from './render/structures.js';
-import { drawUnit, unitPos, drawDog } from './render/units.js';
+import { drawUnit, unitPos, drawDog, dogPos } from './render/units.js';
+import { ensureDog, updateDog, commandDogGuard, commandDogFollow } from './game/dog.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath, isBridged } from './world/pathfinding.js';
 import { Renderer } from './render/renderer.js';
@@ -112,6 +113,7 @@ async function boot() {
 
   const player = new Player(map, restored?.player || map.spawn);
   if (!restored) player.seated = true;
+  ensureDog(map, state, player);
   const start = player.restingPos;
   camera.centerOn(start.cx, start.cy);
 
@@ -120,6 +122,7 @@ async function boot() {
   let follow = true;
   let preview = null;
   let placing = null;          // { recipeId, spots }
+  let dogSelected = false;
   let features = [];
   let eye = false;
   let swing = 0;               // seconds until you can strike again
@@ -541,10 +544,28 @@ async function boot() {
     ? [{ q: explorer.meditation.q, r: explorer.meditation.r, draw: ctx => drawMeditationGlow(ctx, map, explorer.meditation, now) }]
     : []);
 
+  const dogDrawOpts = (d, selected = dogSelected) => ({
+    facing: d.facing,
+    t: state.time,
+    stance: d.stance,
+    wag: d.wag,
+    moving: !!d.leg || !!d.pace?.moving,
+    legT: d.leg ? d.leg.t : (d.pace ? d.pace.t : 0),
+    attacking: state.time - (d.attackAt ?? -10) < 0.28,
+    selected,
+  });
+
   const dogEntity = () => {
-    if (!countItem(state, 'dog')) return [];
-    const p = player.pos;
-    return [{ q: player.q, r: player.r, draw: ctx => drawDog(ctx, p.x - player.facing * 9, p.y + 3, player.facing, performance.now() / 1000) }];
+    const d = ensureDog(map, state, player);
+    if (!d) return [];
+    const p = dogPos(map, d);
+    return [{ q: d.q, r: d.r, draw: ctx => drawDog(ctx, p.x, p.y, dogDrawOpts(d)) }];
+  };
+
+  const onDogBody = (w) => {
+    if (!w || !countItem(state, 'dog') || !state.dog) return false;
+    const p = dogPos(map, state.dog);
+    return Math.hypot(w.x - p.x, w.y - (p.y - 4)) <= 8;
   };
 
   /** A bridge is highlighted where its deck will be, not down on the water. */
@@ -763,7 +784,7 @@ async function boot() {
       game.ui.notify('One of the villagers has fallen.', 4200, 'bad');
       return;
     }
-    if (by === 'player' || by === 'tower' || by?.faction === 'ally') {
+    if (by === 'player' || by === 'tower' || by === 'dog' || by?.faction === 'ally') {
       const got = spoils(state, u);
       game.ui.floatText(unitAnchor(u), got.text, 'gain');
       if (u.kind === 'warlord') {
@@ -800,6 +821,9 @@ async function boot() {
           e.target.hitAt = performance.now();
           game.ui.showDice(unitAnchor(e.target), e.roll, { friendly: e.target.faction === 'raider' });
         }
+      } else if (e.type === 'dogClash') {
+        e.target.hitAt = performance.now();
+        game.ui.showDice(unitAnchor(e.target), e.roll, { friendly: true });
       } else if (e.type === 'arrow') {
         e.who.hitAt = performance.now();
         game.ui.showDice(unitAnchor(e.who), e.roll, { friendly: true });
@@ -1161,12 +1185,13 @@ async function boot() {
     const hit = hexAt(e);
     const moved = !hit !== !hover || (hit && hover && (hit.q !== hover.q || hit.r !== hover.r));
     hover = hit;
-    hoverWorld = hit ? worldAt(e) : null;
+    const ptrWorld = worldAt(e);
+    hoverWorld = hit ? ptrWorld : null;
     // A canopy can be under the pointer with no hex at all (over the sky past
     // the world's edge), so the node is asked for even when `hit` is null.
     fx.hover = (!placing && !dead) ? hitNodeAt(e, hit) : null;
     const hoverCol = hit && map.get(hit.q, hit.r);
-    const interactive = !placing && !dead && (!!fx.hover || !!hit && (
+    const interactive = !placing && !dead && (dogSelected || onDogBody(ptrWorld) || !!fx.hover || !!hit && (
       (hoverCol?.feature?.type === 'village')
       || (hoverCol?.feature?.type === 'structure' && ['hut', 'hearth', 'workbench', 'forge'].includes(hoverCol.feature.item))
       || (hoverCol?.feature?.type === 'camp' && !hoverCol.feature.burned && !guardsAt(state, hoverCol))
@@ -1177,7 +1202,7 @@ async function boot() {
       ))
     ));
     canvas.style.cursor = interactive ? 'pointer' : '';
-    if (moved && !placing) preview = hover && !player.moving ? findPath(map, player, hover, pathOpts()) : null;
+    if (moved && !placing) preview = hover && !player.moving && !dogSelected ? findPath(map, player, hover, pathOpts()) : null;
   });
 
   canvas.addEventListener('pointerup', e => {
@@ -1210,6 +1235,45 @@ async function boot() {
         afterChange();
       }
       return;
+    }
+
+    const clickWorld = worldAt(e);
+    const onDog = onDogBody(clickWorld);
+    const clickPos = player.pos;
+    const onPlayer = Math.hypot(clickWorld.x - clickPos.x, clickWorld.y - (clickPos.y - 7)) <= 9;
+
+    if (dogSelected) {
+      if (onDog) {
+        if (state.dog?.mode === 'guard') {
+          commandDogFollow(state);
+          game.ui.notify('Your dog trots back to follow you.');
+        }
+        dogSelected = false;
+        return;
+      }
+      if (onPlayer) {
+        dogSelected = false;
+        return;
+      }
+      const res = commandDogGuard(map, state, player, target, pathOpts());
+      dogSelected = false;
+      if (!res.ok) game.ui.notify(res.reason);
+      else game.ui.notify(res.alreadyThere ? 'Your dog sits to guard here.' : 'Your dog trots off to guard that hex.');
+      return;
+    }
+
+    if (onDog) {
+      const dogP = dogPos(map, state.dog);
+      const dDog = Math.hypot(clickWorld.x - dogP.x, clickWorld.y - (dogP.y - 4));
+      const dPly = Math.hypot(clickWorld.x - clickPos.x, clickWorld.y - (clickPos.y - 7));
+      if (!onPlayer || dDog <= dPly) {
+        dogSelected = true;
+        preview = null;
+        game.ui.notify(state.dog?.mode === 'guard'
+          ? 'Dog selected — click a hex to guard, or click the dog again to call it back.'
+          : 'Dog selected — click a hex to set it to guard.');
+        return;
+      }
     }
 
     // Clicking a raider walks you up to it; the fight starts on its own.
@@ -1342,6 +1406,7 @@ async function boot() {
     if (typing(e)) return;
     if (e.key === 'Escape') {
       if (placing) { placing = null; refreshContext(); return; }
+      if (dogSelected) { dogSelected = false; return; }
       if (e.handledByPanel || game.ui.openPanelName) return;     // ui.js closed a panel
       game.ui.openPanel('menu');
       return;
@@ -1377,6 +1442,7 @@ async function boot() {
     if (running) {
       state.time += dt;
       const events = [];
+      updateDog({ world, state, player, events, boat: hasBoat() }, dt);
       updateUnits({ world, state, player, events, playerDown: dead }, dt);
       handleEvents(events);
       playerStrikes(dt);
@@ -1435,6 +1501,10 @@ async function boot() {
           ctx.save();
           ctx.globalAlpha = 0.38;
           for (const u of state.units || []) drawUnit(ctx, map, u, performance.now(), true);
+          if (countItem(state, 'dog') && state.dog) {
+            const p = dogPos(map, state.dog);
+            drawDog(ctx, p.x, p.y, dogDrawOpts(state.dog, false));
+          }
           player.draw(ctx, true);
           ctx.restore();
         },
