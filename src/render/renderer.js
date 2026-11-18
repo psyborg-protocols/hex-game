@@ -7,7 +7,7 @@
 
 import { GEOM, columnBaseY, tileCenter, traceTopFace } from '../world/hexgrid.js';
 import { drawColumn } from './columns.js';
-import { drawColumnDecor } from './decor.js';
+import { drawColumnDecor, BAKED_WOODS } from './decor.js';
 import { pixelScale } from '../core/camera.js';
 
 export class Renderer {
@@ -43,7 +43,8 @@ export class Renderer {
   /**
    * @param {WorldMap} map
    * @param {Camera} camera
-   * @param {{hover?:{q,r}, entities?:Array, overlays?:Array, screenOverlays?:Array, dim?:Function}} opts
+   * @param {{hover?:{q,r,glow?:boolean}, entities?:Array, overlays?:Array, screenOverlays?:Array, dim?:Function}} opts
+   *   hover: the one hex to highlight — outlined, or with `glow`, its trees lit up.
    *   entities: { q, r, h, draw(ctx, cx, cy) } — drawn interleaved with the
    *   columns by depth, so a player behind a tall hex is correctly hidden.
    *   dim: (column) => '' | 'dim' | 'dormant' — how to draw that column.
@@ -73,15 +74,22 @@ export class Renderer {
         const push = sway ? sway(d.column) : 0;
         // The artist's wooded tiles carry their trees, so the tile itself
         // sways; the bare floors have theirs stood on top, and those do.
-        drawColumn(b, this.res, d.column, dark, d.column.feature?.type === 'trees' ? push : 0);
-        // The highlight is part of this column's depth slot, not a screen-wide
+        const col = d.column;
+        const hovered = hover && col.q === hover.q && col.r === hover.r;
+        // A hovered tree is lit up rather than outlined. Where the trees are
+        // part of the tile's own art (the dense woods), any outline on that
+        // tile lands on the trees, so the whole top tile glows instead.
+        const glowing = hovered && hover.glow;
+        const baked = glowing && BAKED_WOODS.has(col.terrain);
+        drawColumn(b, this.res, col, dark, col.feature?.type === 'trees' ? push : 0, baked ? 'glow' : null);
+        // The outline is part of this column's depth slot, not a screen-wide
         // overlay: it lies on the tile's top face, so whatever stands on or
         // overhangs that face must be painted over it. Drawing it here means
         // the column's own trees (decor, next) and every tree in front of it
         // — which is what overhangs into it — cover the outline naturally.
-        if (hover && d.column.q === hover.q && d.column.r === hover.r) this.drawHover(b, map, hover);
-        drawColumnDecor(b, this.res, d.column, dark, push);
-        if (props) props(b, d.column, dark);
+        if (hovered && !baked) this.drawHover(b, map, hover);
+        drawColumnDecor(b, this.res, col, glowing ? 'glow' : dark, push);
+        if (props) props(b, col, dark);
       } else {
         d.entity.draw(b, d.cx, d.cy, this.res);
       }

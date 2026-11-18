@@ -56,6 +56,9 @@ export function drawSprite(ctx, decor, name, cx, cy, sheet = decor.image) {
  */
 const PROP_WOODS = { forest_floor: 'oak', pine_floor: 'pine' };
 
+/** The dense woods, whose trees are drawn into the tile sheet itself. */
+export const BAKED_WOODS = new Set(['oak_wood', 'pine_wood']);
+
 /**
  * The trees a wooded column draws, with their spots and sprite names.
  *

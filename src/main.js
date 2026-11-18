@@ -607,17 +607,6 @@ async function boot() {
         ctx.stroke();
       }
     }
-    // Hovered tree, ripe field, or tall grass gets a soft pale rim on its hex.
-    if (fx.hover && (fx.hover.kind === 'tree' || fx.hover.kind === 'field' || fx.hover.kind === 'grain')) {
-      const col = map.get(fx.hover.q, fx.hover.r);
-      if (col) {
-        const { cx, cy } = tileCenter(col.q, col.r, Math.max(0, col.h));
-        traceTopFace(ctx, cx, cy);
-        ctx.strokeStyle = 'rgba(255, 248, 220, 0.55)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    }
     // Your health, over your head, when you are hurt.
     if (state.hp < maxHp(state)) {
       const p = player.pos;
@@ -968,6 +957,21 @@ async function boot() {
     }
     return best?.spot || null;
   };
+
+  /**
+   * The one hex to highlight. When the pointer is on something a click would
+   * act on — a tree whose canopy reaches over the next hex, say — that is the
+   * hex lit, not whichever hex happens to be under the pointer; showing both
+   * read as two targets. A tree glows rather than being outlined.
+   */
+  function highlightFor() {
+    const n = fx.hover;
+    if (n && n.q != null) {
+      const at = n.on || n;      // a node on the water belongs to the water hex
+      return { q: at.q, r: at.r, glow: n.kind === 'tree' };
+    }
+    return hover;
+  }
 
   /** How far a wood being shaken is pushed sideways at time `now` (ms). */
   function swayOf(col, now) {
@@ -1408,7 +1412,7 @@ async function boot() {
     camera.update(dt);
 
     renderer.render(map, camera, {
-      hover: placing ? null : hover,
+      hover: placing ? null : highlightFor(),
       // The exploring glow belongs to the hex you stand on, so it is drawn with
       // that hex and hidden by whatever hides the hex. As an overlay it was
       // painted over everything: stand behind a peak and the ring ran round the

@@ -13,12 +13,10 @@
 // tighter than a circle of guesswork.
 
 import { GEOM, tileCenter, pointInHex, columnBaseY, compareDrawOrder } from '../world/hexgrid.js';
-import { treeBoxes } from '../render/decor.js';
+import { treeBoxes, BAKED_WOODS } from '../render/decor.js';
 import { nodeNear } from './nodes.js';
 import { isKnown } from './discovery.js';
 
-/** Terrains whose trees are baked into the tile sheet itself. */
-const BAKED_WOODS = new Set(['oak_wood', 'pine_wood']);
 
 /** The tallest tree sprite, in pixels above its foot — how far art can reach up. */
 const TREE_REACH = 32;
