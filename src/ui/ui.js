@@ -262,7 +262,8 @@ export class UI {
         <span class="turn-clock">${phaseLabel}</span>
         <div class="moon" style="--omens:${MOON_MARKS.omens}%; --dusk:${MOON_MARKS.dusk}%"><i style="left:${(moon.progress * 100).toFixed(1)}%"></i></div>
       </div>
-      ${this.alert.text ? `<div class="omen ${this.alert.tone}">${escapeHtml(this.alert.text)}</div>` : ''}`;
+      ${this.alert.text ? `<div class="omen ${this.alert.tone}">${escapeHtml(this.alert.text)}</div>` : ''}
+      ${this.game.mp?.hudRoster(escapeHtml) || ''}`;
 
     this.hudMore.innerHTML = `
       <div><b>${Math.max(0, s.hp)}</b>/${hpMax} health &middot; <b>${Math.floor(s.energy)}</b>/${eMax} energy</div>

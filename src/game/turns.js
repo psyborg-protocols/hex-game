@@ -99,7 +99,7 @@ export function advanceTurn(world, state, player, ctx = {}) {
   // The world's part of the turn. In a room a guest's turn skips it
   // (`worldTick: false`): the host runs crops and wild dogs for everyone.
   const events = [];
-  const worldTick = ctx.worldTick ?? !(state.room && !state.room.host && !state.room.gone);
+  const worldTick = ctx.worldTick ?? !(state.room && !state.room.gone);
   const cropsChanged = worldTick ? advanceWorldTurn(world, state, player, ctx, events) : [];
 
   return {

@@ -864,3 +864,30 @@ button.big:hover { border-color: var(--accent); }
 .join-card h1 { margin: 0 0 8px; font: 400 26px 'Cinzel', Georgia, serif; letter-spacing: 0.08em; color: var(--accent); }
 .join-card .big { margin-top: 12px; }
 .join-card .join-alone { display: block; margin-top: 16px; font-size: 12px; color: var(--ink-dim); background: none; border: 0; cursor: pointer; text-decoration: underline; }
+
+/* Your day is done; the others are still in theirs. */
+#dawn-wait {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: min(560px, calc(100% - 32px));
+  z-index: 20;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-style: italic;
+  text-align: center;
+  color: #d8e2ff;
+  background: rgba(14, 18, 36, 0.86);
+  border: 1px solid #3b4a7a;
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* Everyone in the room, and how far through their day they are. */
+.hud-roster { margin-top: 6px; display: grid; gap: 2px; font-size: 11px; }
+.hud-roster .who { display: flex; align-items: center; gap: 6px; }
+.hud-roster .pip { inline-size: 9px; block-size: 9px; border-width: 1px; }
+.hud-roster .who.waiting { opacity: 0.7; }

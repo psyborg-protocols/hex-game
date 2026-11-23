@@ -27,14 +27,14 @@ import { makeMasks } from './render/masks.js';
 import { createFx, drawColumnNodes, drawCampfire, SHAKE_MS } from './render/resources.js';
 import { onStep as mindStep, onExplored, onMeditated, onTrade } from './game/mind.js';
 import { Explorer } from './game/explorer.js';
-import { attackDice, reach, maxHp, playerGearSnapshot } from './game/gear.js';
+import { attackDice, defenseDice, reach, maxHp, playerGearSnapshot } from './game/gear.js';
 import { levelOf } from './game/skills.js';
 import { checkJourney, STAGES } from './game/journey.js';
 import {
   updateUnits, garrisonCamps, guardsAt, hostiles, strike, spoils, rally, burnCamp,
   campsLeft, ensureRaidState, raidSize, abroad, KINDS, tickSchedule, stepRaidTurn, TURN_UNIT_SECONDS,
 } from './game/raiders.js';
-import { ensureTurnState, advanceTurn, spendMoveStep, spendAction } from './game/turns.js';
+import { ensureTurnState, advanceTurn, advanceWorldTurn, spendMoveStep, spendAction } from './game/turns.js';
 import { sleepContext, canSleep, sleepNight, passOut } from './game/sleep.js';
 import { seedWildDogs, tryTameWildDog, strikeWildDog, wildDogAt } from './game/wild_dogs.js';
 import { drawExploreCharge, drawMeditationGlow, Pings, loadResourceIcons, drawResourceIcons, drawScenicRings } from './render/discovery_fx.js';
@@ -411,6 +411,36 @@ async function boot() {
   // Friends: the room you are in, and everyone else in it.
   game.mp = new Multiplayer({
     world, state, player, ui: game.ui, maxHp,
+    defense: defenseDice,
+    isDown: () => dead,
+    // The host's raiders or dogs hit you.
+    hurtMe: (damage, roll) => {
+      state.hp = Math.max(0, state.hp - damage);
+      combatUntilTurn = (state.turn || 0) + 1;
+      if (roll) game.ui.showDice(playerPos, roll);
+      else if (damage) game.ui.floatText(playerPos, `-${damage}`, 'bad');
+      if (damage) chime('tick', 0.03);
+      game.ui.updateHud();
+    },
+    // Host: the world clock moved on a turn; the world takes its turn near whoever leads.
+    runWorldTurn: leaderPos => {
+      const ev = [];
+      const changed = advanceWorldTurn(world, state, leaderPos, {
+        rng: () => rng.next(),
+        dogs: { players: game.mp.players(), hurt: game.mp.hurt, clock: state.clock },
+      }, ev);
+      if (changed.length) rebuildFeatures();
+      handleEvents(ev);
+      const m = moonOf({ turn: game.mp.raidClock() });
+      if (m.phase === 'raid' || abroad(state).length > 0
+        || (state.units || []).some(u => u.hp > 0 && game.mp.players().some(p => distance(u.q, u.r, p.q, p.r) <= 8))) {
+        turnSimBudget = Math.min(TURN_UNIT_SECONDS * 2, turnSimBudget + TURN_UNIT_SECONDS);
+      }
+    },
+    onDawn: () => {
+      game.ui.murmur('Everyone has seen the night through. A new day begins.', { tone: 'good', ms: 4600 });
+      afterChange();
+    },
     onRoster: () => { syncPlayerGear(); game.ui.updateHud(); },
     // Someone else changed the world: show it.
     onWorldPatched: (res, patch) => {
@@ -500,8 +530,11 @@ async function boot() {
       if (res.coldDamage > 0) game.ui.floatText(playerPos, `-${res.coldDamage} cold`, 'bad');
     }
     const ev = [];
-    if (!game.mp?.isGuest) tickSchedule(world, state, ev);
+    if (!game.mp?.isGuest) tickSchedule(world, state, ev, game.mp.raidClock());
     handleEvents(ev);
+    // In a room your night ends at dawn; the new day starts when everyone's has.
+    // (Woken in the dark by a wild dog, it is still night: carry on.)
+    if (game.mp?.active && !res.wokenByDog) game.mp.beginWait();
     afterChange();
   }
 
@@ -522,7 +555,7 @@ async function boot() {
   function onTurnAdvanced(res) {
     if (!res) return;
     const events = [...(res.events || [])];
-    if (!game.mp?.isGuest) tickSchedule(world, state, events);
+    if (!game.mp?.isGuest) tickSchedule(world, state, events, game.mp.raidClock());
     const m = moonOf(state);
     if (m.phase === 'raid' || abroad(state).length > 0
       || (state.units || []).some(u => u.hp > 0 && distance(u.q, u.r, player.q, player.r) <= 8)) {
@@ -893,7 +926,7 @@ async function boot() {
   // --------------------------------------------------------------- context
 
   function refreshContext() {
-    if (dead || placing || player.moving) {
+    if (dead || placing || player.moving || game.mp?.waiting) {
       game.ui.clearContext();
       return;
     }
@@ -1078,7 +1111,11 @@ async function boot() {
         else game.ui.ping({ kind: 'victory', title: `${when}. The valley held`, sub: felled });
         afterChange();
       } else if (e.type === 'clash') {
-        if (e.target === 'player') {
+        const other = e.playerId && game.mp?.remotes.get(e.playerId);
+        if (e.target === 'player' && other) {
+          e.who.facing = other.q >= e.who.q ? 1 : -1;
+          game.ui.showDice(() => other.pos, e.roll);
+        } else if (e.target === 'player') {
           combatUntilTurn = (state.turn || 0) + 1;
           e.who.facing = player.q >= e.who.q ? 1 : -1;
           game.ui.showDice(playerPos, e.roll);
@@ -1088,9 +1125,14 @@ async function boot() {
           game.ui.showDice(unitAnchor(e.target), e.roll, { friendly: e.target.faction === 'raider' });
         }
       } else if (e.type === 'wildDogClash') {
-        combatUntilTurn = (state.turn || 0) + 1;
-        game.ui.showDice(playerPos, e.roll);
-        if (e.roll.damage) chime('tick', 0.03);
+        const bitten = e.playerId && game.mp?.remotes.get(e.playerId);
+        if (bitten) {
+          game.ui.showDice(() => bitten.pos, e.roll);
+        } else {
+          combatUntilTurn = (state.turn || 0) + 1;
+          game.ui.showDice(playerPos, e.roll);
+          if (e.roll.damage) chime('tick', 0.03);
+        }
       } else if (e.type === 'dogClash') {
         e.target.hitAt = performance.now();
         game.ui.showDice(unitAnchor(e.target), e.roll, { friendly: true });
@@ -1514,6 +1556,7 @@ async function boot() {
     const wasDrag = drag.moved > 4;
     drag.active = false;
     if (wasDrag || dead) return;
+    if (game.mp?.waiting) { game.ui.notify('Your day is done. The new one starts when everyone has finished theirs.'); return; }
 
     const chosen = placing ? spotAt(e) : null;
     let target = chosen || hexAt(e);
@@ -1727,8 +1770,8 @@ async function boot() {
     if (k === 'c') game.ui.togglePanel('crafting');
     if (k === 'b') game.ui.togglePanel('build');
     if (k === 'k') game.ui.togglePanel('skills');
-    if (k === 'z' && !game.ui.openPanelName) game.doSleep();
-    if (e.key === '.' && !game.ui.openPanelName) game.doWaitTurn();
+    if (k === 'z' && !game.ui.openPanelName && !game.mp?.waiting) game.doSleep();
+    if (e.key === '.' && !game.ui.openPanelName && !game.mp?.waiting) game.doWaitTurn();
     if (/^[1-9]$/.test(e.key) && !game.ui.openPanelName) game.ui.pickContext(Number(e.key) - 1);
   });
 
@@ -1769,7 +1812,9 @@ async function boot() {
       const simDt = game.mp?.isGuest ? 0 : Math.min(turnSimBudget, dt * 3.0);
       if (simDt > 0) {
         turnSimBudget -= simDt;
-        updateUnits({ world, state, player, events, playerDown: dead }, simDt);
+        updateUnits(game.mp?.active
+          ? { world, state, player, events, players: game.mp.players(), hurt: game.mp.hurt, clock: game.mp.raidClock() }
+          : { world, state, player, events, playerDown: dead }, simDt);
       }
       handleEvents(events);
       playerStrikes(dt);
@@ -1929,6 +1974,8 @@ function fromWelcome(welcome) {
   const state = createState();
   applyShared(state, snap.shared);
   state.playerColor = welcome.you.color;
+  // You start at the dawn of the day everyone is in.
+  state.turn = snap.dawn || 0;
   return { map: WorldMap.fromJSON(snap.map), state, player: snap.spawn, seed: snap.seed };
 }
 
