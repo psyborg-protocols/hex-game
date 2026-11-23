@@ -415,6 +415,25 @@ export class UI {
     }
   }
 
+  /** A small menu at the pointer: [{ label, run, bad? }]. Any other click closes it. */
+  showMenu(x, y, items) {
+    document.querySelector('.ctx-menu')?.remove();
+    const el = document.createElement('div');
+    el.className = 'ctx-menu';
+    el.setAttribute('role', 'menu');
+    el.innerHTML = items.map((it, i) => `<button type="button" role="menuitem" class="${it.bad ? 'bad' : ''}" data-i="${i}">${escapeHtml(it.label)}</button>`).join('');
+    document.body.appendChild(el);
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.style.left = `${Math.min(x, innerWidth - w - 8)}px`;
+    el.style.top = `${Math.min(y, innerHeight - h - 8)}px`;
+    const close = () => { el.remove(); removeEventListener('pointerdown', away, true); removeEventListener('keydown', esc, true); };
+    const away = e => { if (!el.contains(e.target)) close(); };
+    const esc = e => { if (e.key === 'Escape') close(); };
+    for (const b of el.querySelectorAll('button')) b.addEventListener('click', () => { close(); items[+b.dataset.i].run(); });
+    setTimeout(() => { addEventListener('pointerdown', away, true); addEventListener('keydown', esc, true); });
+    el.querySelector('button')?.focus();
+  }
+
   // -------------------------------------------------------------- panels
 
   togglePanel(name) {

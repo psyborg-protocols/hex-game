@@ -14,11 +14,12 @@ import { Player } from './game/player.js';
 import { pickHex, pointInHex, tileCenter, traceTopFace, distance, neighbors, columnBaseY, GEOM } from './world/hexgrid.js';
 
 import { createState, itemName, RECIPES, ITEMS, dayOf, moonOf, isNight, hasBuilt } from './game/state.js';
-import { walkOneStep, recomputeEnergy, countItem, removeItem, foodValue, usedSlots, capacity, isWorn } from './game/inventory.js';
+import { walkOneStep, recomputeEnergy, countItem, addItem, removeItem, foodValue, usedSlots, capacity, isWorn } from './game/inventory.js';
 import { craft, checkRecipe, recipeKnown } from './game/crafting.js';
 import { ensureVillage, buy, sell, giveFavour, villageContext, isTrusted, isRaided } from './game/economy.js';
 import { villageNear } from './game/context.js';
-import { harvest, shakeTree, prospect, build, relightCampfire, placementSpots, growCrops, refreshArt, penaltyOnDeath } from './game/actions.js';
+import { harvest, shakeTree, prospect, build, relightCampfire, placementSpots, growCrops, refreshArt, penaltyOnDeath, destroyStructure } from './game/actions.js';
+import { clash } from './game/combat.js';
 import { harvestSpec } from './game/harvests.js';
 import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile } from './game/save.js';
 import { ensureMind, isKnown, isExplored, isMeditated, scenicOf, harvestsHere, HIDDEN } from './game/discovery.js';
@@ -29,14 +30,14 @@ import { onStep as mindStep, onExplored, onMeditated, onTrade } from './game/min
 import { Explorer } from './game/explorer.js';
 import { attackDice, defenseDice, reach, maxHp, playerGearSnapshot } from './game/gear.js';
 import { levelOf } from './game/skills.js';
-import { checkJourney, STAGES } from './game/journey.js';
+import { checkJourney, STAGES, currentStage } from './game/journey.js';
 import {
   updateUnits, garrisonCamps, guardsAt, hostiles, strike, spoils, rally, burnCamp,
   campsLeft, ensureRaidState, raidSize, abroad, KINDS, tickSchedule, stepRaidTurn, TURN_UNIT_SECONDS,
 } from './game/raiders.js';
 import { ensureTurnState, advanceTurn, advanceWorldTurn, spendMoveStep, spendAction } from './game/turns.js';
 import { sleepContext, canSleep, sleepNight, passOut } from './game/sleep.js';
-import { seedWildDogs, tryTameWildDog, strikeWildDog, wildDogAt } from './game/wild_dogs.js';
+import { seedWildDogs, tryTameWildDog, strikeWildDog, wildDogAt, WILD_DOG_DEF } from './game/wild_dogs.js';
 import { drawExploreCharge, drawMeditationGlow, Pings, loadResourceIcons, drawResourceIcons, drawScenicRings } from './render/discovery_fx.js';
 import { chime, updateMeditationHum } from './ui/chime.js';
 
@@ -50,6 +51,7 @@ import { menuPanel } from './ui/panels/menu.js';
 import { stashPanel } from './ui/panels/stash.js';
 import { messagePanel, HOW_TO_PLAY } from './ui/panels/message.js';
 import { friendsPanel } from './ui/panels/friends.js';
+import { playerTradePanel } from './ui/panels/player_trade.js';
 import { joinScreen } from './ui/join_screen.js';
 import { Multiplayer } from './net/multiplayer.js';
 import { applyShared } from './game/shared.js';
@@ -172,6 +174,7 @@ async function boot() {
     panels: {
       inventory: inventoryPanel, crafting: craftingPanel, skills: skillsPanel, trade: tradePanel,
       build: buildPanel, menu: menuPanel, stash: stashPanel, message: messagePanel, friends: friendsPanel,
+      pvptrade: playerTradePanel,
     },
 
     /** Open this world to friends. Resolves with the share link. */
@@ -307,7 +310,7 @@ async function boot() {
         game.ui.ping({ kind: 'victory', title: `${camp.feature.name} burns`, sub: left ? `${left} left` : '' });
         game.ui.floatText(playerPos, `+${gold} gold`, 'gain');
         takeAction(1);
-        if (!campsLeft(map).length && !state.won) victory();
+        if (!campsLeft(map).length && !state.won && game.mp?.mode !== 'competitive') victory();
       });
     },
 
@@ -414,7 +417,8 @@ async function boot() {
     defense: defenseDice,
     isDown: () => dead,
     // The host's raiders or dogs hit you.
-    hurtMe: (damage, roll) => {
+    hurtMe: (damage, roll, source, by) => {
+      if (by) lastHitBy = { by, turn: state.turn || 0 };
       state.hp = Math.max(0, state.hp - damage);
       combatUntilTurn = (state.turn || 0) + 1;
       if (roll) game.ui.showDice(playerPos, roll);
@@ -437,6 +441,111 @@ async function boot() {
         turnSimBudget = Math.min(TURN_UNIT_SECONDS * 2, turnSimBudget + TURN_UNIT_SECONDS);
       }
     },
+    clash,
+    // Host: a friend swings at a raider or a wild dog we keep.
+    resolveStrike: (from, m) => {
+      if (m.target === 'unit') {
+        const u = (state.units || []).find(x => x.id === m.id && x.hp > 0);
+        if (!u) return { target: 'unit', id: m.id, miss: true };
+        const roll = strike(state, u, m.dice);
+        u.hitAt = performance.now();
+        game.ui.showDice(unitAnchor(u), roll, { friendly: true });
+        return { target: 'unit', id: u.id, roll, killed: u.hp <= 0, unit: { kind: u.kind, carry: u.carry || [], q: u.q, r: u.r } };
+      }
+      const wd = (state.wildDogs || []).find(d => d.id === m.id && d.hp > 0);
+      if (!wd) return { target: 'dog', id: m.id, miss: true };
+      const roll = clash(m.dice, WILD_DOG_DEF, { next: () => rng.next() });
+      wd.hp -= roll.damage;
+      wd.hostile = true;
+      game.ui.showDice(wildDogAnchor(wd), roll, { friendly: true });
+      if (wd.hp <= 0) state.wildDogs = state.wildDogs.filter(d => d !== wd);
+      return { target: 'dog', id: wd.id, roll, killed: wd.hp <= 0, at: { q: wd.q, r: wd.r } };
+    },
+    // Guest: how our swing went.
+    onStruck: m => {
+      if (m.miss) return;
+      if (m.target === 'unit') {
+        const u = (state.units || []).find(x => x.id === m.id) || { ...m.unit };
+        game.ui.showDice(unitAnchor(u), m.roll, { friendly: true });
+        if (m.killed) fell({ ...m.unit, faction: 'raider' }, 'player');
+        return;
+      }
+      const wd = (state.wildDogs || []).find(d => d.id === m.id) || { q: m.at.q, r: m.at.r };
+      game.ui.showDice(wildDogAnchor(wd), m.roll, { friendly: true });
+      if (m.killed) {
+        const got = [];
+        if (addItem(state, 'meat', 1)) got.push('1 raw meat');
+        if (countItem(state, 'stone_knife') > 0 && addItem(state, 'hide', 1)) got.push('1 hide');
+        chime('copper', 0.05);
+        if (got.length) game.ui.floatText(wildDogAnchor(wd), `+ ${got.join(', ')}`, 'gain');
+        afterChange();
+      }
+    },
+    // Host: a friend's dog bit a raider.
+    applyDamage: m => {
+      const u = (state.units || []).find(x => x.id === m.id && x.hp > 0);
+      if (u) { u.hp -= m.damage; u.hitAt = performance.now(); }
+    },
+    hostRally: (from, m) => { rally(state, m.at, map, m.n, from); },
+    removeWildDog: id => { state.wildDogs = (state.wildDogs || []).filter(d => d.id !== id); },
+    // A raider your tower or militia felled, far away.
+    onSpoils: unit => {
+      const got = spoils(state, unit);
+      game.ui.floatText(playerPos, got.text, 'gain');
+      chime('copper', 0.05);
+      afterChange();
+    },
+    onPvpHit: m => {
+      const them = game.mp.remotes.get(m.target);
+      if (them) game.ui.showDice(() => them.pos, m.roll, { friendly: true });
+    },
+    onLoot: (gold, from) => {
+      state.gold += gold;
+      const name = game.mp.roster.find(p => p.id === from)?.name || 'them';
+      game.ui.murmur(`You took ${gold} gold from ${name}.`, { tone: 'good', ms: 5000 });
+      afterChange();
+    },
+    // One of your huts fell, far away: to raiders, or to a rival who takes the stash.
+    onHutLost: (m, from) => {
+      if (m.item !== 'hut') { game.ui.notify(`Your ${itemName(m.item).toLowerCase()} is down.`, 5200, 'bad'); return; }
+      const items = state.stash.filter(Boolean);
+      state.stash = state.stash.map(() => null);
+      const name = game.mp.roster.find(p => p.id === m.by)?.name;
+      if (m.by) game.mp.sendTo(m.by, { t: 'stashLoot', items });
+      game.ui.notify(m.by ? `${name || 'A rival'} broke your hut and took the stash.` : 'Your hut is down, and the stash is gone.', 5600, 'bad');
+      afterChange();
+    },
+    onStashLoot: items => {
+      const got = [];
+      for (const s of items || []) { const n = addItem(state, s.id, s.qty); if (n) got.push(`${n} ${itemName(s.id)}`); }
+      if (got.length) game.ui.murmur(`From their stash: ${got.join(', ')}.`, { tone: 'good', ms: 6000 });
+      afterChange();
+    },
+    onWinner: m => {
+      const mine = m.id === meId();
+      state.won = state.won || mine;
+      game.ui.openPanel('message', {
+        title: mine ? 'You win the race' : `${m.name} wins the race`,
+        html: mine
+          ? '<p class="lede">You walked the whole journey first.</p>'
+          : `<p class="lede">${m.name} reached the end of the journey before anyone else.</p><p>The world is still here, if you want to keep going.</p>`,
+      });
+    },
+    onTradeChanged: (tr, opts = {}) => {
+      if (opts.opened) {
+        const name = game.mp.roster.find(p => p.id === tr.them)?.name || 'Someone';
+        game.ui.murmur(`${name} wants to trade.`, { ms: 4000 });
+        game.ui.openPanel('pvptrade');
+        return;
+      }
+      if (game.ui.openPanelName === 'pvptrade') game.ui.refreshPanel();
+      else if (tr.status === 'cancelled' && tr.note) game.ui.notify(`Trade off: ${tr.note}.`, 3200);
+    },
+    onTradeDone: (tr, got) => {
+      chime('gold', 0.05);
+      game.ui.murmur(got.length ? `Traded. You got ${got.join(', ')}.` : 'Traded.', { tone: 'good', ms: 5000 });
+      afterChange();
+    },
     onDawn: () => {
       game.ui.murmur('Everyone has seen the night through. A new day begins.', { tone: 'good', ms: 4600 });
       afterChange();
@@ -445,6 +554,7 @@ async function boot() {
     // Someone else changed the world: show it.
     onWorldPatched: (res, patch) => {
       if (res.cols.length || patch.built || patch.structures) {
+        if (res.cols.length && game.mp.mode !== 'competitive' && !state.won && !campsLeft(map).length) victory();
         rebuildFeatures();
         if (game.mp.isHost) homeless(patch);
         refreshContext();
@@ -593,6 +703,11 @@ async function boot() {
   function afterChange() {
     syncPlayerGear();
     game.mp?.flush();
+    // Competitive: the first to finish the whole journey wins the race.
+    if (game.mp?.mode === 'competitive' && !state.raceClaimed && currentStage(state).done) {
+      state.raceClaimed = true;
+      game.mp.claimWin();
+    }
     const j = checkJourney(state, world);
     for (const g of j.goals) game.ui.ping({ kind: 'goal', title: g.text });
     for (const st of j.stages) {
@@ -1019,7 +1134,12 @@ async function boot() {
     const trusted = Object.values(state.trust).filter(t => t.done).length;
     if (!trusted) return;
     state.rallied[k] = 1;
-    const n = rally(state, player, map, trusted, state.room?.playerId || 'local');
+    if (game.mp?.isGuest) {
+      game.mp.toHost({ t: 'rally', n: trusted, at: { q: player.q, r: player.r } });
+      game.ui.murmur(`${Math.min(4, trusted)} from the villages stand with you.`, { tone: 'good', ms: 6000 });
+      return;
+    }
+    const n = rally(state, player, map, trusted, meId());
     if (n) game.ui.murmur(`${n} from the villages stand with you.`, { tone: 'good', ms: 6000 });
   }
 
@@ -1049,9 +1169,63 @@ async function boot() {
     };
   }
 
+  /** Who you are in a room ('local' alone). */
+  const meId = () => state.room?.playerId || 'local';
+
+  /**
+   * Competitive: someone you chose to fight (right-click, Attack), and you keep
+   * swinging while they are in reach. { kind: 'player', id } or { kind: 'structure', q, r }.
+   */
+  let rivalTarget = null;
+  let lastHitBy = null;
+
+  function strikeRival() {
+    const t = rivalTarget;
+    if (game.mp?.mode !== 'competitive') { rivalTarget = null; return false; }
+    if (t.kind === 'player') {
+      const them = game.mp.remotes.get(t.id);
+      if (!them || them.down || them.waiting) { rivalTarget = null; return false; }
+      const d = distance(them.q, them.r, player.q, player.r);
+      if (d > reach(state)) {
+        if (d > 4) { rivalTarget = null; game.ui.murmur(`You let ${them.card.name} go.`); }
+        return false;
+      }
+      swing = PLAYER_COOLDOWN;
+      combatUntilTurn = (state.turn || 0) + 1;
+      player.faceToward(them.q, them.r);
+      player.triggerAction('attack', 0.45);
+      game.mp.toHost({ t: 'pvp', target: t.id, dice: attackDice(state) });
+      takeAction(1);
+      return true;
+    }
+    const col = map.get(t.q, t.r);
+    if (!col || (col.feature?.type !== 'structure' && col.feature?.type !== 'field')) { rivalTarget = null; return false; }
+    if (distance(t.q, t.r, player.q, player.r) > 1) return false;
+    swing = PLAYER_COOLDOWN;
+    player.faceToward(t.q, t.r);
+    player.triggerAction('attack', 0.45);
+    const roll = clash(attackDice(state), 1);
+    col.feature.hp = (col.feature.hp ?? 4) - roll.damage;
+    const at = () => { const c = tileCenter(t.q, t.r, Math.max(0, map.surfaceAt(t.q, t.r))); return { x: c.cx, y: c.cy }; };
+    game.ui.showDice(at, roll, { friendly: true });
+    if (col.feature.hp <= 0) {
+      const fallen = destroyStructure(world, state, col);
+      rivalTarget = null;
+      rebuildFeatures();
+      refreshArt(world, [map.get(t.q, t.r)].filter(Boolean));
+      game.ui.murmur(`The ${itemName(fallen.item).toLowerCase()} is down.`, { tone: 'good', ms: 4200 });
+      if (fallen.owner && fallen.owner !== meId()) {
+        game.mp.sendTo(fallen.owner, { t: 'hutLost', q: t.q, r: t.r, item: fallen.item, by: meId() });
+      }
+    }
+    takeAction(1);
+    return true;
+  }
+
   function playerStrikes(dt) {
     swing -= dt;
     if (swing > 0 || player.moving || dead) return;
+    if (rivalTarget && strikeRival()) return;
     const found = nearestFoe();
     if (!found) return;
     const foe = found.target;
@@ -1059,6 +1233,12 @@ async function boot() {
     combatUntilTurn = (state.turn || 0) + 1;
     player.faceToward(foe.q, foe.r);
     player.triggerAction('attack', 0.45);
+    // In a friend's world the host rolls for the raiders and dogs it keeps.
+    if (game.mp?.isGuest) {
+      game.mp.toHost({ t: 'strike', target: found.kind === 'wildDog' ? 'dog' : 'unit', id: foe.id, dice: attackDice(state) });
+      takeAction(1);
+      return;
+    }
     if (found.kind === 'wildDog') {
       const res = strikeWildDog(state, foe, attackDice(state), { next: () => rng.next() });
       game.ui.showDice(wildDogAnchor(foe), res.roll, { friendly: true });
@@ -1078,9 +1258,16 @@ async function boot() {
     takeAction(1);
   }
 
-  function fell(u, by) {
+  function fell(u, by, owner = null) {
     if (u.faction !== 'raider') {
       game.ui.notify('One of the villagers has fallen.', 4200, 'bad');
+      return;
+    }
+    // A kill by someone else's watchtower or militia is theirs.
+    const credit = owner || (by?.faction === 'ally' ? by.owner : null);
+    if (game.mp?.active && credit && credit !== meId()) {
+      game.mp.sendTo(credit, { t: 'spoils', unit: { kind: u.kind, carry: u.carry || [] } });
+      afterChange();
       return;
     }
     if (by === 'player' || by === 'tower' || by === 'dog' || by?.faction === 'ally') {
@@ -1134,14 +1321,18 @@ async function boot() {
           if (e.roll.damage) chime('tick', 0.03);
         }
       } else if (e.type === 'dogClash') {
+        // Your dog's bite lands on the host's raider.
+        if (game.mp?.isGuest) game.mp.toHost({ t: 'damage', target: 'unit', id: e.target.id, damage: e.roll.damage });
         e.target.hitAt = performance.now();
         game.ui.showDice(unitAnchor(e.target), e.roll, { friendly: true });
       } else if (e.type === 'arrow') {
         e.who.hitAt = performance.now();
         game.ui.showDice(unitAnchor(e.who), e.roll, { friendly: true });
       } else if (e.type === 'fell') {
-        fell(e.unit, e.by);
+        fell(e.unit, e.by, e.owner);
       } else if (e.type === 'destroyed') {
+        // Raiders broke a friend's hut: their stash is lost, in their browser.
+        if (game.mp?.active && e.owner && e.owner !== meId()) game.mp.sendTo(e.owner, { t: 'hutLost', q: e.q, r: e.r, item: e.item });
         game.ui.notify(`The ${itemName(e.item).toLowerCase()} is down${e.loot?.length ? ', and the stash is gone' : ''}.`, 5200, 'bad');
         rebuildFeatures();
         refreshArt(world, [map.get(e.q, e.r)].filter(Boolean));
@@ -1200,8 +1391,13 @@ async function boot() {
   function die() {
     dead = true;
     player.stop();
+    rivalTarget = null;
     state.stats.deaths = (state.stats.deaths || 0) + 1;
     const loss = penaltyOnDeath(state);
+    // Struck down by another player: the gold you lose is theirs.
+    const killer = lastHitBy && (state.turn || 0) - lastHitBy.turn <= 1 ? lastHitBy.by : null;
+    lastHitBy = null;
+    if (killer && game.mp?.active && loss.gold) game.mp.sendTo(killer, { t: 'loot', gold: loss.gold });
     const home = homeHex();
     // Out on a raid, the band that killed you goes home with what it took.
     game.ui.openPanel('message', {
@@ -1409,6 +1605,7 @@ async function boot() {
         return;
       }
       if (res.tamed) {
+        if (game.mp?.isGuest) game.mp.toHost({ t: 'tamed', id: live.id });
         chime('gold');
         game.ui.floatText(playerPos, '+ Dog', 'gain');
         game.ui.murmur(res.message, { tone: 'good', ms: 5200 });
@@ -1507,6 +1704,54 @@ async function boot() {
     game.doHarvest(node.harvest);
   }
 
+  /**
+   * Right-click (or press and hold) another player for what you can do with
+   * them: trade, and in Competitive fight. A rival's building can be attacked too.
+   * Clicking a player never does anything by itself.
+   */
+  function playerMenu(e) {
+    if (!game.mp?.active || dead) return;
+    const hex = hexAt(e);
+    if (!hex) return;
+    const items = [];
+    const them = game.mp.remoteAt(hex.q, hex.r);
+    const competitive = game.mp.mode === 'competitive';
+    if (them) {
+      const name = them.card.name;
+      const near = distance(them.q, them.r, player.q, player.r) <= 1;
+      items.push({ label: `Trade with ${name}`, run: () => {
+        if (!near) return game.ui.notify(`Walk next to ${name} to trade.`);
+        if (game.mp.openTrade(them.id)) game.ui.openPanel('pvptrade');
+      } });
+      if (competitive) items.push({ label: `Attack ${name}`, bad: true, run: () => {
+        rivalTarget = { kind: 'player', id: them.id };
+        game.ui.murmur(near ? `You go for ${name}.` : `Get close to ${name} to fight.`, { tone: 'bad', ms: 3000 });
+      } });
+    } else if (competitive) {
+      const col = map.get(hex.q, hex.r);
+      const rec = state.built.find(b => b.q === hex.q && b.r === hex.r);
+      if (rec && rec.owner && rec.owner !== meId() && (col?.feature?.type === 'structure' || col?.feature?.type === 'field')) {
+        const owner = game.mp.roster.find(p => p.id === rec.owner)?.name || 'a rival';
+        items.push({ label: `Attack ${owner}'s ${itemName(rec.item).toLowerCase()}`, bad: true, run: () => {
+          rivalTarget = { kind: 'structure', q: hex.q, r: hex.r };
+          game.ui.murmur('Stand beside it to tear it down.', { tone: 'bad', ms: 3000 });
+        } });
+      }
+    }
+    if (items.length) game.ui.showMenu(e.clientX, e.clientY, items);
+  }
+  canvas.addEventListener('contextmenu', e => { e.preventDefault(); playerMenu(e); });
+  let holdTimer = null;
+  canvas.addEventListener('pointerdown', e => {
+    clearTimeout(holdTimer);
+    if (e.pointerType !== 'mouse') {
+      holdTimer = setTimeout(() => {
+        if (drag.moved < 8) { drag.moved = 99; playerMenu(e); } // 99: not a tap when lifted
+      }, 550);
+    }
+  });
+  canvas.addEventListener('pointerup', () => clearTimeout(holdTimer));
+
   canvas.addEventListener('pointerdown', e => {
     drag.active = true;
     drag.moved = 0;
@@ -1556,6 +1801,7 @@ async function boot() {
     const wasDrag = drag.moved > 4;
     drag.active = false;
     if (wasDrag || dead) return;
+    if (e.button === 2) return; // a right-click opens the player menu, nothing more
     if (game.mp?.waiting) { game.ui.notify('Your day is done. The new one starts when everyone has finished theirs.'); return; }
 
     const chosen = placing ? spotAt(e) : null;

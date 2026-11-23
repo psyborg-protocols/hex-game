@@ -13,6 +13,8 @@ import { cloakColor } from '../render/player_sprite.js';
 import { openPeer, roomCode, peerIdFor } from './transport.js';
 import { HostSession, GuestSession } from './session.js';
 import { WorldSync } from './sync.js';
+import { PlayerTrade, TradeReferee } from './trade.js';
+import { distance } from '../world/hexgrid.js';
 
 const ID_KEY = 'hexquest.playerId';
 const TAB_KEY = 'hexquest.tabPlayerId';
@@ -168,7 +170,12 @@ export class Multiplayer {
     this.lastPresence = '';
     this.sync = null;
     this.lastWorld = 0;
+    this.trade = null;
+    this.referee = new TradeReferee();
   }
+
+  /** Who you are: your stored id, unless the game says otherwise (tests run two in one page). */
+  myId() { return this.ctx.playerId || myPlayerId(); }
 
   get active() { return !!this.session; }
   get isHost() { return this.session?.role === 'host'; }
@@ -179,7 +186,7 @@ export class Multiplayer {
 
   /** Colours other players hold right now. */
   takenColors() {
-    return this.roster.filter(p => p.id !== myPlayerId()).map(p => p.color);
+    return this.roster.filter(p => p.id !== this.myId()).map(p => p.color);
   }
 
   // ------------------------------------------------------------- hosting
@@ -189,7 +196,7 @@ export class Multiplayer {
     const { state } = this.ctx;
     this.code = roomCode();
     const peer = await openPeer(this.code);
-    const me = { playerId: myPlayerId(), name, color };
+    const me = { playerId: this.myId(), name, color };
     this.session = new HostSession({ peer, mode, me, snapshot: (id, rejoin) => this.snapshotFor(id, rejoin) });
     state.room = { playerId: me.playerId, mode, host: true, code: this.code };
     state.clock = state.turn || 0;
@@ -222,7 +229,7 @@ export class Multiplayer {
     const { state } = this.ctx;
     this.session = session;
     this.code = code;
-    state.room = { playerId: myPlayerId(), mode: welcome.mode, host: false, code };
+    state.room = { playerId: this.myId(), mode: welcome.mode, host: false, code };
     state.playerColor = welcome.you.color;
     this.wire();
   }
@@ -241,6 +248,28 @@ export class Multiplayer {
   }
 
   onMessage(from, m) {
+    const me = this.myId();
+    // Addressed to someone else: the host only referees trades.
+    if (m.to && m.to !== me) return;
+    const x = this.ctx;
+    switch (m.t) {
+      case 'hurt': x.hurtMe?.(m.damage, m.roll, m.source, m.by); return;
+      case 'strike': if (this.isHost) this.sendTo(from, { t: 'struck', ...x.resolveStrike(from, m) }); return;
+      case 'struck': x.onStruck?.(m); return;
+      case 'damage': if (this.isHost) x.applyDamage?.(m); return;
+      case 'rally': if (this.isHost) x.hostRally?.(from, m); return;
+      case 'tamed': if (this.isHost) x.removeWildDog?.(m.id); return;
+      case 'spoils': x.onSpoils?.(m.unit); return;
+      case 'pvp': if (this.isHost) this.resolvePvp(from, m); return;
+      case 'pvp-hit': x.onPvpHit?.(m); return;
+      case 'loot': x.onLoot?.(m.gold, from); return;
+      case 'hutLost': x.onHutLost?.(m, from); return;
+      case 'stashLoot': x.onStashLoot?.(m.items, from); return;
+      case 'won': if (this.isHost) this.announceWinner(from); return;
+      case 'winner': x.onWinner?.(m); return;
+      case 'trade': this.onTrade(from, m); return;
+      default: break;
+    }
     if (m.t === 'presence') {
       const r = this.remoteFor(from);
       if (!r) return;
@@ -258,7 +287,7 @@ export class Multiplayer {
   players() {
     const { state, player } = this.ctx;
     const out = [{
-      id: myPlayerId(), q: player.q, r: player.r, defense: this.ctx.defense(state),
+      id: this.myId(), q: player.q, r: player.r, defense: this.ctx.defense(state),
       onWater: player.onWater, down: !!this.ctx.isDown?.() || state.waitingForDawn != null,
     }];
     for (const r of this.remotes.values()) {
@@ -268,15 +297,139 @@ export class Multiplayer {
   }
 
   /** Damage from the host's world: yours comes off here, a friend's goes to them. */
-  hurt = (id, damage, source = null, roll = null) => {
-    if (id === myPlayerId() || id === 'local') { this.ctx.hurtMe?.(damage, roll, source?.kind || source); return; }
-    this.session?.send(id, { t: 'hurt', damage, roll, source: source?.kind || source || null });
+  hurt = (id, damage, source = null, roll = null, by = null) => {
+    const kind = source?.kind || source || null;
+    if (id === this.myId() || id === 'local') { this.ctx.hurtMe?.(damage, roll, kind, by); return; }
+    this.session?.send(id, { t: 'hurt', damage, roll, source: kind, by });
   };
+
+  // ------------------------------------------------------------- addressing
+
+  /** To one player. A guest's message goes via the host, who passes it on. */
+  sendTo(id, m) {
+    if (!this.session) return;
+    const me = this.myId();
+    if (id === me) { this.onMessage(me, { ...m, from: me }); return; }
+    if (this.isHost) this.session.send(id, m);
+    else this.session.send({ ...m, to: id });
+  }
+
+  /** To the host (the host's own requests are handled right here). */
+  toHost(m) {
+    if (!this.session) return;
+    if (this.isHost) this.onMessage(this.myId(), { ...m, from: this.myId() });
+    else this.session.send(m);
+  }
+
+  // --------------------------------------------------------------- fighting
+
+  /** Host: one player strikes another. The host rolls, so both see the same dice. */
+  resolvePvp(from, m) {
+    if (this.mode !== 'competitive') return;
+    const me = this.myId();
+    const def = m.target === me ? this.ctx.defense(this.ctx.state) : (this.remotes.get(m.target)?.defense ?? 1);
+    const roll = this.ctx.clash(m.dice, def);
+    this.hurt(m.target, roll.damage, { kind: 'pvp' }, roll, from);
+    this.sendTo(from, { t: 'pvp-hit', target: m.target, roll });
+  }
+
+  /** Competitive: somebody reached the end of the journey first. */
+  claimWin() { this.toHost({ t: 'won' }); }
+
+  announceWinner(id) {
+    if (this.wonBy) return;
+    this.wonBy = id;
+    const card = this.roster.find(p => p.id === id);
+    const m = { t: 'winner', id, name: card?.name || 'Someone' };
+    this.session.broadcast(m);
+    this.ctx.onWinner?.(m);
+  }
+
+  // ------------------------------------------------------------------ trade
+
+  /** Ask someone beside you to trade. */
+  openTrade(withId) {
+    if (this.trade && this.trade.status !== 'done' && this.trade.status !== 'cancelled') return false;
+    const id = this.myId() + ':' + Date.now();
+    this.trade = new PlayerTrade({ id, me: this.myId(), them: withId });
+    this.sendTo(withId, { t: 'trade', id, op: 'open' });
+    this.ctx.onTradeChanged?.(this.trade);
+    return true;
+  }
+
+  tradeOffer(items, gold) {
+    const tr = this.trade;
+    if (!tr || tr.status === 'done' || tr.status === 'cancelled') return;
+    this.sendTo(tr.them, { t: 'trade', id: tr.id, ...tr.setMine(items, gold) });
+    this.ctx.onTradeChanged?.(tr);
+  }
+
+  tradeAccept() {
+    const tr = this.trade;
+    if (!tr || tr.status !== 'open') return;
+    this.sendTo(tr.them, { t: 'trade', id: tr.id, ...tr.accept() });
+    if (tr.both) this.tradeReady();
+    this.ctx.onTradeChanged?.(tr);
+  }
+
+  /** Both accepted: tell the host whether this side can go through with it. */
+  tradeReady() {
+    const tr = this.trade;
+    const res = tr.check(this.ctx.state);
+    tr.status = 'ready';
+    this.toHost({ t: 'trade', id: tr.id, op: 'ready', ok: res.ok, reason: res.reason, parties: [tr.me, tr.them] });
+  }
+
+  cancelTrade(reason = '') {
+    const tr = this.trade;
+    if (!tr || tr.status === 'done' || tr.status === 'cancelled') return;
+    tr.status = 'cancelled';
+    tr.note = reason;
+    this.sendTo(tr.them, { t: 'trade', id: tr.id, op: 'cancel', reason });
+    this.ctx.onTradeChanged?.(tr);
+  }
+
+  onTrade(from, m) {
+    // The host referees: both ready means both swap, at once.
+    if (m.op === 'ready' && this.isHost) {
+      const v = this.referee.onReady(m.id, from, m);
+      if (v) {
+        const msg = v.verdict === 'commit'
+          ? { t: 'trade', id: m.id, op: 'commit' }
+          : { t: 'trade', id: m.id, op: 'cancel', reason: v.reason };
+        for (const p of m.parties || []) this.sendTo(p, msg);
+      }
+      return;
+    }
+    if (m.op === 'open') {
+      if (this.trade && (this.trade.status === 'open' || this.trade.status === 'ready')) {
+        this.sendTo(from, { t: 'trade', id: m.id, op: 'cancel', reason: 'busy with another trade' });
+        return;
+      }
+      this.trade = new PlayerTrade({ id: m.id, me: this.myId(), them: from });
+      this.ctx.onTradeChanged?.(this.trade, { opened: true });
+      return;
+    }
+    const tr = this.trade;
+    if (!tr || tr.id !== m.id) return;
+    if (m.op === 'offer') tr.onOffer(m);
+    else if (m.op === 'accept') {
+      tr.onAccept(m);
+      if (tr.both && tr.status === 'open') this.tradeReady();
+    } else if (m.op === 'cancel') {
+      tr.status = 'cancelled';
+      tr.note = m.reason || '';
+    } else if (m.op === 'commit') {
+      const got = tr.execute(this.ctx.state);
+      this.ctx.onTradeDone?.(tr, got);
+    }
+    this.ctx.onTradeChanged?.(tr);
+  }
 
   /** Each player's turn and where they stand, you included. */
   clocks() {
     const { state, player } = this.ctx;
-    const out = [{ id: myPlayerId(), turn: state.turn || 0, pos: { q: player.q, r: player.r } }];
+    const out = [{ id: this.myId(), turn: state.turn || 0, pos: { q: player.q, r: player.r } }];
     for (const r of this.remotes.values()) out.push({ id: r.id, turn: r.turn || 0, pos: { q: r.q, r: r.r } });
     return out;
   }
@@ -325,6 +478,13 @@ export class Multiplayer {
     if ((this.ctx.state.turn || 0) % TURNS_PER_DAY !== 0) return; // not dawn yet
     this.ctx.state.waitingForDawn = this.ctx.state.turn || 0;
     this.checkDawn();
+    const tr = this.trade;
+    if (tr && (tr.status === 'open' || tr.status === 'ready')) {
+      const them = this.remotes.get(tr.them);
+      const { player } = this.ctx;
+      if (!them) this.cancelTrade('they left');
+      else if (distance(them.q, them.r, player.q, player.r) > 1) this.cancelTrade('you walked apart');
+    }
   }
 
   /** Who is still out in their day. */
@@ -364,7 +524,7 @@ export class Multiplayer {
   hudRoster(escape) {
     if (!this.session) return '';
     const { state } = this.ctx;
-    const me = myPlayerId();
+    const me = this.myId();
     const rows = this.roster.map(p => {
       const col = cloakColor(p.color);
       const r = this.remotes.get(p.id);
@@ -415,7 +575,7 @@ export class Multiplayer {
     const ids = new Set(roster.map(p => p.id));
     for (const id of [...this.remotes.keys()]) if (!ids.has(id)) this.dropRemote(id);
     for (const p of roster) {
-      if (p.id === myPlayerId()) {
+      if (p.id === this.myId()) {
         state.playerColor = p.color;
         continue;
       }
@@ -428,7 +588,7 @@ export class Multiplayer {
   }
 
   remoteFor(id, card = null) {
-    if (id === myPlayerId()) return null;
+    if (id === this.myId()) return null;
     let r = this.remotes.get(id);
     if (!r) {
       const c = card || this.roster.find(p => p.id === id);
@@ -451,6 +611,7 @@ export class Multiplayer {
 
   /** A name over someone's head, in their colour. */
   retag(card) {
+    if (typeof document === 'undefined') return;
     const { ui } = this.ctx;
     let tag = this.tags.get(card.id);
     if (!tag) {

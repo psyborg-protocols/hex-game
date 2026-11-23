@@ -891,3 +891,47 @@ button.big:hover { border-color: var(--accent); }
 .hud-roster .who { display: flex; align-items: center; gap: 6px; }
 .hud-roster .pip { inline-size: 9px; block-size: 9px; border-width: 1px; }
 .hud-roster .who.waiting { opacity: 0.7; }
+
+/* Right-click another player: what you can do with them. */
+.ctx-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 160px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+.ctx-menu button {
+  padding: 7px 10px;
+  font: 13px Georgia, serif;
+  text-align: start;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.ctx-menu button:hover, .ctx-menu button:focus-visible { background: rgba(217, 180, 91, 0.14); outline: none; }
+.ctx-menu button.bad { color: #f0a08a; }
+
+/* Trading with another player. */
+.trade-row.offered { background: rgba(217, 180, 91, 0.08); }
+.stepper { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; }
+.stepper button {
+  inline-size: 24px; block-size: 24px; padding: 0;
+  color: var(--ink); background: #2b2519; border: 1px solid var(--panel-edge); border-radius: 3px; cursor: pointer;
+}
+.stepper button:disabled { opacity: 0.35; cursor: default; }
+.stepper b { min-inline-size: 16px; text-align: center; }
+.gold-row input {
+  inline-size: 70px; margin-inline-start: auto; padding: 3px 6px;
+  color: var(--ink); background: rgba(0, 0, 0, 0.35); border: 1px solid var(--panel-edge); border-radius: 3px;
+}
+.coin { color: #f6cf6e; }
+.trade-status { margin: 10px 0 0; font-style: italic; color: var(--ink-dim); }
+.trade-status.them { color: #a6f08a; }
+@media (pointer: coarse) { .stepper button { inline-size: 36px; block-size: 36px; } }

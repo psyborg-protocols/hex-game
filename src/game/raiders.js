@@ -496,7 +496,7 @@ export function updateUnits(ctx, dt) {
           if (state.raid) state.raid.lost = (state.raid.lost || 0) + 1;
           if (fallen) {
             u.carry.push(...fallen.loot);
-            events.push({ type: 'destroyed', item: fallen.item, q: t.q, r: t.r, loot: fallen.loot });
+            events.push({ type: 'destroyed', item: fallen.item, q: t.q, r: t.r, loot: fallen.loot, owner: fallen.owner });
           }
           for (const o of units) if (o !== u && o.target && o.target.q === t.q && o.target.r === t.r) retarget(map, state, o);
           retarget(map, state, u);
@@ -559,7 +559,7 @@ function towers(ctx, dt) {
     const roll = clash(2, KINDS[foe.u.kind].def);
     foe.u.hp -= roll.damage;
     events.push({ type: 'arrow', from: b, who: foe.u, roll });
-    if (!alive(foe.u)) events.push({ type: 'fell', unit: foe.u, by: 'tower' });
+    if (!alive(foe.u)) events.push({ type: 'fell', unit: foe.u, by: 'tower', owner: b.owner });
   }
 }
 

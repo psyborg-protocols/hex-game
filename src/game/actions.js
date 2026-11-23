@@ -11,7 +11,7 @@ import { addItem, countItem, removeItem, hasRoomFor, spend, canSpend } from './i
 import { addXp, levelOf } from './skills.js';
 import { recordBuilt, forgetBuilt, itemName, RECIPES, STRUCTURE_HP, ITEMS, DAY_LENGTH, isFree } from './state.js';
 import { craft } from './crafting.js';
-import { worldClock } from './shared.js';
+import { worldClock, ownerOf } from './shared.js';
 import { harvestsHere } from './discovery.js';
 import { takeNode } from './nodes.js';
 import { regrowsAt } from './harvests.js';
@@ -327,13 +327,15 @@ export function destroyStructure(world, state, col) {
   } else {
     delete col.feature;
   }
+  // Whose it was: a hut's stash belongs to whoever built it, so only theirs is emptied here.
+  const owner = state.built.find(b => b.q === col.q && b.r === col.r)?.owner || 'local';
   forgetBuilt(state, col.q, col.r);
   let loot = [];
-  if (item === 'hut') {
+  if (item === 'hut' && owner === ownerOf(state)) {
     loot = state.stash.filter(Boolean);
     state.stash = state.stash.map(() => null);
   }
-  return { item, loot };
+  return { item, loot, owner };
 }
 
 /** Fields ripen with the turn clock. Call each turn. */

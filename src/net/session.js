@@ -9,8 +9,9 @@
 // for the same colour at once, whichever request reaches the host first gets it.
 //
 // After that every message is `{ t: type, ... }`. Messages a guest sends go to
-// the host; types listed in RELAY are passed on to the other guests too, tagged
-// `from`. The game layer (src/net/multiplayer.js) decides what they mean.
+// the host; one with a `to` is passed on to that player alone, and types listed
+// in RELAY are passed on to everyone, tagged `from`. The game layer
+// (src/net/multiplayer.js) decides what they mean.
 
 import { CLOAK_COLORS } from '../render/player_sprite.js';
 import { pack, unpack, peerIdFor } from './transport.js';
@@ -19,7 +20,7 @@ export const MAX_PLAYERS = 4;
 export const COLOR_IDS = CLOAK_COLORS.map(c => c.id);
 
 /** Message types the host passes on to every other guest. */
-const RELAY = new Set(['presence', 'trade', 'pvp-hit']);
+const RELAY = new Set(['presence']);
 
 class Emitter {
   constructor() { this.handlers = {}; }
@@ -77,7 +78,10 @@ export class HostSession extends Emitter {
     const p = this.playerByConn(conn);
     if (!p) return this.onJoining(conn, m);
     if (m.t === 'recolor') return this.recolor(p, m.color);
-    if (RELAY.has(m.t)) this.broadcast({ ...m, from: p.id }, p.id);
+    // Addressed to one player: passed on to them alone. The host still hears it
+    // (it referees trades), and decides for itself what is its business.
+    if (m.to && m.to !== this.meId) this.send(m.to, { ...m, from: p.id });
+    else if (!m.to && RELAY.has(m.t)) this.broadcast({ ...m, from: p.id }, p.id);
     this.emit('message', p.id, m);
   }
 
