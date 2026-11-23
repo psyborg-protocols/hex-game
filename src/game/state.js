@@ -23,6 +23,21 @@ export const NIGHT_TURNS = 12;
 export const TURNS_PER_DAY = DAY_TURNS + NIGHT_TURNS;
 export const DAY_LENGTH = TURNS_PER_DAY;
 
+/**
+ * Bedtime. A turn is an hour: dusk is turn 12 of the day, so midnight is turn 18.
+ * Still awake at midnight and you are tired all the next day; three turns later,
+ * exhausted; one turn before dawn, you drop where you stand and sleep till morning.
+ */
+export const MIDNIGHT = DAY_TURNS + NIGHT_TURNS / 2;
+export const SMALL_HOURS = MIDNIGHT + 3;
+export const PASS_OUT = TURNS_PER_DAY - 1;
+/** Fatigue levels, by how much of your max energy each one takes away. */
+export const FATIGUE = [
+  null,
+  { id: 'tired', name: 'Tired', cut: 0.25 },
+  { id: 'exhausted', name: 'Exhausted', cut: 0.5 },
+];
+
 /** How far through a day dusk falls. Night is everything after it. */
 export const DUSK = DAY_TURNS / TURNS_PER_DAY;
 
@@ -107,8 +122,7 @@ export function createState({ gold = 10, free = false } = {}) {
     turn: 0,                // turn clock; see DAY_TURNS / NIGHT_TURNS
     turnProgress: 0,        // combined move + action fraction [0, 1) toward next turn
     eatenThisTurn: 0,
-    awakeNightTurns: 0,
-    sleepDebt: 0,
+    fatigue: null,          // { level, until }: see FATIGUE and fatigueOf
     time: 0,                // animation / real-time frame seconds
     stepsWalked: 0,
     skills: Object.fromEntries(SKILLS.map(s => [s, { level: 1, xp: 0 }])),
@@ -140,6 +154,25 @@ export function dayOf(state) {
   return { day, turnInDay, isNight: night, phaseTurn, frac };
 }
 export const isNight = state => dayOf(state).isNight;
+
+/** The fatigue level (0 rested, 1 tired, 2 exhausted) weighing on you this turn. */
+export function fatigueOf(state) {
+  const f = state?.fatigue;
+  if (!f || isFree(state)) return 0;
+  return (state.turn || 0) < f.until ? f.level : 0;
+}
+
+/**
+ * Stayed up past a bedtime: raise fatigue to `level` until the dusk after next
+ * dawn (all of tomorrow). Returns the level now in force.
+ */
+export function setFatigue(state, level) {
+  const { day, isNight: night } = dayOf(state);
+  const until = (night ? day : day - 1) * TURNS_PER_DAY + DAY_TURNS;
+  const now = Math.max(fatigueOf(state), level);
+  state.fatigue = { level: now, until: Math.max(until, state.fatigue?.until || 0) };
+  return now;
+}
 
 /**
  * Where we are in the moon (in turns).

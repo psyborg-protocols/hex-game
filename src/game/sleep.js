@@ -1,7 +1,8 @@
 // sleep.js
 // Sleeping through the night, warmth, village inns, and wild dog ambushes.
 //
-// At night you must sleep to clear sleep debt and avoid late-night energy drain.
+// At night you must sleep: awake at midnight and you are tired all tomorrow, and
+// one turn before dawn you pass out where you stand (see MIDNIGHT in state.js).
 // - Not beside a campfire (hearth) or village, and no cloak -> chance of taking cold damage.
 // - Not in/next to a village or hut -> chance a wild dog attacks & wakes you.
 // - Sleeping at a village costs VILLAGE_SLEEP_COST coins.
@@ -57,9 +58,26 @@ export function sleepNight(world, state, player, { rng = Math.random } = {}) {
   if (!check.ok) return { ok: false, message: check.reason, ctx: check.ctx };
 
   const { ctx } = check;
-  const rollFn = typeof rng === 'function' ? rng : () => rng.next();
   const goldSpent = isFree(state) ? 0 : ctx.cost;
   if (goldSpent > 0) state.gold -= goldSpent;
+  return restUntilDawn(world, state, player, ctx, rng, goldSpent);
+}
+
+/**
+ * Stayed up until the turn before dawn: you drop where you stand and sleep till
+ * morning, whatever is around you. No inn takes your coin, raiders or not, and the
+ * cold and the wild dogs get their chance as on any night spent there.
+ */
+export function passOut(world, state, player, { rng = Math.random } = {}) {
+  const ctx = { ...sleepContext(world.map, state, player), cost: 0 };
+  const res = restUntilDawn(world, state, player, ctx, rng, 0);
+  res.passedOut = true;
+  if (!res.died) res.message = `You collapse from exhaustion where you stand. ${res.message}`;
+  return res;
+}
+
+function restUntilDawn(world, state, player, ctx, rng, goldSpent) {
+  const rollFn = typeof rng === 'function' ? rng : () => rng.next();
 
   const remaining = Math.max(1, TURNS_PER_DAY - dayOf(state).turnInDay);
   let slept = 0;
@@ -113,7 +131,6 @@ export function sleepNight(world, state, player, { rng = Math.random } = {}) {
     const eMax = maxEnergy(state);
     const eGain = Math.round(Math.max(0, eMax - state.energy) * (slept / remaining));
     state.energy = Math.min(eMax, state.energy + eGain);
-    state.sleepDebt = Math.max(0, (state.sleepDebt || 0) - slept);
     state.turnProgress = 0;
     return {
       ok: true,
@@ -130,10 +147,8 @@ export function sleepNight(world, state, player, { rng = Math.random } = {}) {
     };
   }
 
-  // Slept safely to dawn: clear sleep debt, ambush dogs, and near-bank shy dogs.
+  // Slept safely to dawn: ambush dogs and near-bank shy dogs slink off.
   state.wildDogs = (state.wildDogs || []).filter(d => d.region !== 'ambush' && d.region !== 'near');
-  state.awakeNightTurns = 0;
-  state.sleepDebt = 0;
   state.eatenThisTurn = 0;
 
   const eMax = maxEnergy(state);
@@ -147,7 +162,8 @@ export function sleepNight(world, state, player, { rng = Math.random } = {}) {
   state.turnProgress = 0;
 
   const parts = [];
-  if (ctx.inVillage) parts.push(`You slept warmly at ${ctx.village.feature.name} (-${goldSpent}g).`);
+  if (ctx.inVillage && goldSpent) parts.push(`You slept warmly at ${ctx.village.feature.name} (-${goldSpent}g).`);
+  else if (ctx.inVillage) parts.push(`You slept at ${ctx.village.feature.name}.`);
   else if (ctx.inHut && ctx.nearFire) parts.push('You slept soundly in your hut by the hearth.');
   else if (ctx.inHut) parts.push('You slept safely in your hut.');
   else if (ctx.nearFire) parts.push('You slept by the fire.');

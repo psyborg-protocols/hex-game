@@ -7,7 +7,7 @@
 // go and find more? Better food packs more energy into each slot.
 
 import { ITEMS } from '../../data/game_data.js';
-import { isFree, BASE_SLOTS, BASE_MAX_ENERGY, WORN_SLOTS, createWorn, hasBuilt } from './state.js';
+import { isFree, BASE_SLOTS, BASE_MAX_ENERGY, WORN_SLOTS, createWorn, hasBuilt, fatigueOf, FATIGUE } from './state.js';
 
 export const MAX_BITES_PER_TURN = 1;
 
@@ -235,8 +235,16 @@ export const freeSlots = state => capacity(state) - usedSlots(state);
 
 // ---------------------------------------------------------------- energy
 
-export function maxEnergy(state) {
+/** Max energy when well rested. */
+export function restedMaxEnergy(state) {
   return BASE_MAX_ENERGY + (hasBuilt(state, 'hut') ? 6 : 0);
+}
+
+/** Max energy right now: staying up past midnight takes a share of it all the next day. */
+export function maxEnergy(state) {
+  const full = restedMaxEnergy(state);
+  const level = fatigueOf(state);
+  return level ? Math.round(full * (1 - FATIGUE[level].cut)) : full;
 }
 
 /** Total nourishment carried and not yet eaten. */

@@ -35,7 +35,7 @@ import {
   campsLeft, ensureRaidState, raidSize, abroad, KINDS, tickSchedule, stepRaidTurn, TURN_UNIT_SECONDS,
 } from './game/raiders.js';
 import { ensureTurnState, advanceTurn, spendMoveStep, spendAction } from './game/turns.js';
-import { sleepContext, canSleep, sleepNight } from './game/sleep.js';
+import { sleepContext, canSleep, sleepNight, passOut } from './game/sleep.js';
 import { seedWildDogs, tryTameWildDog, strikeWildDog, wildDogAt } from './game/wild_dogs.js';
 import { drawExploreCharge, drawMeditationGlow, Pings, loadResourceIcons, drawResourceIcons, drawScenicRings } from './render/discovery_fx.js';
 import { chime, updateMeditationHum } from './ui/chime.js';
@@ -324,25 +324,7 @@ async function boot() {
         game.ui.notify(res.message, 3600, 'bad');
         return;
       }
-      if (res.cropsChanged?.length) rebuildFeatures();
-      if (res.died) {
-        game.ui.notify(res.message, 4600, 'bad');
-        die();
-        return;
-      }
-      if (res.wokenByDog) {
-        chime('raid');
-        game.ui.floatText(playerPos, `-${res.ambushDamage} wild dog!`, 'bad');
-        game.ui.murmur(res.message, { tone: 'bad', ms: 5200 });
-      } else {
-        chime('gold', 0.05);
-        game.ui.murmur(res.message, { tone: res.coldDamage > 0 ? 'bad' : 'good', ms: 5200 });
-        if (res.coldDamage > 0) game.ui.floatText(playerPos, `-${res.coldDamage} cold`, 'bad');
-      }
-      const ev = [];
-      tickSchedule(world, state, ev);
-      handleEvents(ev);
-      afterChange();
+      wakeUp(res);
     },
 
     doWaitTurn() {
@@ -444,6 +426,44 @@ async function boot() {
     return "If only I had a ladder... I'll need planks (cut with an axe and knife) and reed cord to build one.";
   }
 
+  /** Show how a night's sleep (chosen or not) went, and carry on from dawn. */
+  function wakeUp(res) {
+    if (res.cropsChanged?.length) rebuildFeatures();
+    if (res.died) {
+      game.ui.notify(res.message, 4600, 'bad');
+      die();
+      return;
+    }
+    if (res.wokenByDog) {
+      chime('raid');
+      game.ui.floatText(playerPos, `-${res.ambushDamage} wild dog!`, 'bad');
+      game.ui.murmur(res.message, { tone: 'bad', ms: 5200 });
+    } else {
+      chime('gold', 0.05);
+      const rough = res.coldDamage > 0 || res.passedOut;
+      game.ui.murmur(res.message, { tone: rough ? 'bad' : 'good', ms: res.passedOut ? 6400 : 5200 });
+      if (res.coldDamage > 0) game.ui.floatText(playerPos, `-${res.coldDamage} cold`, 'bad');
+    }
+    const ev = [];
+    tickSchedule(world, state, ev);
+    handleEvents(ev);
+    afterChange();
+  }
+
+  /** Stayed up to the turn before dawn: drop where you stand and sleep till morning. */
+  function collapse() {
+    player.stop();
+    player.seated = true;
+    wakeUp(passOut(world, state, player, { rng: () => rng.next() }));
+  }
+
+  /** What bedtime says as the night wears on (see MIDNIGHT in state.js). */
+  const BEDTIME = {
+    midnight: ['Midnight is close. Sleep now, or you will be tired all tomorrow.', ''],
+    small_hours: ['Your eyes are heavy. Sleep soon, or tomorrow will be worse still.', 'bad'],
+    pass_out: ['You can barely stand. Sleep now, or you will drop where you are.', 'bad'],
+  };
+
   function onTurnAdvanced(res) {
     if (!res) return;
     const events = [...(res.events || [])];
@@ -460,12 +480,16 @@ async function boot() {
     } else if (res.becameDawn) {
       game.ui.murmur('Dawn breaks across the valley.', { tone: 'good', ms: 4200 });
     }
-    if (res.becameLate) {
-      game.ui.murmur('You are up too late — your energy starts draining faster.', { tone: 'bad', ms: 5200 });
-    } else if (res.drain > 0 && res.dayInfo?.isNight && (state.sleepDebt || 0) >= 3) {
-      game.ui.murmur(`Exhaustion drains ${res.drain.toFixed(1).replace(/\.0$/, '')} energy — get some sleep.`, { tone: 'bad', ms: 3400 });
+    if (res.fatigued === 1) {
+      game.ui.murmur('Midnight passes. You will be tired all tomorrow, with less energy until dusk.', { tone: 'bad', ms: 5600 });
+    } else if (res.fatigued === 2) {
+      game.ui.murmur('The small hours. You will be exhausted all tomorrow, with half your energy until dusk.', { tone: 'bad', ms: 5600 });
+    } else if (res.warn && BEDTIME[res.warn]) {
+      const [text, tone] = BEDTIME[res.warn];
+      game.ui.murmur(text, { tone, ms: 5200 });
     }
     if (state.hp <= 0 && !dead) { die(); return; }
+    if (res.passOut) { collapse(); return; }
     afterChange();
   }
 

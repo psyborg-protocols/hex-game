@@ -1,6 +1,6 @@
 // turns.js
 // Background turn progression from combined movement and actions, plus
-// late-night fatigue.
+// bedtime: stay up past midnight and tomorrow costs you (see MIDNIGHT in state.js).
 //
 // Each day is 12 turns and each night is 12 turns. Walking is never capped or
 // interrupted: 9 hexes (at healthy energy; improved by boots or a walking stick),
@@ -8,6 +8,7 @@
 
 import {
   BASE_MOVE_DISTANCE, ACTIONS_PER_TURN, TURNS_PER_DAY, dayOf, isFree,
+  MIDNIGHT, SMALL_HOURS, PASS_OUT, setFatigue,
 } from './state.js';
 import { maxEnergy, topUp, ensureWorn } from './inventory.js';
 import { moveBonus, maxHp } from './gear.js';
@@ -16,13 +17,6 @@ import { stepWildDogs } from './wild_dogs.js';
 
 export { BASE_MOVE_DISTANCE, ACTIONS_PER_TURN };
 export const MIN_MOVE_DISTANCE = 4;
-export const LATE_NIGHT_GRACE = 3;
-
-/** Extra energy drained per turn when staying awake past LATE_NIGHT_GRACE. */
-export function lateEnergyDrain(sleepDebt) {
-  if (!sleepDebt || sleepDebt <= 0) return 0;
-  return Math.min(8.5, 1 + sleepDebt * 0.75);
-}
 
 /**
  * Hexes of movement that equal one full turn, scaled by energy plus worn
@@ -51,17 +45,25 @@ export function ensureTurnState(state) {
   if (state.turn == null) state.turn = 0;
   if (state.turnProgress == null || Number.isNaN(state.turnProgress)) state.turnProgress = 0;
   if (state.eatenThisTurn == null) state.eatenThisTurn = 0;
-  if (state.awakeNightTurns == null) state.awakeNightTurns = 0;
-  if (state.sleepDebt == null) state.sleepDebt = 0;
+  if (state.fatigue === undefined) state.fatigue = null;
+  // Older saves counted sleep debt instead; bedtime replaced it.
+  delete state.sleepDebt;
+  delete state.awakeNightTurns;
   if (!state.wildDogs) state.wildDogs = [];
   return state;
 }
 
-/** Advance the world by one turn: late-night drain, food top-up, crops, and wild dogs. */
+/**
+ * Advance the world by one turn: bedtime, food top-up, crops, and wild dogs.
+ *
+ * Awake at night, three turns matter: MIDNIGHT makes you tired for all of
+ * tomorrow, SMALL_HOURS exhausted, and PASS_OUT drops you where you stand
+ * (`passOut` in the result; the caller sleeps you till dawn). The turn before
+ * each is a warning (`warn`).
+ */
 export function advanceTurn(world, state, player, ctx = {}) {
   ensureTurnState(state);
   const wasInfo = dayOf(state);
-  const wasLate = (state.sleepDebt || 0) > 0;
 
   state.turn = Math.max(0, Math.floor(state.turn || 0)) + 1;
   state.eatenThisTurn = 0;
@@ -71,25 +73,19 @@ export function advanceTurn(world, state, player, ctx = {}) {
   const becameNight = !wasInfo.isNight && dayInfo.isNight;
   const becameDawn = wasInfo.isNight && !dayInfo.isNight;
 
+  let fatigued = 0;
+  let warn = null;
+  let passOut = false;
   if (dayInfo.isNight && !ctx.sleeping) {
-    state.awakeNightTurns = (state.awakeNightTurns || 0) + 1;
-    if (state.awakeNightTurns > LATE_NIGHT_GRACE) {
-      state.sleepDebt = Math.min(12, (state.sleepDebt || 0) + 1);
-    }
-  } else if (!dayInfo.isNight && becameDawn && !ctx.sleeping) {
-    // Dawn arrives without sleep: reset the night counter and ease debt halfway so
-    // the player remains sluggish until they rest, without locking up daytime play.
-    state.awakeNightTurns = 0;
-    state.sleepDebt = Math.max(0, Math.floor((state.sleepDebt || 0) / 2));
-  }
-
-  const becameLate = !wasLate && (state.sleepDebt || 0) > 0;
-
-  let drain = 0;
-  if (!isFree(state) && !ctx.sleeping && (state.sleepDebt || 0) > 0) {
-    const rawDrain = lateEnergyDrain(state.sleepDebt);
-    drain = dayInfo.isNight ? rawDrain : Math.min(2, rawDrain);
-    state.energy = Math.max(0, (state.energy ?? 0) - drain);
+    const t = dayInfo.turnInDay;
+    if (!isFree(state) && t === MIDNIGHT) fatigued = setFatigue(state, 1);
+    else if (!isFree(state) && t === SMALL_HOURS) fatigued = setFatigue(state, 2);
+    else if (t === PASS_OUT) passOut = true;
+    if (!isFree(state) && t === MIDNIGHT - 1) warn = 'midnight';
+    else if (!isFree(state) && t === SMALL_HOURS - 1) warn = 'small_hours';
+    else if (t === PASS_OUT - 1) warn = 'pass_out';
+    // Tiredness bites at once: energy above the lowered max is lost.
+    if (fatigued) state.energy = Math.min(state.energy ?? 0, maxEnergy(state));
   }
 
   // Rate-limited eating: at most MAX_BITES_PER_TURN item per turn.
@@ -109,13 +105,14 @@ export function advanceTurn(world, state, player, ctx = {}) {
   return {
     turn: state.turn,
     dayInfo,
-    drain,
     eaten,
     cropsChanged,
     events,
     becameNight,
     becameDawn,
-    becameLate,
+    fatigued,
+    warn,
+    passOut,
   };
 }
 
@@ -129,6 +126,11 @@ export function addTurnProgress(world, state, player, delta, ctx = {}) {
     state.turnProgress = Math.max(0, state.turnProgress - 1);
     last = advanceTurn(world, state, player, ctx);
     count += 1;
+    // Passing out ends the night here; nothing more rolls over.
+    if (last.passOut) {
+      state.turnProgress = 0;
+      break;
+    }
   }
   return {
     advanced: count > 0,

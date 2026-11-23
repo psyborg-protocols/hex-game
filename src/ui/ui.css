@@ -103,6 +103,14 @@ html, body {
 .vital.hp i { background: #c9566a; }
 .vital.en i { background: #d8b04a; }
 .vital.en.tired i { background: #d97745; }
+/* The share of max energy lost to a late night: struck off the end of the bar. */
+.vital { position: relative; }
+.vital .lost {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  background: repeating-linear-gradient(135deg, rgba(217, 119, 69, 0.55) 0 2px, rgba(0, 0, 0, 0.35) 2px 4px);
+}
 /* Low, and worth a glance: the only time a bar asks for one. */
 .vital.low { opacity: 1; animation: vital-low 1.7s ease-in-out infinite; }
 @keyframes vital-low { 50% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 9px 1px rgba(232, 104, 118, 0.95); } }

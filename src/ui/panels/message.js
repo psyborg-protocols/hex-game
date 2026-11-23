@@ -30,7 +30,8 @@ export const HOW_TO_PLAY = `
   <div class="howto">
     <div><b>Move &amp; Turns</b><span>Click any hex to walk freely (Leather Boots and a Walking Stick speed your travel).
       Every day is 12 turns and every night is 12 turns; 9 hexes walked, 3 actions, or any combination advances a turn quietly in the background. Press <kbd>.</kbd> to wait 1 turn.</span></div>
-    <div><b>Sleep &amp; Night</b><span>Sleep (<kbd>Z</kbd>) at night so you don't stay up too late and drain energy faster than you can eat.
+    <div><b>Sleep &amp; Night</b><span>Sleep (<kbd>Z</kbd>) by midnight (night turn 7). Still awake then and you are tired all the next day, with less energy;
+      three turns later, exhausted, with half. Stay up until the turn before dawn and you pass out where you stand.
       Sleep by a hearth or in a village for warmth, and in a hut or village to keep wild dogs away (villages charge 3 gold).</span></div>
     <div><b>Explore</b><span>Stand still on a hex to explore it. Scenic places take longer and raise your <i>Mind</i>.
       Berries, herbs, flint, clay and fish only show on hexes you have explored.</span></div>

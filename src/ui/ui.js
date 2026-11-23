@@ -20,12 +20,12 @@
 
 import {
   SKILLS, MAX_LEVEL, DAY_TURNS, NIGHT_TURNS, TURNS_PER_DAY, OMENS_TURN,
-  dayOf, moonOf, MOON_DAYS, isFree, ACTIONS_PER_TURN,
+  dayOf, moonOf, MOON_DAYS, isFree, ACTIONS_PER_TURN, fatigueOf, FATIGUE,
 } from '../game/state.js';
 import { levelOf, progress, skillIcon } from '../game/skills.js';
-import { foodValue, maxEnergy, capacity, usedSlots } from '../game/inventory.js';
+import { foodValue, maxEnergy, restedMaxEnergy, capacity, usedSlots } from '../game/inventory.js';
 import { attackDice, defenseDice, maxHp } from '../game/gear.js';
-import { maxMoveDistance, lateEnergyDrain, ensureTurnState } from '../game/turns.js';
+import { maxMoveDistance, ensureTurnState } from '../game/turns.js';
 import { STAGES, currentStage } from '../game/journey.js';
 import { chime } from './chime.js';
 
@@ -244,16 +244,19 @@ export class UI {
     const pct = (v, m) => Math.max(0, Math.min(100, Math.round((v / m) * 100)));
     const food = foodValue(s);
     const hurt = s.hp <= hpMax * 0.4;
-    const tired = !isFree(s) && (s.sleepDebt || 0) > 0;
-    const hungry = !isFree(s) && (tired || (s.energy <= eMax * 0.4 && food === 0));
+    // Up past midnight: a share of max energy is gone until dusk, shown struck off the bar.
+    const fatigue = FATIGUE[fatigueOf(s)];
+    const tired = !!fatigue;
+    const eFull = restedMaxEnergy(s);
+    const lostPct = tired ? Math.round(((eFull - eMax) / eFull) * 100) : 0;
+    const hungry = !isFree(s) && s.energy <= eMax * 0.4 && food === 0;
     const phase = moon.phase === 'fair' ? '' : PHASE_NAMES[moon.phase];
     const phaseLabel = night ? `Night ${dInfo.phaseTurn}/${NIGHT_TURNS}` : `Day ${dInfo.phaseTurn}/${DAY_TURNS}`;
     const moveMax = maxMoveDistance(s);
-    const drain = tired ? lateEnergyDrain(s.sleepDebt) : 0;
 
     this.hudStats.innerHTML = `
       <div class="vital hp${hurt ? ' low' : ''}"><i style="width:${pct(s.hp, hpMax)}%"></i></div>
-      <div class="vital en${hungry ? ' low' : ''}${tired ? ' tired' : ''}"><i style="width:${pct(s.energy, eMax)}%"></i></div>
+      <div class="vital en${hungry ? ' low' : ''}${tired ? ' tired' : ''}"><i style="width:${pct(s.energy, eFull)}%"></i>${lostPct ? `<b class="lost" style="width:${lostPct}%"></b>` : ''}</div>
       <div class="sky ${night ? 'night' : ''}">
         <span class="orb">${night ? '&#9790;' : '&#9728;'}</span>
         <span class="turn-clock">${phaseLabel}</span>
@@ -265,7 +268,7 @@ export class UI {
       <div><b>${Math.max(0, s.hp)}</b>/${hpMax} health &middot; <b>${Math.floor(s.energy)}</b>/${eMax} energy</div>
       <div>${food ? `food for <b>${food}</b> more (1 bite/turn)` : 'no food in your pack'}</div>
       <div><b>${moveMax}</b> hexes/turn &middot; <b>${ACTIONS_PER_TURN}</b> actions/turn &middot; turn <b>${s.turn || 0}</b></div>
-      ${tired ? `<div>up too late &mdash; draining <b>${drain.toFixed(1).replace(/\.0$/, '')}</b> energy/turn (sleep to rest)</div>` : ''}
+      ${tired ? `<div><b>${fatigue.name}</b> from staying up &mdash; max energy <b>${eMax}</b> of ${eFull} until dusk</div>` : ''}
       <div><b>${s.gold}</b> gold &middot; ${usedSlots(s)}/${capacity(s)} slots &middot; ${attackDice(s)} attack, ${defenseDice(s)} defence</div>
       <div>moon <b>${moon.moon}</b>, day <b>${moon.day}</b> of ${MOON_DAYS}${phase ? ` &middot; ${phase}` : ' &middot; fair days'}</div>
       <div class="skills">${SKILLS.map(skill => {

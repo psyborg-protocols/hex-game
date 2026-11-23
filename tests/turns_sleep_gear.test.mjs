@@ -13,20 +13,20 @@ import { distance, neighbors } from '../src/world/hexgrid.js';
 import { RECIPES, VILLAGE_KINDS } from '../data/game_data.js';
 import {
   createState, dayOf, isNight, moonOf, DAY_TURNS, NIGHT_TURNS, TURNS_PER_DAY,
-  BASE_MOVE_DISTANCE, ACTIONS_PER_TURN,
+  BASE_MOVE_DISTANCE, ACTIONS_PER_TURN, MIDNIGHT, SMALL_HOURS, PASS_OUT, FATIGUE, fatigueOf,
 } from '../src/game/state.js';
 import {
   addItem, countItem, countInPack, capacity, usedSlots,
   equipFromPack, unequipSlot, ensureWorn, topUp, MAX_BITES_PER_TURN, donFromPack,
+  maxEnergy, restedMaxEnergy,
 } from '../src/game/inventory.js';
 import { attackDice, defenseDice, reach, moveBonus, bestWeapon, playerGearSnapshot } from '../src/game/gear.js';
 import { ensureVillage } from '../src/game/economy.js';
 import { checkRecipe } from '../src/game/crafting.js';
 import {
   advanceTurn, spendMoveStep, spendAction, maxMoveDistance, hexesPerTurn,
-  lateEnergyDrain, LATE_NIGHT_GRACE,
 } from '../src/game/turns.js';
-import { sleepNight, canSleep, VILLAGE_SLEEP_COST } from '../src/game/sleep.js';
+import { sleepNight, canSleep, passOut, VILLAGE_SLEEP_COST } from '../src/game/sleep.js';
 import {
   seedWildDogs, stepWildDogs, tryTameWildDog, isFarBank,
 } from '../src/game/wild_dogs.js';
@@ -145,32 +145,99 @@ test('background turn progress counts 9 hexes, 3 actions, or any combination, an
   eq(s2.turn, 7, '18 continuous steps advance 2 turns without stopping');
 });
 
-test('staying up too late drains energy faster than rate-limited eating can restore', () => {
+test('bedtime: awake at midnight you are tired all tomorrow, exhausted three turns on', () => {
   const world = flatWorld();
   const s = createState();
-  s.inventory = s.inventory.map(() => null);
-  addItem(s, 'berries', 30); // food value 1 each; max 1 eaten per turn!
-  s.turn = DAY_TURNS; // dusk
   const player = { q: 7, r: 7 };
+  eq(MIDNIGHT, 18, 'midnight is halfway through the night');
+  eq(SMALL_HOURS, 21);
+  eq(PASS_OUT, TURNS_PER_DAY - 1, 'one turn before dawn');
 
-  // Grace period (first LATE_NIGHT_GRACE turns of night): no extra late drain
-  for (let i = 0; i < LATE_NIGHT_GRACE; i++) {
-    const r = advanceTurn(world, s, player);
-    eq(r.drain, 0, `night turn ${i + 1} within grace should not drain extra energy`);
-  }
-  eq(s.sleepDebt, 0);
+  // Up until the turn before midnight: warned, nothing lost yet.
+  s.turn = DAY_TURNS;
+  let r;
+  while (dayOf(s).turnInDay < MIDNIGHT - 1) r = advanceTurn(world, s, player);
+  eq(r.warn, 'midnight', 'the turn before midnight warns');
+  eq(fatigueOf(s), 0);
+  eq(maxEnergy(s), restedMaxEnergy(s));
 
-  // Stay up past grace period: sleepDebt rises and drain outpaces 1 berry/turn
-  const startEnergy = s.energy;
-  let totalDrain = 0;
-  for (let i = 0; i < 6; i++) {
-    const r = advanceTurn(world, s, player);
-    totalDrain += r.drain;
-    ok(r.drain > 1, `late drain (${r.drain}) exceeds 1 berry/turn rate limit`);
-  }
-  ok(s.sleepDebt >= 6);
-  ok(totalDrain > 6 * MAX_BITES_PER_TURN);
-  ok(s.energy < startEnergy, `energy should drop despite berries (started ${startEnergy}, now ${s.energy})`);
+  // Midnight: tired, with energy above the lowered max cut back at once.
+  s.energy = restedMaxEnergy(s);
+  r = advanceTurn(world, s, player);
+  eq(r.fatigued, 1);
+  eq(fatigueOf(s), 1);
+  eq(maxEnergy(s), Math.round(restedMaxEnergy(s) * (1 - FATIGUE[1].cut)));
+  eq(s.energy, maxEnergy(s), 'energy over the tired max is lost');
+
+  // Three turns past midnight: exhausted, a larger cut.
+  r = advanceTurn(world, s, player);
+  r = advanceTurn(world, s, player);
+  eq(r.warn, 'small_hours');
+  r = advanceTurn(world, s, player);
+  eq(r.fatigued, 2);
+  eq(maxEnergy(s), Math.round(restedMaxEnergy(s) * (1 - FATIGUE[2].cut)));
+  ok(FATIGUE[2].cut > FATIGUE[1].cut, 'exhausted is worse than tired');
+
+  // It lasts all of tomorrow, and lifts at the next dusk.
+  s.turn = TURNS_PER_DAY + DAY_TURNS - 1; // the last day turn of tomorrow
+  eq(fatigueOf(s), 2, 'still exhausted on the last turn of tomorrow');
+  s.turn += 1;
+  eq(fatigueOf(s), 0, 'rested again from tomorrow\'s dusk');
+
+  // Asleep before midnight: no penalty.
+  const early = createState();
+  early.turn = MIDNIGHT - 2;
+  early.built.push({ item: 'hut', q: 7, r: 7 }, { item: 'hearth', q: 7, r: 8 });
+  ok(sleepNight(world, early, player, { rng: () => 0.99 }).ok);
+  eq(fatigueOf(early), 0, 'sleeping before midnight costs nothing');
+  eq(early.energy, maxEnergy(early));
+
+  // Free mode is for testing: no fatigue.
+  const free = createState({ free: true });
+  free.turn = MIDNIGHT - 1;
+  advanceTurn(world, free, player);
+  eq(fatigueOf(free), 0);
+});
+
+test('bedtime: awake one turn before dawn, you pass out where you stand', () => {
+  const world = flatWorld();
+  const s = createState({ gold: 10 });
+  const player = { q: 7, r: 7 };
+  s.turn = SMALL_HOURS - 1;
+  let r = advanceTurn(world, s, player);
+  eq(r.fatigued, 2);
+  r = advanceTurn(world, s, player);
+  eq(r.warn, 'pass_out', 'the turn before warns you');
+  eq(r.passOut, false);
+  r = advanceTurn(world, s, player);
+  eq(r.passOut, true, 'one turn before dawn you drop');
+
+  // Walking into that turn stops the roll-over there.
+  const walker = createState();
+  walker.turn = PASS_OUT - 1;
+  walker.turnProgress = 0.95;
+  const step = spendAction(world, walker, player, 3);
+  eq(step.passOut, true);
+  eq(walker.turn, PASS_OUT, 'no turns roll past the collapse');
+  eq(walker.turnProgress, 0);
+
+  // Passing out sleeps you to dawn where you stand, with no inn fee even in a village.
+  world.map.get(8, 7).feature = { type: 'village', name: 'Oakhaven', kind: 'farmers' };
+  s.turn = PASS_OUT;
+  const res = passOut(world, s, { q: 8, r: 7 }, { rng: () => 0.99 });
+  ok(res.ok && res.passedOut);
+  eq(res.goldSpent, 0);
+  eq(s.gold, 10);
+  eq(s.turn % TURNS_PER_DAY, 0, 'woke at dawn');
+  ok(/collapse/.test(res.message));
+  eq(fatigueOf(s), 2, 'still exhausted all day after passing out');
+  eq(s.energy, maxEnergy(s), 'wakes with the exhausted max');
+});
+
+test('food is eaten at most once per turn', () => {
+  const s = createState();
+  s.inventory = s.inventory.map(() => null);
+  addItem(s, 'berries', 30);
 
   // Verify topUp refuses to eat more than MAX_BITES_PER_TURN per turn
   s.eatenThisTurn = 0;
@@ -187,8 +254,6 @@ test('sleeping outdoors risks cold and wild dog ambush; campfire warms; hut/vill
   // 1) Exposed outdoors with guaranteed low RNG: takes cold damage and gets woken by wild dog
   const exposed = createState();
   exposed.turn = DAY_TURNS + 2;
-  exposed.sleepDebt = 4;
-  exposed.awakeNightTurns = 5;
   const exposedRes = sleepNight(world, exposed, player, { rng: () => 0.01 });
   ok(exposedRes.ok);
   ok(exposedRes.coldDamage >= 1, 'outdoors without fire should take cold damage');
@@ -205,11 +270,9 @@ test('sleeping outdoors risks cold and wild dog ambush; campfire warms; hut/vill
   eq(fireRes.coldDamage, 0, 'campfire prevents cold damage');
   eq(fireRes.wokenByDog, true, 'hearth alone without hut/village still risks wild dog ambush');
 
-  // 3) Hut + hearth: completely safe & warm until dawn, resets sleepDebt
+  // 3) Hut + hearth: completely safe & warm until dawn
   const inHut = createState();
   inHut.turn = DAY_TURNS + 4;
-  inHut.sleepDebt = 5;
-  inHut.awakeNightTurns = 7;
   inHut.energy = 4;
   inHut.hp = 5;
   inHut.built.push({ item: 'hearth', q: 7, r: 7 }, { item: 'hut', q: 7, r: 8 });
@@ -217,7 +280,6 @@ test('sleeping outdoors risks cold and wild dog ambush; campfire warms; hut/vill
   eq(hutRes.coldDamage, 0);
   eq(hutRes.wokenByDog, false, 'hut prevents wild dog ambush');
   eq(inHut.turn, TURNS_PER_DAY, 'slept cleanly until dawn');
-  eq(inHut.sleepDebt, 0, 'sleepDebt cleared');
   eq(inHut.hp, 10, 'hut heals fully on sleep');
 
   // 4) Village sleep costs coins, prevents cold and wild dogs, refuses when broke
