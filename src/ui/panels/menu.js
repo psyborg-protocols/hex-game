@@ -18,13 +18,16 @@ export const menuPanel = {
       <p class="dim">${skills}</p>
 
       <button class="line" data-act="help"><span></span><span>How to play</span></button>
+      <button class="line" data-act="friends"><span></span><span>Play with friends</span>
+        <span class="dim">${game.mp?.active ? `${game.mp.roster.length} playing` : ''}</span></button>
 
       <h3>Your colour</h3>
       <div class="swatches" role="radiogroup" aria-label="Your colour">
         ${CLOAK_COLORS.map(c => {
           const on = cloakColor(game.state.playerColor).id === c.id;
-          return `<button type="button" class="swatch${on ? ' on' : ''}" role="radio" aria-checked="${on}"
-            data-color="${c.id}" title="${escapeHtml(c.name)}" aria-label="${escapeHtml(c.name)}"
+          const taken = !on && (game.mp?.takenColors() || []).includes(c.id);
+          return `<button type="button" class="swatch${on ? ' on' : ''}${taken ? ' taken' : ''}" role="radio" aria-checked="${on}"
+            data-color="${c.id}" ${taken ? 'disabled' : ''} title="${escapeHtml(c.name)}${taken ? ' (taken)' : ''}" aria-label="${escapeHtml(c.name)}${taken ? ', taken' : ''}"
             style="--sw-lit:${c.cloak.h};--sw-mid:${c.cloak.l};--sw-shade:${c.cloak.m};--sw-edge:${c.cloak.o};--sw-accent:${c.scarf.b}"></button>`;
         }).join('')}
       </div>
@@ -71,6 +74,7 @@ export const menuPanel = {
       new: () => game.doNewWorld(body.querySelector('#seed-input').value.trim()),
       free: () => game.doToggleFree(),
       help: () => game.showHelp(),
+      friends: () => game.ui.openPanel('friends'),
     };
     for (const btn of body.querySelectorAll('[data-color]')) {
       btn.addEventListener('click', () => game.doSetColor(btn.dataset.color));

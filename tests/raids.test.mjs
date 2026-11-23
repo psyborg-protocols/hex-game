@@ -12,8 +12,12 @@ import { addItem, countItem } from '../src/game/inventory.js';
 import { clash, expectedDamage } from '../src/game/combat.js';
 import {
   garrisonCamps, campsLeft, guardsAt, updateUnits, ensureRaidState,
-  hostiles, abroad, burnCamp, raidWaves, raidSize, makeUnit, stepRaidTurn,
+  hostiles, abroad, burnCamp, raidWaves, raidSize, makeUnit, stepRaidTurn, setRaidRandom,
 } from '../src/game/raiders.js';
+
+// These tests are about what a raid does once it sets out; the random start
+// window has its own test in shared_world.test.mjs. Set out right at dusk.
+setRaidRandom(() => 0);
 
 const SEEDS = ['alpha', 'beta', 'gamma', 'delta'];
 

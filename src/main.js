@@ -49,6 +49,11 @@ import { buildPanel } from './ui/panels/build.js';
 import { menuPanel } from './ui/panels/menu.js';
 import { stashPanel } from './ui/panels/stash.js';
 import { messagePanel, HOW_TO_PLAY } from './ui/panels/message.js';
+import { friendsPanel } from './ui/panels/friends.js';
+import { joinScreen } from './ui/join_screen.js';
+import { Multiplayer } from './net/multiplayer.js';
+import { applyShared } from './game/shared.js';
+import { WorldMap } from './world/mapformat.js';
 
 const ITEM_THOUGHTS = {
   branch: 'A dry branch! With a piece of flint I can relight the cold campfire — or bind two stones and reed cord into a stone axe.',
@@ -84,7 +89,11 @@ async function boot() {
   res.masks = makeMasks(res);
 
   const params = new URLSearchParams(location.search);
-  const restored = params.get('load') === '1' ? loadLocal() : null;
+  // Opened from a friend's link: join their world instead of making one.
+  const joined = params.get('join') ? await joinScreen(params.get('join')) : null;
+  const restored = joined ? fromWelcome(joined.welcome) : (params.get('load') === '1' ? loadLocal() : null);
+  // A solo save carries no room: whoever saved it was playing alone by then.
+  if (restored && !joined) delete restored.state.room;
 
   const seed = restored?.seed || params.get('seed') || String(Date.now());
   const map = restored ? restored.map : generateWorld({ seed, resolvers: res.resolvers });
@@ -162,7 +171,21 @@ async function boot() {
     syncPlayerGear,
     panels: {
       inventory: inventoryPanel, crafting: craftingPanel, skills: skillsPanel, trade: tradePanel,
-      build: buildPanel, menu: menuPanel, stash: stashPanel, message: messagePanel,
+      build: buildPanel, menu: menuPanel, stash: stashPanel, message: messagePanel, friends: friendsPanel,
+    },
+
+    /** Open this world to friends. Resolves with the share link. */
+    async doHostRoom({ mode, name, color }) {
+      const link = await game.mp.host({ mode, name, color });
+      syncPlayerGear();
+      afterChange();
+      return link;
+    },
+
+    doLeaveRoom() {
+      game.mp.leave();
+      syncPlayerGear();
+      afterChange();
     },
 
     /** What crafting needs to know about where the player is standing. */
@@ -340,7 +363,10 @@ async function boot() {
     toggleEye() { eye = !eye; game.ui.setEye(eye); },
 
     doSetColor(id) {
-      state.playerColor = id;
+      if (!game.mp.requestColor(id)) {
+        game.ui.notify('Someone else has that colour.', 3000, 'bad');
+        return;
+      }
       syncPlayerGear();
       game.ui.refreshPanel();
     },
@@ -381,6 +407,35 @@ async function boot() {
 
   game.ui = new UI(game);
   game.ui.updateHud();
+
+  // Friends: the room you are in, and everyone else in it.
+  game.mp = new Multiplayer({
+    world, state, player, ui: game.ui, maxHp,
+    onRoster: () => { syncPlayerGear(); game.ui.updateHud(); },
+    // Someone else changed the world: show it.
+    onWorldPatched: (res, patch) => {
+      if (res.cols.length || patch.built || patch.structures) {
+        rebuildFeatures();
+        if (game.mp.isHost) homeless(patch);
+        refreshContext();
+        game.ui.updateHud();
+      }
+    },
+  });
+
+  /** A camp a friend burned: its raiders out on the road have nowhere to go home to. */
+  function homeless(patch) {
+    for (const [k, col] of patch.cols || []) {
+      if (col?.feature?.type !== 'camp' || !col.feature.burned) continue;
+      const [q, r] = k.split(',').map(Number);
+      for (const u of state.units || []) if (u.home && u.home.q === q && u.home.r === r && u.mode === 'return') u.home = null;
+    }
+  }
+  if (joined) {
+    game.mp.attachGuest(joined.session, joined.welcome, joined.code);
+    history.replaceState(null, '', location.pathname);
+    syncPlayerGear();
+  }
 
   function thinkOnce(id, text, ms = 5400) {
     if (!text) return false;
@@ -445,7 +500,7 @@ async function boot() {
       if (res.coldDamage > 0) game.ui.floatText(playerPos, `-${res.coldDamage} cold`, 'bad');
     }
     const ev = [];
-    tickSchedule(world, state, ev);
+    if (!game.mp?.isGuest) tickSchedule(world, state, ev);
     handleEvents(ev);
     afterChange();
   }
@@ -467,7 +522,7 @@ async function boot() {
   function onTurnAdvanced(res) {
     if (!res) return;
     const events = [...(res.events || [])];
-    tickSchedule(world, state, events);
+    if (!game.mp?.isGuest) tickSchedule(world, state, events);
     const m = moonOf(state);
     if (m.phase === 'raid' || abroad(state).length > 0
       || (state.units || []).some(u => u.hp > 0 && distance(u.q, u.r, player.q, player.r) <= 8)) {
@@ -504,6 +559,7 @@ async function boot() {
 
   function afterChange() {
     syncPlayerGear();
+    game.mp?.flush();
     const j = checkJourney(state, world);
     for (const g of j.goals) game.ui.ping({ kind: 'goal', title: g.text });
     for (const st of j.stages) {
@@ -909,6 +965,7 @@ async function boot() {
 
   /** A step is too frequent for the full refresh; just the cheap parts. */
   function afterChangeLight() {
+    game.mp?.flush();
     const j = checkJourney(state, world);
     for (const g of j.goals) game.ui.ping({ kind: 'goal', title: g.text });
     for (const st of j.stages) {
@@ -1680,17 +1737,20 @@ async function boot() {
   const hudTerrain = document.getElementById('hud-terrain');
   let last = performance.now();
 
+  let lastFrameAt = performance.now();
   function frame(now) {
+    lastFrameAt = performance.now();
     tick(now);
     requestAnimationFrame(frame);
   }
 
-  function tick(now) {
-    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+  function tick(now, maxDt = 0.05) {
+    const dt = Math.min(maxDt, Math.max(0, (now - last) / 1000));
     last = now;
     const running = !game.ui.paused && !dead;
 
     player.update(dt);
+    game.mp.tick(dt, now);
 
     if (running) {
       state.time += dt;
@@ -1705,7 +1765,8 @@ async function boot() {
 
       const events = [];
       updateDog({ world, state, player, events, boat: hasBoat() }, dt);
-      const simDt = Math.min(turnSimBudget, dt * 3.0);
+      // In a friend's world the host moves the raiders; we only watch them come.
+      const simDt = game.mp?.isGuest ? 0 : Math.min(turnSimBudget, dt * 3.0);
       if (simDt > 0) {
         turnSimBudget -= simDt;
         updateUnits({ world, state, player, events, playerDown: dead }, simDt);
@@ -1750,7 +1811,7 @@ async function boot() {
       // that hex and hidden by whatever hides the hex. As an overlay it was
       // painted over everything: stand behind a peak and the ring ran round the
       // mountain's face, as if that were what you were exploring.
-      entities: [...features, ...chargeEntity(now), ...meditationEntity(now), ...pings.entities(map, now, inView), ...unitEntities(), ...wildDogEntities(), ...dogEntity(), player],
+      entities: [...features, ...chargeEntity(now), ...meditationEntity(now), ...pings.entities(map, now, inView), ...unitEntities(), ...wildDogEntities(), ...dogEntity(), ...game.mp.entities(), player],
       overlays: [
         drawOverlays,
         ctx => pings.draw(ctx, map, now, inView),
@@ -1771,6 +1832,7 @@ async function boot() {
             const p = dogPos(map, state.dog);
             drawDog(ctx, p.x, p.y, dogDrawOpts(state.dog, false));
           }
+          game.mp.drawGhosts(ctx);
           player.draw(ctx, true);
           ctx.restore();
         },
@@ -1815,6 +1877,13 @@ async function boot() {
     }
   }
   requestAnimationFrame(frame);
+  // A tab in the background gets no animation frames. Alone that is a pause,
+  // which is fine; in a room the world must go on (the host runs the raiders,
+  // and everyone still tells the others where they are), so when frames stop
+  // coming a timer keeps ticking, in larger steps.
+  setInterval(() => {
+    if (game.mp?.active && performance.now() - lastFrameAt > 500) tick(performance.now(), 1);
+  }, 250);
 
   /** Run the world forward by `turns` turns — for testing from the console. */
   game.advance = (turns = 1) => {
@@ -1840,16 +1909,27 @@ async function boot() {
 
   // There is one save slot, and every open tab writes to it. `?nosave=1` keeps
   // a tab opened to test something from overwriting the game you are playing.
+  // A guest's copy of someone else's world never goes into your own save slot.
+  const mayAutosave = () => !dead && !(state.room && !state.room.host);
   if (params.get('nosave') !== '1') {
-    setInterval(() => { if (!dead) saveLocal(world, state, player); }, 45000);
+    setInterval(() => { if (mayAutosave()) saveLocal(world, state, player); }, 45000);
     window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden' && !dead) saveLocal(world, state, player);
+      if (document.visibilityState === 'hidden' && mayAutosave()) saveLocal(world, state, player);
     });
   }
 
   game.renderer = renderer;
   game.getPlacing = () => placing;
   window.game = game;
+}
+
+/** A host's welcome, as a world to boot: their map and shared world, your own fresh self. */
+function fromWelcome(welcome) {
+  const snap = welcome.snapshot;
+  const state = createState();
+  applyShared(state, snap.shared);
+  state.playerColor = welcome.you.color;
+  return { map: WorldMap.fromJSON(snap.map), state, player: snap.spawn, seed: snap.seed };
 }
 
 /** Keys typed into a text box are not hotkeys. */

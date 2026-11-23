@@ -148,6 +148,10 @@ const freshRaid = moon => ({
  */
 export const RAID_WINDOW = 4;
 
+let raidRandom = Math.random;
+/** Tests pin the start window (`() => 0` sets out right at dusk). */
+export const setRaidRandom = fn => { raidRandom = fn || Math.random; };
+
 export function ensureRaidState(state) {
   // A save from before the moon carried a countdown instead; start it over.
   if (!state.raid || state.raid.stage == null) state.raid = freshRaid(0);
@@ -280,7 +284,7 @@ export function tickSchedule(world, state, events, clock = worldClock(state)) {
     raid.waves = raidWaves(m.moon, burned);
     raid.stage = 'omen';
     raid.routeAt = 0;
-    raid.startAt = m.duskAt + Math.floor(Math.random() * (RAID_WINDOW + 1));
+    raid.startAt = m.duskAt + Math.floor(raidRandom() * (RAID_WINDOW + 1));
     events.push({
       type: 'omen', from: raid.from, target: raid.target, waves: raid.waves, size: raidSize(raid.waves),
       turns: Math.max(0, Math.round(m.duskAt - turn)), tower,
