@@ -5,6 +5,7 @@ import { CLOAK_COLORS, cloakColor } from '../../render/player_sprite.js';
 import { myName, myPlayerId } from '../../net/multiplayer.js';
 import { MAX_PLAYERS } from '../../net/session.js';
 import { escapeHtml } from '../ui.js';
+import { roomSavedAt } from '../../game/save.js';
 
 const swatchStyle = c => `--sw-lit:${c.cloak.h};--sw-mid:${c.cloak.l};--sw-shade:${c.cloak.m};--sw-edge:${c.cloak.o};--sw-accent:${c.scarf.b}`;
 
@@ -58,7 +59,11 @@ export const friendsPanel = {
         ${swatches(color)}
         <p class="dim">Each player has their own colour: first come, first served.</p>
         ${props.error ? `<p class="join-error">${escapeHtml(props.error)}</p>` : ''}
-        <button type="button" class="big primary" id="mp-host" ${props.busy ? 'disabled' : ''}>${props.busy ? 'Opening…' : 'Open the room'}</button>`;
+        <button type="button" class="big primary" id="mp-host" ${props.busy ? 'disabled' : ''}>${props.busy ? 'Opening…' : 'Open the room'}</button>
+        ${roomSavedAt() ? `<h3>Your hosted game</h3>
+          <button type="button" class="line" id="mp-resume"><span></span><span>Pick up the game you hosted</span>
+            <span class="dim">${escapeHtml(new Date(roomSavedAt()).toLocaleString())}</span></button>
+          <p class="dim">Your friends rejoin with the same link, and get back everything they had.</p>` : ''}`;
     }
 
     const host = mp.isHost;
@@ -81,6 +86,7 @@ export const friendsPanel = {
     const update = patch => { panel.props = { ...props, name: body.querySelector('#mp-name')?.value, ...patch }; game.ui.refreshPanel(); };
 
     if (!mp.active) {
+      body.querySelector('#mp-resume')?.addEventListener('click', () => { location.search = '?resume=1'; });
       for (const b of body.querySelectorAll('[data-mode]')) b.addEventListener('click', () => update({ mode: b.dataset.mode }));
       for (const b of body.querySelectorAll('[data-color]')) b.addEventListener('click', () => update({ color: b.dataset.color }));
       body.querySelector('#mp-host').addEventListener('click', async () => {

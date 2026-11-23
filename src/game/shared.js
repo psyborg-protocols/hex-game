@@ -34,6 +34,19 @@ export function applyShared(state, slice) {
   return state;
 }
 
+/** Keys that only mean something while you are in a room. */
+const ROOM_KEYS = ['room', 'clock', 'waitingForDawn'];
+
+/** A deep copy of one player's own progress: everything that is not the shared world. */
+export function personalSlice(state) {
+  const out = {};
+  for (const [k, v] of Object.entries(state)) {
+    if (SHARED_KEYS.includes(k) || ROOM_KEYS.includes(k)) continue;
+    out[k] = structuredClone(v);
+  }
+  return out;
+}
+
 /** Who you are, for owning structures: your id in a room, or 'local' alone. */
 export const ownerOf = state => state?.room?.playerId || 'local';
 

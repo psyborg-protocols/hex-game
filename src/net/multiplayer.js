@@ -7,7 +7,7 @@
 // player simulates themself and tells the others where they are ("presence").
 
 import { Player } from '../game/player.js';
-import { sharedSlice, worldClock } from '../game/shared.js';
+import { sharedSlice, worldClock, personalSlice } from '../game/shared.js';
 import { TURNS_PER_DAY, DAY_TURNS, NIGHT_TURNS } from '../game/state.js';
 import { cloakColor } from '../render/player_sprite.js';
 import { openPeer, roomCode, peerIdFor } from './transport.js';
@@ -24,6 +24,8 @@ const PRESENCE_MS = 100;
 const HEARTBEAT_MS = 2000;
 /** How often the host sends the moving parts of the world (raiders, dogs). */
 const WORLD_MS = 200;
+/** How often a guest leaves the host a copy of their own progress. */
+const PERSONAL_MS = 15000;
 
 // --------------------------------------------------------------- identity
 
@@ -172,6 +174,9 @@ export class Multiplayer {
     this.lastWorld = 0;
     this.trade = null;
     this.referee = new TradeReferee();
+    /** Host: each player's own progress, kept for when they come back. */
+    this.personal = {};
+    this.lastPersonal = 0;
   }
 
   /** Who you are: your stored id, unless the game says otherwise (tests run two in one page). */
@@ -192,10 +197,18 @@ export class Multiplayer {
   // ------------------------------------------------------------- hosting
 
   /** Open a room around the world you are in. Resolves with the share link. */
-  async host({ mode, name, color }) {
+  async host({ mode, name, color, code = null, personal = null }) {
     const { state } = this.ctx;
-    this.code = roomCode();
-    const peer = await openPeer(this.code);
+    // Resuming: the old link works again if nobody else has taken its code.
+    let peer = null;
+    if (code) {
+      try { peer = await openPeer(code); this.code = code; } catch { peer = null; }
+    }
+    if (!peer) {
+      this.code = roomCode();
+      peer = await openPeer(this.code);
+    }
+    this.personal = personal || {};
     const me = { playerId: this.myId(), name, color };
     this.session = new HostSession({ peer, mode, me, snapshot: (id, rejoin) => this.snapshotFor(id, rejoin) });
     state.room = { playerId: me.playerId, mode, host: true, code: this.code };
@@ -207,7 +220,7 @@ export class Multiplayer {
   }
 
   /** The world a joining friend boots from. */
-  snapshotFor(/* playerId, rejoin */) {
+  snapshotFor(playerId) {
     const { world, state, player } = this.ctx;
     const lead = Math.max(...this.clocks().map(c => c.turn));
     return {
@@ -219,6 +232,9 @@ export class Multiplayer {
       // Friends arrive where the host is standing.
       spawn: { q: player.q, r: player.r },
       mode: this.session.mode,
+      // Back again: what you had, and where you were.
+      personal: this.personal[playerId]?.state || null,
+      at: this.personal[playerId]?.pos || null,
     };
   }
 
@@ -268,6 +284,7 @@ export class Multiplayer {
       case 'won': if (this.isHost) this.announceWinner(from); return;
       case 'winner': x.onWinner?.(m); return;
       case 'trade': this.onTrade(from, m); return;
+      case 'personal': if (this.isHost) this.personal[from] = { state: m.state, pos: m.pos, at: Date.now() }; return;
       default: break;
     }
     if (m.t === 'presence') {
@@ -538,6 +555,18 @@ export class Multiplayer {
 
   // -------------------------------------------------------------- the world
 
+  /** Guest: leave the host a copy of your own progress, for when you come back. */
+  sendPersonal() {
+    if (!this.isGuest) return;
+    const { state, player } = this.ctx;
+    this.session.send({ t: 'personal', state: personalSlice(state), pos: { q: player.q, r: player.r } });
+  }
+
+  /** Host: what the hosted game's save carries beyond the world and you. */
+  roomSave(name) {
+    return { mode: this.mode, code: this.code, name, color: this.ctx.state.playerColor, personal: this.personal };
+  }
+
   /** Send whatever this browser changed in the world since last time. */
   flush() {
     if (!this.sync) return;
@@ -683,8 +712,10 @@ export class Multiplayer {
   tick(dt, now = performance.now()) {
     if (!this.session) return;
     for (const r of this.remotes.values()) r.update(dt);
-    if (this.isGuest) this.glideUnits(dt);
-    else {
+    if (this.isGuest) {
+      this.glideUnits(dt);
+      if (now - this.lastPersonal >= PERSONAL_MS) { this.lastPersonal = now; this.sendPersonal(); }
+    } else {
       this.advanceClock();
       if (now - this.lastWorld >= WORLD_MS) { this.lastWorld = now; this.flush(); }
     }

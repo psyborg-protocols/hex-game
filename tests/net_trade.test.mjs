@@ -146,4 +146,22 @@ test('Co-op: there is no fighting each other', async () => {
   eq(log.guest.length, 0);
 });
 
+test('a guest leaves the host their progress, and gets it back on rejoining', async () => {
+  const { host, guest, guestState } = await room('coop');
+  addItem(guestState, 'flint', 3);
+  guestState.gold = 42;
+  guest.sendPersonal();
+  await settle();
+  const kept = host.personal['p-mira'];
+  ok(kept, 'the host keeps it');
+  eq(kept.state.gold, 42);
+  ok(!('built' in kept.state) && !('units' in kept.state) && !('room' in kept.state), 'only their own things, not the shared world');
+  eq(kept.pos, { q: 2, r: 3 });
+  host.ctx.world.map.toJSON = () => ({ columns: [] });
+  const snap = host.snapshotFor('p-mira');
+  eq(snap.personal.gold, 42, 'a rejoin snapshot carries it back');
+  eq(snap.at, { q: 2, r: 3 }, 'and where they were');
+  eq(host.snapshotFor('p-new').personal, null, 'a newcomer starts fresh');
+});
+
 run('net_trade');

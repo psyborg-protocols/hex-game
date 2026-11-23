@@ -21,7 +21,8 @@ import { villageNear } from './game/context.js';
 import { harvest, shakeTree, prospect, build, relightCampfire, placementSpots, growCrops, refreshArt, penaltyOnDeath, destroyStructure } from './game/actions.js';
 import { clash } from './game/combat.js';
 import { harvestSpec } from './game/harvests.js';
-import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile } from './game/save.js';
+import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile, saveRoom, loadRoom } from './game/save.js';
+import { myName } from './net/multiplayer.js';
 import { ensureMind, isKnown, isExplored, isMeditated, scenicOf, harvestsHere, HIDDEN } from './game/discovery.js';
 import { resolveClick } from './game/pick.js';
 import { makeMasks } from './render/masks.js';
@@ -93,9 +94,12 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   // Opened from a friend's link: join their world instead of making one.
   const joined = params.get('join') ? await joinScreen(params.get('join')) : null;
-  const restored = joined ? fromWelcome(joined.welcome) : (params.get('load') === '1' ? loadLocal() : null);
-  // A solo save carries no room: whoever saved it was playing alone by then.
-  if (restored && !joined) delete restored.state.room;
+  // ?resume=1: the game you host, back up and open to your friends again.
+  const resumed = !joined && params.get('resume') === '1' ? loadRoom() : null;
+  const restored = joined ? fromWelcome(joined.welcome)
+    : resumed || (params.get('load') === '1' ? loadLocal() : null);
+  // A save carries no live room: the room is opened again below, or not at all.
+  if (restored && !joined) { delete restored.state.room; delete restored.state.waitingForDawn; }
 
   const seed = restored?.seed || params.get('seed') || String(Date.now());
   const map = restored ? restored.map : generateWorld({ seed, resolvers: res.resolvers });
@@ -178,8 +182,9 @@ async function boot() {
     },
 
     /** Open this world to friends. Resolves with the share link. */
-    async doHostRoom({ mode, name, color }) {
-      const link = await game.mp.host({ mode, name, color });
+    async doHostRoom({ mode, name, color, code = null, personal = null }) {
+      const link = await game.mp.host({ mode, name, color, code, personal });
+      hostName = name;
       syncPlayerGear();
       afterChange();
       return link;
@@ -382,7 +387,11 @@ async function boot() {
     },
 
     doSave() {
-      game.ui.notify(saveLocal(world, state, player) ? 'Game saved.' : 'Could not save — this browser is blocking storage.');
+      if (state.room && !state.room.host) return game.ui.notify('This is a friend’s world: the host saves it, your progress included.');
+      const ok = state.room?.host && game.mp.active
+        ? saveRoom(world, state, player, game.mp.roomSave(hostName))
+        : saveLocal(world, state, player);
+      game.ui.notify(ok ? 'Game saved.' : 'Could not save — this browser is blocking storage.');
       game.ui.refreshPanel();
     },
     doLoad() { location.search = '?load=1'; },
@@ -411,6 +420,7 @@ async function boot() {
   game.ui = new UI(game);
   game.ui.updateHud();
 
+  let hostName = '';
   // Friends: the room you are in, and everyone else in it.
   game.mp = new Multiplayer({
     world, state, player, ui: game.ui, maxHp,
@@ -576,6 +586,15 @@ async function boot() {
     history.replaceState(null, '', location.pathname);
     syncPlayerGear();
   }
+  if (resumed?.room) {
+    const r = resumed.room;
+    history.replaceState(null, '', location.pathname);
+    game.doHostRoom({ mode: r.mode, name: r.name || myName() || 'Wanderer', color: r.color || state.playerColor, code: r.code, personal: r.personal })
+      .then(() => game.ui.openPanel('friends'))
+      .catch(err => game.ui.notify(`Could not open the room again: ${err.message}`, 5000, 'bad'));
+  }
+  // A guest leaving the page leaves the host their progress.
+  addEventListener('pagehide', () => game.mp.sendPersonal());
 
   function thinkOnce(id, text, ms = 5400) {
     if (!text) return false;
@@ -2200,12 +2219,17 @@ async function boot() {
 
   // There is one save slot, and every open tab writes to it. `?nosave=1` keeps
   // a tab opened to test something from overwriting the game you are playing.
-  // A guest's copy of someone else's world never goes into your own save slot.
-  const mayAutosave = () => !dead && !(state.room && !state.room.host);
+  // A guest's copy of someone else's world never goes into your own save slot,
+  // and a game you host goes into a slot of its own (with your friends' progress).
+  const autosave = () => {
+    if (dead) return;
+    if (state.room?.host && game.mp.active) saveRoom(world, state, player, game.mp.roomSave(hostName));
+    else if (!state.room) saveLocal(world, state, player);
+  };
   if (params.get('nosave') !== '1') {
-    setInterval(() => { if (mayAutosave()) saveLocal(world, state, player); }, 45000);
+    setInterval(autosave, 45000);
     window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden' && mayAutosave()) saveLocal(world, state, player);
+      if (document.visibilityState === 'hidden') autosave();
     });
   }
 
@@ -2217,12 +2241,13 @@ async function boot() {
 /** A host's welcome, as a world to boot: their map and shared world, your own fresh self. */
 function fromWelcome(welcome) {
   const snap = welcome.snapshot;
-  const state = createState();
+  // Back in a world you played before: your own progress, as the host kept it.
+  const state = snap.personal ? Object.assign(createState(), snap.personal) : createState();
   applyShared(state, snap.shared);
   state.playerColor = welcome.you.color;
-  // You start at the dawn of the day everyone is in.
-  state.turn = snap.dawn || 0;
-  return { map: WorldMap.fromJSON(snap.map), state, player: snap.spawn, seed: snap.seed };
+  // You start at the dawn of the day everyone is in (or where you were, if later).
+  state.turn = Math.max(snap.personal?.turn || 0, snap.dawn || 0);
+  return { map: WorldMap.fromJSON(snap.map), state, player: snap.at || snap.spawn, seed: snap.seed };
 }
 
 /** Keys typed into a text box are not hotkeys. */

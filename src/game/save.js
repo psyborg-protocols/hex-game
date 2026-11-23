@@ -96,6 +96,47 @@ export function localSavedAt() {
   }
 }
 
+// -------------------------------------------------------------- hosted game
+
+/**
+ * A game you host has its own slot, so it never overwrites the one you play
+ * alone. It keeps the world, you, and every friend's own progress (by player
+ * id), so they get it back when they rejoin.
+ */
+export const ROOM_SAVE_KEY = 'hexquest.mp.save';
+
+export function saveRoom(world, state, player, room) {
+  try {
+    localStorage.setItem(ROOM_SAVE_KEY, JSON.stringify({ ...serialize(world, state, player), room }));
+    return true;
+  } catch (err) {
+    console.warn('could not save the hosted game', err);
+    return false;
+  }
+}
+
+/** The hosted game, as { map, state, player, seed, room }, or null. */
+export function loadRoom() {
+  try {
+    const raw = localStorage.getItem(ROOM_SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return { ...deserialize(data), room: data.room || null };
+  } catch (err) {
+    console.warn('could not load the hosted game', err);
+    return null;
+  }
+}
+
+export function roomSavedAt() {
+  try {
+    const raw = localStorage.getItem(ROOM_SAVE_KEY);
+    return raw ? JSON.parse(raw).savedAt : null;
+  } catch {
+    return null;
+  }
+}
+
 // ------------------------------------------------------------------- files
 
 export function downloadSave(world, state, player) {
