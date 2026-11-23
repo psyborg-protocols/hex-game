@@ -22,6 +22,7 @@ import { destroyStructure } from './actions.js';
 import { villageKey } from './economy.js';
 import { addItem, countItem } from './inventory.js';
 import { defenseDice } from './gear.js';
+import { worldClock } from './shared.js';
 
 /** Simulated unit-movement seconds pulsed per turn during raids. */
 export const TURN_UNIT_SECONDS = 4.0;
@@ -45,10 +46,21 @@ const SHRINE_RADIUS = 2;
 
 let nextId = 1;
 
-export function makeUnit(kind, faction, at, extra = {}) {
+/**
+ * A fresh unit id. With a state, ids come from its shared counter, so units
+ * spawned by the host never collide with ones already on a guest's board.
+ */
+function newUnitId(state) {
+  if (!state) return nextId++;
+  if (state.unitSeq == null) state.unitSeq = Math.max(0, ...(state.units || []).map(u => u.id || 0));
+  state.unitSeq += 1;
+  return state.unitSeq;
+}
+
+export function makeUnit(kind, faction, at, extra = {}, state = null) {
   const k = KINDS[kind];
   return {
-    id: nextId++, kind, faction,
+    id: newUnitId(state), kind, faction,
     q: at.q, r: at.r, hp: k.hp, maxHp: k.hp,
     path: [], leg: null, cd: 0.5 + Math.random(), facing: 1,
     mode: 'raid', target: null, home: null, carry: [], repath: 0, pillage: 0,
@@ -109,7 +121,7 @@ export function garrisonCamps(map, state) {
     const spots = standingRoom(map, camp, roster.length);
     roster.forEach((kind, i) => {
       const at = spots[i] || camp;
-      state.units.push(makeUnit(kind, 'raider', at, { mode: 'guard', home: { q: camp.q, r: camp.r } }));
+      state.units.push(makeUnit(kind, 'raider', at, { mode: 'guard', home: { q: camp.q, r: camp.r } }, state));
     });
   }
 }
@@ -127,8 +139,14 @@ export function garrisonCamps(map, state) {
 
 const freshRaid = moon => ({
   moon, stage: 'idle', from: null, target: null, waves: [], sent: 0,
-  startedAt: 0, route: null, routeAt: 0, felled: 0, lost: 0,
+  startedAt: 0, startAt: null, route: null, routeAt: 0, felled: 0, lost: 0,
 });
+
+/**
+ * The raid never sets out at quite the same hour: the first wave leaves at a
+ * random turn from dusk to RAID_WINDOW turns after it, rolled with the omens.
+ */
+export const RAID_WINDOW = 4;
 
 export function ensureRaidState(state) {
   // A save from before the moon carried a countdown instead; start it over.
@@ -215,14 +233,14 @@ function sendWave(world, state, raid, events) {
   raid.target = target;
   const spots = standingRoom(world.map, from, kinds.length, new Set((state.units || []).map(u => key(u.q, u.r))));
   kinds.forEach((kind, i) => {
-    state.units.push(makeUnit(kind, 'raider', spots[i] || from, { mode: 'raid', target: { ...target }, home: { q: from.q, r: from.r } }));
+    state.units.push(makeUnit(kind, 'raider', spots[i] || from, { mode: 'raid', target: { ...target }, home: { q: from.q, r: from.r } }, state));
   });
   events.push({ type: 'raid', from: raid.from, target, size: kinds.length, wave: raid.sent, waves: raid.waves.length });
 }
 
 /** The way the band will come, for the map to show. Reworked as walls go up. */
-function scoutRoute(world, state, raid) {
-  const turn = Math.max(0, Math.floor(state.turn || 0));
+function scoutRoute(world, state, raid, clock) {
+  const turn = Math.max(0, Math.floor(clock));
   if (turn < (raid.routeAt || 0)) return;
   raid.routeAt = turn + 1;
   if (!raid.from || !raid.target) { raid.route = null; return; }
@@ -231,12 +249,15 @@ function scoutRoute(world, state, raid) {
   raid.route = p ? p.map(s => ({ q: s.q, r: s.r })) : null;
 }
 
-/** Tick the moon (in turns). Emits omen / nightfall / raid / held / dawn events. */
-export function tickSchedule(world, state, events) {
+/**
+ * Tick the moon (in turns). Emits omen / nightfall / raid / held / dawn events.
+ * The moon runs on `clock`: your own turn alone, the raid clock in a room.
+ */
+export function tickSchedule(world, state, events, clock = worldClock(state)) {
   const raid = ensureRaidState(state);
   state.stats ||= {};
-  const turn = Math.max(0, Math.floor(state.turn || 0));
-  const m = moonOf(state);
+  const turn = Math.max(0, Math.floor(clock));
+  const m = moonOf({ turn });
 
   if (raid.moon !== m.moon) {
     if (raid.moon) dawn(state, raid, events);
@@ -259,6 +280,7 @@ export function tickSchedule(world, state, events) {
     raid.waves = raidWaves(m.moon, burned);
     raid.stage = 'omen';
     raid.routeAt = 0;
+    raid.startAt = m.duskAt + Math.floor(Math.random() * (RAID_WINDOW + 1));
     events.push({
       type: 'omen', from: raid.from, target: raid.target, waves: raid.waves, size: raidSize(raid.waves),
       turns: Math.max(0, Math.round(m.duskAt - turn)), tower,
@@ -267,7 +289,7 @@ export function tickSchedule(world, state, events) {
 
   if (raid.stage === 'omen' && turn >= m.duskAt) {
     raid.stage = 'night';
-    raid.startedAt = turn;
+    raid.startedAt = Math.max(turn, raid.startAt ?? turn);
     events.push({ type: 'nightfall', from: raid.from, waves: raid.waves.length, size: raidSize(raid.waves) });
   }
 
@@ -282,7 +304,7 @@ export function tickSchedule(world, state, events) {
     }
   }
 
-  if (raid.stage === 'omen' || raid.stage === 'night') scoutRoute(world, state, raid);
+  if (raid.stage === 'omen' || raid.stage === 'night') scoutRoute(world, state, raid, turn);
 }
 
 // ------------------------------------------------------------- movement
@@ -339,18 +361,39 @@ function advanceLeg(u, dt) {
 // ---------------------------------------------------------------- the tick
 
 /**
+ * Everyone the units can see. Alone that is you; in a room the host passes
+ * `ctx.players`: [{ id, q, r, defense, onWater, down }].
+ */
+function playersOf(ctx) {
+  if (ctx.players) return ctx.players;
+  const { player, state, world } = ctx;
+  return [{
+    id: 'local', q: player.q, r: player.r, defense: defenseDice(state),
+    onWater: isWater(world.map.get(player.q, player.r)?.terrain), down: !!ctx.playerDown,
+  }];
+}
+
+/**
  * Advance every unit, the towers and the raid clock by `dt` seconds.
- * @param ctx {{world, state, player:{q,r,moving}, events:Array, rng}}
+ * @param ctx {{world, state, player:{q,r}, players?:Array, events:Array,
+ *              hurt?:(playerId, damage, unit) => void, clock?:number}}
+ * Damage to a player goes through `hurt`; alone it comes off `state.hp`.
  */
 export function updateUnits(ctx, dt) {
-  const { world, state, player, events } = ctx;
+  const { world, state, events } = ctx;
   const { map } = world;
   state.units ||= [];
+  const clock = ctx.clock ?? worldClock(state);
+  const hurt = ctx.hurt || ((id, damage) => { state.hp -= damage; });
 
-  tickSchedule(world, state, events);
+  tickSchedule(world, state, events, clock);
 
   const units = state.units;
-  const playerHere = { q: player.q, r: player.r };
+  const players = playersOf(ctx);
+  const nearestPlayer = (u, pick = () => true) => players
+    .filter(pick)
+    .map(p => ({ p, d: distance(u.q, u.r, p.q, p.r) }))
+    .sort((a, b) => a.d - b.d)[0] || null;
   const enemiesOf = u => units.filter(o => alive(o) && o.faction !== u.faction);
 
   for (const u of units) {
@@ -361,7 +404,6 @@ export function updateUnits(ctx, dt) {
     if (u.leg) continue;
 
     const k = KINDS[u.kind];
-    const dPlayer = distance(u.q, u.r, playerHere.q, playerHere.r);
 
     // --- who to fight -----------------------------------------------------
     let foe = null;
@@ -369,7 +411,8 @@ export function updateUnits(ctx, dt) {
       const allies = enemiesOf(u);
       const near = allies.map(a => ({ a, d: distance(a.q, a.r, u.q, u.r) })).sort((x, y) => x.d - y.d)[0];
       const range = u.mode === 'guard' ? GUARD_AGGRO : AGGRO;
-      if (!ctx.playerDown && dPlayer <= range && !isWater(map.get(player.q, player.r)?.terrain)) foe = { player: true, q: playerHere.q, r: playerHere.r, d: dPlayer };
+      const prey = nearestPlayer(u, p => !p.down && !p.onWater);
+      if (prey && prey.d <= range) foe = { player: prey.p, q: prey.p.q, r: prey.p.r, d: prey.d };
       if (near && near.d <= range && (!foe || near.d < foe.d)) foe = { unit: near.a, q: near.a.q, r: near.a.r, d: near.d };
       if (u.mode === 'guard' && u.home && distance(u.q, u.r, u.home.q, u.home.r) > GUARD_LEASH) foe = null;
     } else {
@@ -382,9 +425,9 @@ export function updateUnits(ctx, dt) {
         if (u.cd <= 0) {
           u.cd = k.cd;
           if (foe.player) {
-            const roll = clash(k.atk, defenseDice(state));
-            state.hp -= roll.damage;
-            events.push({ type: 'clash', who: u, target: 'player', roll, at: playerHere });
+            const roll = clash(k.atk, foe.player.defense);
+            hurt(foe.player.id, roll.damage, u);
+            events.push({ type: 'clash', who: u, target: 'player', playerId: foe.player.id, roll, at: { q: foe.q, r: foe.r } });
           } else {
             const roll = clash(k.atk, KINDS[foe.unit.kind].def);
             foe.unit.hp -= roll.damage;
@@ -400,8 +443,9 @@ export function updateUnits(ctx, dt) {
 
     // --- nothing to fight: about their business ---------------------------
     if (u.faction !== 'raider') {
-      // Militia keep near you.
-      if (dPlayer > 2) walkToward(map, u, besideHex(map, u, playerHere), dt);
+      // Militia keep near whoever raised them.
+      const lead = players.find(p => p.id === u.owner) || nearestPlayer(u)?.p;
+      if (lead && distance(u.q, u.r, lead.q, lead.r) > 2) walkToward(map, u, besideHex(map, u, lead), dt);
       continue;
     }
 
@@ -431,9 +475,9 @@ export function updateUnits(ctx, dt) {
         if (u.pillage >= PILLAGE_SECONDS) {
           state.raidedUntil ||= {};
           const k2 = villageKey(t.q, t.r);
-          if (!(state.raidedUntil[k2] > (state.turn || 0))) {
+          if (!(state.raidedUntil[k2] > clock)) {
             // Shut for the whole of the next day.
-            state.raidedUntil[k2] = (dayOf(state).day + 1) * TURNS_PER_DAY;
+            state.raidedUntil[k2] = (dayOf({ turn: clock }).day + 1) * TURNS_PER_DAY;
             if (state.raid) state.raid.lost = (state.raid.lost || 0) + 1;
             events.push({ type: 'villageRaided', name: tcol.feature.name, q: t.q, r: t.r });
           }
@@ -542,11 +586,11 @@ export function spoils(state, unit) {
   return { gold, items, text: [`${gold} gold`, ...items.map(i => `${i.qty} ${itemName(i.id)}`)].join(', ') };
 }
 
-/** Raise the militia: one fighter per village that trusts you, up to four. */
-export function rally(state, player, map, trustedCount) {
+/** Raise the militia: one fighter per village that trusts you, up to four. They follow `owner`. */
+export function rally(state, player, map, trustedCount, owner = 'local') {
   const n = Math.min(4, trustedCount);
   const spots = standingRoom(map, player, n, new Set((state.units || []).map(u => key(u.q, u.r))));
-  for (const at of spots) state.units.push(makeUnit('militia', 'ally', at, { mode: 'follow' }));
+  for (const at of spots) state.units.push(makeUnit('militia', 'ally', at, { mode: 'follow', owner }, state));
   return spots.length;
 }
 

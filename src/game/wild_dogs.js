@@ -133,15 +133,16 @@ export function spawnAmbushWildDog(map, state, player, rng = Math.random) {
     .filter(c => canStandWildDog(c) && canStep(map, player, c, {}));
   const spot = adj.length ? adj[Math.floor(r() * adj.length)] : map.get(player.q, player.r) || player;
   const wd = makeWildDog(state, spot, 'ambush', true);
+  wd.prey = player.id || 'local'; // it hunts the sleeper it found
   if (player.q !== wd.q) wd.facing = player.q > wd.q ? 1 : -1;
   state.wildDogs.push(wd);
   return wd;
 }
 
-function stepRandom(map, wd, player, r) {
+function stepRandom(map, wd, players, r) {
   const opts = neighbors(wd.q, wd.r)
     .map(n => map.get(n.q, n.r))
-    .filter(c => canStandWildDog(c) && canStep(map, wd, c, {}) && !(c.q === player.q && c.r === player.r));
+    .filter(c => canStandWildDog(c) && canStep(map, wd, c, {}) && !players.some(p => c.q === p.q && c.r === p.r));
   if (!opts.length) return;
   const next = opts[Math.floor(r() * opts.length)];
   if (next.q !== wd.q) wd.facing = next.q > wd.q ? 1 : -1;
@@ -149,14 +150,21 @@ function stepRandom(map, wd, player, r) {
   wd.r = next.r;
 }
 
-/** Advance wild dogs by one turn: daytime emergence, night hiding, roaming, and hostile pursuit. */
-export function stepWildDogs(world, state, player, rng = Math.random, events = []) {
+/**
+ * Advance wild dogs by one turn: daytime emergence, night hiding, roaming, and hostile pursuit.
+ * `player` is whoever's turn this is (new dogs show up near them). In a room the
+ * host passes `opts.players` ([{ id, q, r, defense }]) so dogs see everyone,
+ * `opts.hurt(playerId, damage)` for bites, and `opts.clock` for the world's time.
+ */
+export function stepWildDogs(world, state, player, rng = Math.random, events = [], opts = {}) {
   const r = asRoll(rng);
   const { map } = world;
   if (!state.wildDogsSeeded) seedWildDogs(map, state, r);
   state.wildDogs = (state.wildDogs || []).filter(d => d.hp > 0);
+  const players = opts.players || [{ id: 'local', q: player.q, r: player.r, defense: defenseDice(state) }];
+  const hurt = opts.hurt || ((id, damage) => { state.hp = Math.max(0, state.hp - damage); });
 
-  const dInfo = dayOf(state);
+  const dInfo = dayOf(opts.clock != null ? { turn: opts.clock } : state);
   const bounds = riverBounds(map);
 
   // At dawn, night-ambush dogs slink back into the dark.
@@ -201,13 +209,16 @@ export function stepWildDogs(world, state, player, rng = Math.random, events = [
     if (wd.hp <= 0) continue;
     if (!wd.hostile) {
       const steps = 1 + (r() < 0.45 ? 1 : 0);
-      for (let i = 0; i < steps; i++) stepRandom(map, wd, player, r);
+      for (let i = 0; i < steps; i++) stepRandom(map, wd, players, r);
       continue;
     }
 
-    // Hostile wild dog pursues the player up to 3 hexes and bites when adjacent.
-    if (distance(wd.q, wd.r, player.q, player.r) > 1) {
-      const beside = neighbors(player.q, player.r)
+    // Hostile wild dog pursues its prey (or whoever is nearest) up to 3 hexes and bites when adjacent.
+    const prey = players.find(p => p.id === wd.prey)
+      || players.slice().sort((a, b) => distance(wd.q, wd.r, a.q, a.r) - distance(wd.q, wd.r, b.q, b.r))[0];
+    if (!prey) continue;
+    if (distance(wd.q, wd.r, prey.q, prey.r) > 1) {
+      const beside = neighbors(prey.q, prey.r)
         .map(n => map.get(n.q, n.r))
         .filter(c => canStandWildDog(c))
         .sort((a, b) => distance(a.q, a.r, wd.q, wd.r) - distance(b.q, b.r, wd.q, wd.r));
@@ -223,11 +234,11 @@ export function stepWildDogs(world, state, player, rng = Math.random, events = [
       }
     }
 
-    if (distance(wd.q, wd.r, player.q, player.r) <= 1) {
-      if (player.q !== wd.q) wd.facing = player.q > wd.q ? 1 : -1;
-      const roll = clash(WILD_DOG_ATK, defenseDice(state), { next: r });
-      state.hp = Math.max(0, state.hp - roll.damage);
-      events.push({ type: 'wildDogClash', who: wd, roll, at: { q: player.q, r: player.r } });
+    if (distance(wd.q, wd.r, prey.q, prey.r) <= 1) {
+      if (prey.q !== wd.q) wd.facing = prey.q > wd.q ? 1 : -1;
+      const roll = clash(WILD_DOG_ATK, prey.defense ?? defenseDice(state), { next: r });
+      hurt(prey.id, roll.damage);
+      events.push({ type: 'wildDogClash', who: wd, roll, playerId: prey.id, at: { q: prey.q, r: prey.r } });
     }
   }
 

@@ -5,6 +5,7 @@
 // named, so the game never leaves you wondering what it is for.
 
 import { hasBuilt, isNight } from './state.js';
+import { goalOwner } from './shared.js';
 import { countItem } from './inventory.js';
 import { levelOf } from './skills.js';
 import { campsLeft, allCamps } from './raiders.js';
@@ -21,7 +22,7 @@ export const STAGES = [
       { id: 'explore5', text: 'Explore 5 places', hint: 'Stand still on a hex for a moment to explore it.', test: s => Object.keys(s.mind?.explored || {}).length >= 5 },
       { id: 'cord', text: 'Twist some cord', hint: 'Reeds grow where a shore is low: a lake, or a stream. Then Craft → Woodworking.', test: s => has(s, 'cord') || has(s, 'stone_axe') || has(s, 'stone_hammer') },
       { id: 'axe', text: 'Make a stone axe', hint: 'Stone + branch + cord. Stone lies under any rise.', test: s => anyOf(s, ['stone_axe', 'iron_axe']) },
-      { id: 'hearth', text: 'Relight the campfire', hint: 'Bring a branch and a flint to your cold campfire, or build a hearth from stone and logs.', test: s => hasBuilt(s, 'hearth') },
+      { id: 'hearth', text: 'Relight the campfire', hint: 'Bring a branch and a flint to your cold campfire, or build a hearth from stone and logs.', test: s => hasBuilt(s, 'hearth', goalOwner(s)) },
     ],
   },
   {
@@ -30,8 +31,8 @@ export const STAGES = [
     goals: [
       { id: 'meal', text: 'Cook a meal', hint: 'Hunt (with a cord snare) or fish, then cook at your hearth.', test: s => (s.stats?.cooked || 0) > 0 || has(s, 'meal') || has(s, 'stew') },
       { id: 'trust', text: 'Earn a village’s trust', hint: 'Visit a village and do the small favour they ask. Then they will trade.', test: s => trusted(s) >= 1 },
-      { id: 'field', text: 'Sow a field', hint: 'Wild grain turns up when you forage meadows. Homesteading 2.', test: s => hasBuilt(s, 'field') || (s.stats?.reaped || 0) > 0 },
-      { id: 'hut', text: 'Raise a hut', hint: 'Logs, planks and reed thatch. Homesteading 3.', test: s => hasBuilt(s, 'hut') },
+      { id: 'field', text: 'Sow a field', hint: 'Wild grain turns up when you forage meadows. Homesteading 2.', test: s => hasBuilt(s, 'field', goalOwner(s)) || (s.stats?.reaped || 0) > 0 },
+      { id: 'hut', text: 'Raise a hut', hint: 'Logs, planks and reed thatch. Homesteading 3.', test: s => hasBuilt(s, 'hut', goalOwner(s)) },
     ],
   },
   {
@@ -39,7 +40,7 @@ export const STAGES = [
     blurb: 'Smoke across the river. They have seen your fire.',
     goals: [
       { id: 'repel', text: 'Fight off a raid', hint: 'They come on the last night of each moon, by the way the omens mark. Walls slow them; towers shoot them.', test: s => (s.stats?.kills || 0) >= 2 },
-      { id: 'defence', text: 'Build a watchtower or wall', hint: 'A palisade is logs only. A watchtower doubles your warning.', test: s => ['watchtower', 'palisade', 'stone_wall'].some(i => hasBuilt(s, i)) },
+      { id: 'defence', text: 'Build a watchtower or wall', hint: 'A palisade is logs only. A watchtower doubles your warning.', test: s => ['watchtower', 'palisade', 'stone_wall'].some(i => hasBuilt(s, i, goalOwner(s))) },
       { id: 'armour', text: 'Arm yourself', hint: 'Hide armour, a shield, or a bow from a workbench.', test: s => anyOf(s, ['hide_armor', 'shield', 'bow', 'iron_mail', 'sword']) },
       { id: 'cross', text: 'Cross the river', hint: 'Build a boat (Woodworking 4) or a bridge (5) — or buy a boat from fishers.', test: (s, w) => !!s.stats?.crossed },
     ],

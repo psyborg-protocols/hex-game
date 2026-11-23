@@ -10,6 +10,7 @@ import { neighbors } from '../world/hexgrid.js';
 import { countItem } from './inventory.js';
 import { levelOf } from './skills.js';
 import { isFree } from './state.js';
+import { worldClock } from './shared.js';
 
 /** Terrain groups the harvest table refers to. */
 const OPEN = ['meadow', 'grass', 'steppes'];
@@ -194,7 +195,7 @@ export function markPicked(state, col, id) {
   const spec = HARVESTS[id];
   if (!spec?.regrows) return;
   state.picked ||= {};
-  state.picked[pickKey(col, id)] = (state.turn || 0) + spec.regrows;
+  state.picked[pickKey(col, id)] = worldClock(state) + spec.regrows;
 }
 
 export function harvestSpec(id) {
@@ -223,7 +224,7 @@ export function availableHarvests(map, state, at) {
       reasons.push(`Needs ${spec.tool.map(t => t.replace(/_/g, ' ')).join(' or ')}.`);
     }
     const back = regrowsAt(state, col, id);
-    const turn = state.turn || 0;
+    const turn = worldClock(state);
     if (back > turn) {
       const left = Math.ceil(back - turn);
       reasons.push(`${REGROW_TEXT[id] || 'Spent'} — back in ${left} ${left === 1 ? 'turn' : 'turns'}.`);

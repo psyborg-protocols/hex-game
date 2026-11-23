@@ -209,8 +209,9 @@ export function moonOf(state) {
 
 // ------------------------------------------------------------- structures
 
+/** Record a structure, owned by whoever built it ('local' when playing alone). */
 export function recordBuilt(state, item, q, r) {
-  state.built.push({ item, q, r });
+  state.built.push({ item, q, r, owner: state.room?.playerId || 'local' });
   return state.built[state.built.length - 1];
 }
 
@@ -218,8 +219,12 @@ export function forgetBuilt(state, q, r) {
   state.built = state.built.filter(b => !(b.q === q && b.r === r));
 }
 
-/** Does this structure exist anywhere in the world yet? What `needs` asks. */
-export const hasBuilt = (state, item) => state.built.some(b => b.item === item);
+/**
+ * Does this structure exist anywhere in the world yet? What `needs` asks.
+ * Pass `owner` to count only one player's (Competitive goals; see shared.js).
+ */
+export const hasBuilt = (state, item, owner) => state.built.some(b => b.item === item
+  && (owner == null || (b.owner || 'local') === owner));
 
 /**
  * Is there one within reach of `at`? What a *tool* slot naming a structure asks.

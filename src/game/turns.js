@@ -96,11 +96,10 @@ export function advanceTurn(world, state, player, ctx = {}) {
     state.hp = Math.min(maxHp(state), state.hp + 1);
   }
 
-  const cropsChanged = world?.map ? growCrops(world, state) : [];
+  // The world's part of the turn. In a room a guest's turn skips it
+  // (`worldTick: false`): the host runs crops and wild dogs for everyone.
   const events = [];
-  if (world?.map && player && !ctx.sleeping) {
-    stepWildDogs(world, state, player, ctx.rng, events);
-  }
+  const cropsChanged = ctx.worldTick === false ? [] : advanceWorldTurn(world, state, player, ctx, events);
 
   return {
     turn: state.turn,
@@ -114,6 +113,19 @@ export function advanceTurn(world, state, player, ctx = {}) {
     warn,
     passOut,
   };
+}
+
+/**
+ * The world's side of a turn: crops ripen and wild dogs move. Alone it runs with
+ * every turn of yours; in a room the host runs it as the world clock moves.
+ * Returns the crop columns that changed; pushes wild dog events onto `events`.
+ */
+export function advanceWorldTurn(world, state, player, ctx = {}, events = []) {
+  const cropsChanged = world?.map ? growCrops(world, state) : [];
+  if (world?.map && player && !ctx.sleeping) {
+    stepWildDogs(world, state, player, ctx.rng, events, ctx.dogs || {});
+  }
+  return cropsChanged;
 }
 
 /** Add `delta` turn progress; rolls one or more turns whenever progress reaches 1. */

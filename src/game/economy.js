@@ -12,6 +12,7 @@
 import { Rng } from '../core/rng.js';
 import { ITEM_BASE_PRICES, ITEMS, VILLAGE_KINDS } from '../../data/game_data.js';
 import { isBuilding, itemName, isFree } from './state.js';
+import { worldClock } from './shared.js';
 import { addItem, removeItem, hasItem, hasRoomFor, countItem } from './inventory.js';
 
 export const villageKey = (q, r) => `${q},${r}`;
@@ -62,7 +63,7 @@ export const trustOf = (state, q, r) => state.trust?.[villageKey(q, r)] || null;
 export const isTrusted = (state, q, r) => !!trustOf(state, q, r)?.done;
 
 /** A village recently raided is shuttered until the next day. */
-export const isRaided = (state, q, r) => (state.raidedUntil?.[villageKey(q, r)] ?? -1) > (state.turn || 0);
+export const isRaided = (state, q, r) => (state.raidedUntil?.[villageKey(q, r)] ?? -1) > worldClock(state);
 
 /** What crafting needs to know about a village you are standing at. */
 export function villageContext(state, col) {

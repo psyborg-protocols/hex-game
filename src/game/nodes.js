@@ -18,6 +18,7 @@ import { xmur3, hash2 } from '../core/rng.js';
 import { neighbors, distance } from '../world/hexgrid.js';
 import { TERRAIN } from '../world/tileset.js';
 import { HARVESTS, regrowsAt } from './harvests.js';
+import { worldClock } from './shared.js';
 import { resourcesAt, isKnown } from './discovery.js';
 
 /** Where on a top face a thing on the ground may lie, as offsets from its centre. */
@@ -126,7 +127,7 @@ const taken = col => col.terrain === 'path' || col.terrain === 'farm'
 export function nodesAt(map, state, col) {
   if (!col || isWaterCol(col) || isSpawn(map, col)) return [];
   const out = [];
-  const turn = state?.turn || 0;
+  const turn = worldClock(state);
   const k = key(col.q, col.r);
   const back = id => regrowsAt(state, col, id) > turn;
   const base = { q: col.q, r: col.r };

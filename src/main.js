@@ -929,7 +929,7 @@ async function boot() {
     const trusted = Object.values(state.trust).filter(t => t.done).length;
     if (!trusted) return;
     state.rallied[k] = 1;
-    const n = rally(state, player, map, trusted);
+    const n = rally(state, player, map, trusted, state.room?.playerId || 'local');
     if (n) game.ui.murmur(`${n} from the villages stand with you.`, { tone: 'good', ms: 6000 });
   }
 

@@ -11,6 +11,7 @@ import { addItem, countItem, removeItem, hasRoomFor, spend, canSpend } from './i
 import { addXp, levelOf } from './skills.js';
 import { recordBuilt, forgetBuilt, itemName, RECIPES, STRUCTURE_HP, ITEMS, DAY_LENGTH, isFree } from './state.js';
 import { craft } from './crafting.js';
+import { worldClock } from './shared.js';
 import { harvestsHere } from './discovery.js';
 import { takeNode } from './nodes.js';
 import { regrowsAt } from './harvests.js';
@@ -100,7 +101,7 @@ export function harvest(world, state, at, id, rng) {
 
   if (spec.depletes === 'field' && col.feature) {
     col.feature.ripe = false;
-    col.feature.plantedAt = state.turn || 0;
+    col.feature.plantedAt = worldClock(state);
     col.frame = cropFrame(0, col.feature.variant || 0);
     changed.push(col);
   }
@@ -133,7 +134,7 @@ export function shakeTree(world, state, at) {
   if (!col || col.feature?.type !== 'trees' || !(col.feature.remaining > 0)) return { ok: false };
   const k = `${col.q},${col.r}:shake`;
   state.picked ||= {};
-  const turn = state.turn || 0;
+  const turn = worldClock(state);
   if ((state.picked[k] ?? -1) > turn) return { ok: true, gained: [] };
   state.picked[k] = turn + SHAKE_AGAIN;
   const got = addItem(state, 'branch', 1);
@@ -301,7 +302,7 @@ export function build(world, state, at, recipeId, target, ctx = {}) {
     const variant = isHerb ? 1 : 0;
     map.place(col.q, col.r, 'farm', col.h, { sprite: CROPS[crop].sheet, frame: cropFrame(0, variant) });
     map.get(col.q, col.r).feature = {
-      type: 'field', kind: isHerb ? 'herb' : 'grain', crop, variant, ripe: false, plantedAt: state.turn || 0,
+      type: 'field', kind: isHerb ? 'herb' : 'grain', crop, variant, ripe: false, plantedAt: worldClock(state),
       hp: STRUCTURE_HP.field, maxHp: STRUCTURE_HP.field,
     };
   } else {
@@ -338,7 +339,7 @@ export function destroyStructure(world, state, col) {
 /** Fields ripen with the turn clock. Call each turn. */
 export function growCrops(world, state) {
   const changed = [];
-  const turn = state.turn || 0;
+  const turn = worldClock(state);
   for (const col of world.map) {
     const f = col.feature;
     if (f?.type !== 'field' || f.ripe) continue;
