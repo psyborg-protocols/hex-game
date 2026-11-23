@@ -203,6 +203,16 @@ export function drawDog(ctx, x, y, opts = 1, legacyT = 0) {
   const wag = !!o.wag;
   const attacking = !!o.attacking;
   const selected = !!o.selected;
+  const wild = !!o.wild;
+  const hostile = !!o.hostile;
+
+  const dark = wild ? '#3a3335' : '#4a2e1b';
+  const furDark = wild ? '#5a504b' : '#7c4b27';
+  const furMid = wild ? '#7c7067' : '#9e6538';
+  const furLit = wild ? '#9e9084' : '#c88d4e';
+  const chest = wild ? '#b8aa9c' : '#e0ae6e';
+  const paw = wild ? '#d0c4b6' : '#f0cfa0';
+  const eyeCol = hostile ? '#f06070' : '#2c1b12';
 
   x = Math.round(x);
   y = Math.round(y);
@@ -236,36 +246,38 @@ export function drawDog(ctx, x, y, opts = 1, legacyT = 0) {
 
   if (stance === 'sit') {
     // Tail resting low behind haunches, lifting to wag
-    dot('#4a2e1b', -4, -2 - wagShift, 2, 1);
-    dot('#c88d4e', -5, -2 - wagShift * 2, 1, 1);
+    dot(dark, -4, -2 - wagShift, 2, 1);
+    dot(furLit, -5, -2 - wagShift * 2, 1, 1);
 
     // Seated haunches & tucked hind paw
-    dot('#7c4b27', -3, -4, 3, 3);
-    dot('#9e6538', -2, -4, 2, 2);
-    dot('#e0ae6e', -1, -1, 2, 1);
-    dot('#f0cfa0', 0, -1, 1, 1);
+    dot(furDark, -3, -4, 3, 3);
+    dot(furMid, -2, -4, 2, 2);
+    dot(chest, -1, -1, 2, 1);
+    dot(paw, 0, -1, 1, 1);
 
     // Upright chest, dark saddle & straight front legs
-    dot('#4a2e1b', -2, -5, 2, 1);
-    dot('#9e6538', -1, -6, 3, 3);
-    dot('#c88d4e', 0, -6, 2, 3);
-    dot('#e0ae6e', 1, -5, 1, 4);
-    dot('#c88d4e', 0, -3, 1, 2);
-    dot('#f0cfa0', 1, -1, 1, 1);
+    dot(dark, -2, -5, 2, 1);
+    dot(furMid, -1, -6, 3, 3);
+    dot(furLit, 0, -6, 2, 3);
+    dot(chest, 1, -5, 1, 4);
+    dot(furLit, 0, -3, 1, 2);
+    dot(paw, 1, -1, 1, 1);
 
-    // Red collar + brass tag
-    dot('#c94356', 0, -6, 2, 1);
-    dot('#eb6c7d', 1, -6, 1, 1);
-    dot('#f2cc68', 2, -5, 1, 1);
+    if (!wild) {
+      // Red collar + brass tag
+      dot('#c94356', 0, -6, 2, 1);
+      dot('#eb6c7d', 1, -6, 1, 1);
+      dot('#f2cc68', 2, -5, 1, 1);
+    }
 
     // Alert head, muzzle & pointed shepherd ears
-    dot('#4a2e1b', 0, -10, 1, 2);
-    dot('#7c4b27', 1, -10, 1, 1);
-    dot('#9e6538', 0, -9, 3, 3);
-    dot('#c88d4e', 1, -9, 2, 2);
-    dot('#e0ae6e', 3, -8, 2, 2);
+    dot(dark, 0, -10, 1, 2);
+    dot(furDark, 1, -10, 1, 1);
+    dot(furMid, 0, -9, 3, 3);
+    dot(furLit, 1, -9, 2, 2);
+    dot(chest, 3, -8, 2, 2);
     dot('#2c1b12', 4, -8, 1, 1); // nose
-    dot('#2c1b12', 2, -8, 1, 1); // eye
+    dot(eyeCol, 2, -8, 1, 1); // eye
     return;
   }
 
@@ -276,39 +288,41 @@ export function drawDog(ctx, x, y, opts = 1, legacyT = 0) {
   const breathe = !moving && !attacking && Math.sin(t * 2.5 + x) > 0.5 ? 1 : 0;
 
   // Far-side legs (darker)
-  dot('#4a2e1b', -3 - backStep, -2, 1, 2);
-  dot('#4a2e1b', 1 - frontStep, -2, 1, 2);
+  dot(dark, -3 - backStep, -2, 1, 2);
+  dot(dark, 1 - frontStep, -2, 1, 2);
 
   // Bushy tail (wags when happy/idle)
-  dot('#4a2e1b', -5, -5 - wagShift, 2, 1);
-  dot('#9e6538', -6, -6 - wagShift, 2, 1);
-  dot('#f0cfa0', -6, -6 - wagShift, 1, 1);
+  dot(dark, -5, -5 - wagShift, 2, 1);
+  dot(furMid, -6, -6 - wagShift, 2, 1);
+  dot(paw, -6, -6 - wagShift, 1, 1);
 
   // Body & shepherd saddle
-  dot('#4a2e1b', -4, -6 + breathe, 5, 1);
-  dot('#7c4b27', -4, -5 + breathe, 6, 2);
-  dot('#9e6538', -3, -5 + breathe, 5, 2);
-  dot('#c88d4e', -2, -4 + breathe, 4, 1);
-  dot('#e0ae6e', 1, -4 + breathe, 2, 2);
+  dot(dark, -4, -6 + breathe, 5, 1);
+  dot(furDark, -4, -5 + breathe, 6, 2);
+  dot(furMid, -3, -5 + breathe, 5, 2);
+  dot(furLit, -2, -4 + breathe, 4, 1);
+  dot(chest, 1, -4 + breathe, 2, 2);
 
   // Near-side legs & pale paws
-  dot('#9e6538', -3 + backStep, -3, 1, 2);
-  dot('#f0cfa0', -3 + backStep, -1, 1, 1);
-  dot('#c88d4e', 1 + frontStep, -3, 1, 2);
-  dot('#f0cfa0', 1 + frontStep, -1, 1, 1);
+  dot(furMid, -3 + backStep, -3, 1, 2);
+  dot(paw, -3 + backStep, -1, 1, 1);
+  dot(furLit, 1 + frontStep, -3, 1, 2);
+  dot(paw, 1 + frontStep, -1, 1, 1);
 
-  // Red collar + brass tag
-  dot('#c94356', 1, -6 + breathe, 2, 2);
-  dot('#eb6c7d', 2, -6 + breathe, 1, 1);
-  dot('#f2cc68', 2, -4 + breathe, 1, 1);
+  if (!wild) {
+    // Red collar + brass tag
+    dot('#c94356', 1, -6 + breathe, 2, 2);
+    dot('#eb6c7d', 2, -6 + breathe, 1, 1);
+    dot('#f2cc68', 2, -4 + breathe, 1, 1);
+  }
 
   // Head, muzzle, nose, eye & pointed ears
-  const headDrop = attacking ? 1 : 0;
-  dot('#4a2e1b', 1, -10 + breathe + headDrop, 1, 2);
-  dot('#7c4b27', 2, -10 + breathe + headDrop, 1, 1);
-  dot('#9e6538', 1, -9 + breathe + headDrop, 3, 3);
-  dot('#c88d4e', 2, -9 + breathe + headDrop, 2, 2);
-  dot('#e0ae6e', 4, -8 + breathe + headDrop, 2, 2);
+  const headDrop = attacking || hostile ? 1 : 0;
+  dot(dark, 1, -10 + breathe + headDrop, 1, 2);
+  dot(furDark, 2, -10 + breathe + headDrop, 1, 1);
+  dot(furMid, 1, -9 + breathe + headDrop, 3, 3);
+  dot(furLit, 2, -9 + breathe + headDrop, 2, 2);
+  dot(chest, 4, -8 + breathe + headDrop, 2, 2);
   dot('#2c1b12', 5, -8 + breathe + headDrop, 1, 1); // nose
-  dot('#2c1b12', 3, -8 + breathe + headDrop, 1, 1); // eye
+  dot(eyeCol, 3, -8 + breathe + headDrop, 1, 1); // eye
 }

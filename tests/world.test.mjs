@@ -247,7 +247,7 @@ test('a planted field ripens and can then be harvested', () => {
   eq(world.map.get(3, 3).feature.ripe, false, 'and start unripe');
   ok(!offered(world, state, at(3, 3)).includes('harvest_field'), 'harvested it green');
 
-  state.time += FIELD_RIPENS_IN;
+  state.turn += FIELD_RIPENS_IN;
   growCrops(world, state);
   eq(world.map.get(3, 3).feature.ripe, true, 'it should come ripe');
   ok(offered(world, state, at(3, 3)).includes('harvest_field'), 'and then be harvestable');
@@ -261,7 +261,7 @@ test('a planted field ripens and can then be harvested', () => {
   const herbBuild = build(world, state, at(3, 3), 'herb_field', at(3, 2), { at: at(3, 3), distance });
   ok(herbBuild.ok, herbBuild.message);
   eq(world.map.get(3, 2).feature.kind, 'herb', 'an herb field should record its kind');
-  state.time += FIELD_RIPENS_IN;
+  state.turn += FIELD_RIPENS_IN;
   growCrops(world, state);
   const reapedHerb = harvest(world, state, at(3, 2), 'harvest_field', rng());
   ok(reapedHerb.ok, reapedHerb.message);

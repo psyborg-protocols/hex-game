@@ -152,21 +152,62 @@ async function main() {
     drawCamp(ctx, top.x, top.y, t, { boss: true });
   });
 
-  // 3. Player Animations
+  // 3. Player Animations & Worn Equipment
   const playerStates = [
-    ['Idle Breathing', 'Cloak sway & ash staff', (t) => ({ t, moving: false })],
-    ['Walking Stride', '4-phase stride & billowing cloak', (t) => ({ t, moving: true, legT: (t * 1.4) % 1 })],
-    ['Ladder Climbing', 'Alternating hands & boots', (t) => ({ t, moving: true, legT: (t * 1.2) % 1, climbing: true })],
-    ['Rowing Boat', 'Wooden coracle & oar stroke', (t) => ({ t, moving: true, legT: (t * 1.1) % 1, boat: true })],
-    ['Chopping / Mining', 'Tool arc & impact sparks', (t) => ({ t, action: { kind: 'chop', p: (t * 1.3) % 1 } })],
-    ['Combat Slash', 'Blade lunge & crescent arc', (t) => ({ t, action: { kind: 'attack', p: (t * 1.5) % 1 } })],
+    ['Walk Side (Bare)', 'Slender legs & 4-frame stride', (t) => ({ t, dir: 'side', moving: true, walkPhase: (t * 2.2) % 1 })],
+    ['Walk Down (Front)', 'Symmetric front walk toward camera', (t) => ({ t, dir: 'down', moving: true, walkPhase: (t * 2.2) % 1 })],
+    ['Walk Up (Back)', 'Symmetric back walk away from camera', (t) => ({ t, dir: 'up', moving: true, walkPhase: (t * 2.2) % 1 })],
+    ['Simple Walking Stick', 'Natural wooden stick & basket', (t) => ({
+      t, dir: 'side', moving: true, walkPhase: (t * 2.0) % 1,
+      equipped: { hand: 'walking_stick', pack: 'basket' },
+    })],
+    ['Sleek Sword + Shield', 'Slim blade, oak shield, iron mail & boots', (t) => ({
+      t, dir: 'side', moving: true, walkPhase: (t * 2.0) % 1,
+      equipped: { hand: 'sword', offhand: 'shield', body: 'iron_mail', feet: 'boots' },
+    })],
+    ['Woodland Ranger', 'Hide Armour, Bow, Boots, Pack & Amulet', (t) => ({
+      t, dir: 'side', moving: true, walkPhase: (t * 2.0) % 1,
+      equipped: { head: 'amulet', hand: 'bow', body: 'hide_armor', feet: 'boots', pack: 'leather_pack' },
+    })],
+    ['Iron Vanguard + Cart', 'Iron Mail, Sword, Shield, Boots & Cart', (t) => ({
+      t, dir: 'side', moving: true, walkPhase: (t * 1.9) % 1,
+      equipped: { hand: 'sword', offhand: 'shield', body: 'iron_mail', feet: 'boots', pack: 'cart' },
+    })],
+    ['Seated by Campfire', 'Stick & pack rest beside you', (t) => ({
+      t, seated: true,
+      equipped: { hand: 'walking_stick', body: 'hide_armor', feet: 'boots', pack: 'leather_pack', head: 'amulet' },
+    })],
+    ['Ladder Climbing', 'Rear gear & slung blade on back', (t) => ({
+      t, moving: true, legT: (t * 1.2) % 1, climbing: true,
+      equipped: { hand: 'sword', offhand: 'shield', body: 'iron_mail', feet: 'boots', pack: 'leather_pack' },
+    })],
+    ['Rowing Boat', 'Dugout canoe stows pack & gear', (t) => ({
+      t, moving: true, legT: (t * 1.1) % 1, boat: true,
+      equipped: { head: 'amulet', hand: 'walking_stick', body: 'hide_armor', pack: 'basket' },
+    })],
+    ['Bow Shot', 'Drawn string & flying arrow', (t) => ({
+      t, action: { kind: 'attack', p: (t * 1.4) % 1 },
+      equipped: { body: 'hide_armor', hand: 'bow', feet: 'boots' },
+    })],
+    ['Sword Slash', 'Sleek blade lunge & crescent arc', (t) => ({
+      t, action: { kind: 'attack', p: (t * 1.5) % 1 },
+      equipped: { hand: 'sword', offhand: 'shield', body: 'iron_mail', feet: 'boots' },
+    })],
+    ['Iron Axe Chop', 'Heavy felling stroke & wood chips', (t) => ({
+      t, action: { kind: 'chop', p: (t * 1.3) % 1 },
+      equipped: { hand: 'iron_axe', body: 'hide_armor', feet: 'boots' },
+    })],
+    ['Pickaxe Mining', 'Overhead strike & bright ore sparks', (t) => ({
+      t, action: { kind: 'mine', p: (t * 1.3) % 1 },
+      equipped: { hand: 'pickaxe', body: 'iron_mail', feet: 'boots' },
+    })],
   ];
   for (const [label, sub, mkState] of playerStates) {
-    addCard('grid-player', label, sub, 42, 46, (ctx, t) => {
+    addCard('grid-player', label, sub, 48, 48, (ctx, t) => {
       const st = mkState(t);
       const top = st.boat
-        ? drawPedestal(ctx, 'Tiles_LakeBase', 0, 21, 42, 0)
-        : drawPedestal(ctx, 'Tiles_GrassBase1', 0, 21, 42, 0);
+        ? drawPedestal(ctx, 'Tiles_LakeBase', 0, 26, 44, 0)
+        : drawPedestal(ctx, 'Tiles_GrassBase1', 0, 26, 44, 0);
       drawPawn(ctx, top.x, top.y, 1, false, st);
     });
   }
@@ -302,7 +343,8 @@ async function main() {
       const walk = Math.sin(t * 1.5);
       drawDog(c, Math.round(p.cx - 8), Math.round(p.cy + 3), walk >= 0 ? 1 : -1, t);
       drawPawn(c, Math.round(p.cx + walk * 4), Math.round(p.cy), walk >= 0 ? 1 : -1, false, {
-        t, moving: true, legT: (t * 1.4) % 1,
+        t, dir: 'side', moving: true, walkPhase: (t * 2.0) % 1,
+        equipped: { hand: 'walking_stick', feet: 'boots', pack: 'leather_pack' },
       });
     });
 

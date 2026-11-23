@@ -42,7 +42,16 @@
       "kind": "raw",
       "stack": 20,
       "icon": "icons/herb.svg",
-      "desc": "Medicine. Goes into salve, stew and shrines."
+      "desc": "Medicine found rarely in tall grass or grown from seed. Goes into salve, stew and shrines."
+    },
+    "herb_seed": {
+      "id": "herb_seed",
+      "name": "Herb Seeds",
+      "kind": "raw",
+      "stack": 20,
+      "icon": "icons/seeds.svg",
+      "iconId": "seeds",
+      "desc": "Rare wild herb seeds found in tall grass. Sow an herb patch to grow your own medicine."
     },
     "branch": {
       "id": "branch",
@@ -50,7 +59,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/branch.svg",
-      "desc": "Hafts every early tool. Gathered from woods and meadows."
+      "desc": "Hafts every early tool, or sparks your cold campfire back to life with flint. Gathered from woods and meadows."
     },
     "log": {
       "id": "log",
@@ -82,7 +91,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/flint.svg",
-      "desc": "A sharp edge. Knives, amulets and whetstones."
+      "desc": "A sharp edge. Strike against a branch to relight your campfire, or knap into knives, amulets and whetstones."
     },
     "clay": {
       "id": "clay",
@@ -122,7 +131,7 @@
       "kind": "material",
       "stack": 30,
       "icon": "icons/plank.svg",
-      "desc": "Split from a log. Every proper wooden build needs them."
+      "desc": "Split and whittled from a log with an axe and knife. Every wooden build needs them."
     },
     "block": {
       "id": "block",
@@ -193,8 +202,9 @@
       "kind": "tool",
       "stack": 1,
       "icon": "icons/stone_knife.svg",
+      "slot": "hand",
       "attack": 1,
-      "desc": "Skins game for hide when you hunt, cuts hide into cord."
+      "desc": "Whittles logs into planks for ladders, skins game for hide, and cuts hide into cord."
     },
     "stone_axe": {
       "id": "stone_axe",
@@ -202,6 +212,7 @@
       "kind": "tool",
       "stack": 1,
       "icon": "icons/stone_axe.svg",
+      "slot": "hand",
       "attack": 2,
       "desc": "Fells trees for logs and splits logs into planks."
     },
@@ -211,8 +222,9 @@
       "kind": "tool",
       "stack": 1,
       "icon": "icons/stone_hammer.svg",
+      "slot": "hand",
       "attack": 1,
-      "desc": "Dresses stone into blocks, mines cliff faces and (slowly) ore."
+      "desc": "Dresses stone into blocks, quarries cliff faces and (slowly) ore."
     },
     "fishing_rod": {
       "id": "fishing_rod",
@@ -254,6 +266,7 @@
       "kind": "tool",
       "stack": 1,
       "icon": "icons/axe.svg",
+      "slot": "hand",
       "attack": 3,
       "iconId": "axe",
       "desc": "Fells two logs at a time. A fine weapon too."
@@ -264,8 +277,9 @@
       "kind": "tool",
       "stack": 1,
       "icon": "icons/pickaxe.svg",
+      "slot": "hand",
       "attack": 2,
-      "desc": "Mines ore three times faster than a hammer; rips cliffs down."
+      "desc": "Mines ore three times faster than a hammer; quarries cliff faces swiftly."
     },
     "saw": {
       "id": "saw",
@@ -289,8 +303,9 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/basket.svg",
+      "slot": "pack",
       "slots": 4,
-      "desc": "+4 pack slots."
+      "desc": "+4 pack slots while worn."
     },
     "leather_pack": {
       "id": "leather_pack",
@@ -298,8 +313,9 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/leather_pack.svg",
+      "slot": "pack",
       "slots": 6,
-      "desc": "+6 pack slots."
+      "desc": "+6 pack slots while worn."
     },
     "cart": {
       "id": "cart",
@@ -307,8 +323,29 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/cart.svg",
+      "slot": "pack",
       "slots": 8,
-      "desc": "+8 pack slots, and you travel roads faster."
+      "desc": "+8 pack slots, and you travel roads faster while worn."
+    },
+    "walking_stick": {
+      "id": "walking_stick",
+      "name": "Walking Stick",
+      "kind": "gear",
+      "stack": 1,
+      "icon": "icons/walking_stick.svg",
+      "slot": "hand",
+      "moveBonus": 2,
+      "desc": "A simple wooden walking stick. +2 hexes per turn while held."
+    },
+    "boots": {
+      "id": "boots",
+      "name": "Leather Boots",
+      "kind": "gear",
+      "stack": 1,
+      "icon": "icons/boots.svg",
+      "slot": "feet",
+      "moveBonus": 2,
+      "desc": "Stout stitched leather boots. +2 hexes per turn while worn."
     },
     "bow": {
       "id": "bow",
@@ -316,9 +353,10 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/bow.svg",
+      "slot": "hand",
       "attack": 3,
       "range": 2,
-      "desc": "Hunt without spending cord, for more meat. Shoots raiders 2 hexes away."
+      "desc": "Hunt without spending cord, for more meat. Shoots raiders 2 hexes away while worn."
     },
     "sword": {
       "id": "sword",
@@ -326,6 +364,7 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/sword.svg",
+      "slot": "hand",
       "attack": 4,
       "desc": "The best weapon there is."
     },
@@ -335,8 +374,9 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/hide_armor.svg",
+      "slot": "body",
       "defense": 1,
-      "desc": "+1 defence die."
+      "desc": "+1 defence die while worn."
     },
     "shield": {
       "id": "shield",
@@ -344,8 +384,9 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/shield.svg",
+      "slot": "offhand",
       "defense": 1,
-      "desc": "+1 defence die."
+      "desc": "+1 defence die while worn."
     },
     "iron_mail": {
       "id": "iron_mail",
@@ -353,8 +394,18 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/iron_mail.svg",
+      "slot": "body",
       "defense": 2,
-      "desc": "+2 defence dice."
+      "desc": "+2 defence dice while worn."
+    },
+    "cloak": {
+      "id": "cloak",
+      "name": "Hooded Cloak",
+      "kind": "gear",
+      "stack": 1,
+      "icon": "icons/cloak.svg",
+      "don": true,
+      "desc": "A wool cloak and hood, dyed your colour. Put it on and it is yours for good: it keeps the night chill off when you sleep away from a fire. Sold in farming and herbalist villages."
     },
     "amulet": {
       "id": "amulet",
@@ -362,8 +413,9 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/amulet.svg",
+      "slot": "head",
       "defense": 1,
-      "desc": "+1 defence die. Also the heart of a shrine."
+      "desc": "+1 defence die while worn. Also the heart of a shrine."
     },
     "whetstone": {
       "id": "whetstone",
@@ -388,7 +440,7 @@
       "kind": "gear",
       "stack": 1,
       "icon": "icons/dog.svg",
-      "desc": "Follows you. +1 attack die, and an extra catch when you hunt or forage."
+      "desc": "Tamed from a rare wild dog. Follows you, +1 attack die, and an extra catch when you hunt or forage."
     },
     "hearth": {
       "id": "hearth",
@@ -425,7 +477,7 @@
       "stack": 30,
       "icon": "icons/field.svg",
       "hp": 4,
-      "desc": "Sow grain; reap three to five times as much a day later."
+      "desc": "Sow grain or rare herb seeds; reap a rich harvest a day later."
     },
     "palisade": {
       "id": "palisade",
@@ -498,6 +550,7 @@
     "meat": 2,
     "fish": 2,
     "herb": 3,
+    "herb_seed": 4,
     "branch": 1,
     "log": 2,
     "reed": 1,
@@ -529,12 +582,15 @@
     "basket": 10,
     "leather_pack": 25,
     "cart": 60,
+    "walking_stick": 8,
+    "boots": 22,
     "bow": 22,
     "sword": 70,
     "hide_armor": 20,
     "shield": 18,
     "iron_mail": 80,
     "amulet": 12,
+    "cloak": 18,
     "whetstone": 25,
     "rally_banner": 30,
     "dog": 40
@@ -766,6 +822,23 @@
       },
       "xp": 5
     },
+    "walking_stick": {
+      "id": "walking_stick",
+      "name": "Walking Stick",
+      "skill": "woodworking",
+      "level": 1,
+      "inputs": {
+        "branch": 2,
+        "cord": 1
+      },
+      "output": {
+        "walking_stick": 1
+      },
+      "xp": 5,
+      "tools": [
+        "stone_knife"
+      ]
+    },
     "split_planks": {
       "id": "split_planks",
       "name": "Split Planks",
@@ -782,7 +855,8 @@
         [
           "stone_axe",
           "iron_axe"
-        ]
+        ],
+        "stone_knife"
       ]
     },
     "saw_planks": {
@@ -1015,6 +1089,20 @@
       "xp": 6,
       "category": "build"
     },
+    "herb_field": {
+      "id": "herb_field",
+      "name": "Sow Herbs",
+      "skill": "homesteading",
+      "level": 2,
+      "inputs": {
+        "herb_seed": 2
+      },
+      "output": {
+        "field": 1
+      },
+      "xp": 8,
+      "category": "build"
+    },
     "bread": {
       "id": "bread",
       "name": "Bake Bread",
@@ -1045,6 +1133,23 @@
       "xp": 6,
       "tools": [
         "hearth"
+      ]
+    },
+    "boots": {
+      "id": "boots",
+      "name": "Leather Boots",
+      "skill": "homesteading",
+      "level": 2,
+      "inputs": {
+        "hide": 2,
+        "cord": 1
+      },
+      "output": {
+        "boots": 1
+      },
+      "xp": 8,
+      "tools": [
+        "stone_knife"
       ]
     },
     "hut": {
@@ -1133,25 +1238,6 @@
       "xp": 12,
       "tools": [
         "stone_knife"
-      ]
-    },
-    "tame_dog": {
-      "id": "tame_dog",
-      "name": "Tame a Dog",
-      "skill": "homesteading",
-      "level": 4,
-      "inputs": {
-        "meal": 3
-      },
-      "output": {
-        "dog": 1
-      },
-      "xp": 15,
-      "tools": [
-        "hut"
-      ],
-      "needs": [
-        "skill:mind:2"
       ]
     },
     "rations": {
@@ -1397,7 +1483,7 @@
     "stoneworking": {
       "1": [
         "Flint Knife, Stone Axe, Stone Hammer.",
-        "Gather stone and flint; mine cliff faces with a hammer."
+        "Gather stone and flint; quarry cliff faces with a hammer."
       ],
       "2": [
         "Dress stone into blocks."
@@ -1417,10 +1503,10 @@
     "woodworking": {
       "1": [
         "Twist cord from reeds, or cut it from hide.",
-        "Basket (+4 slots), Fishing Rod."
+        "Basket (+4 slots), Fishing Rod, Walking Stick (+2 hexes/turn)."
       ],
       "2": [
-        "Split planks.",
+        "Split planks (with axe and knife).",
         "Palisade walls, and the Workbench."
       ],
       "3": [
@@ -1438,19 +1524,18 @@
     },
     "homesteading": {
       "1": [
-        "Hearth: cook, rest, respawn.",
+        "Relight the campfire (branch + flint) or build a Hearth: cook, rest, respawn.",
         "Cook meat and fish into meals."
       ],
       "2": [
-        "Sow fields, bake bread, fire clay pots."
+        "Sow grain or herb fields, bake bread, fire clay pots, stitch Leather Boots (+2 hexes/turn)."
       ],
       "3": [
         "Hut: home, stash, more energy.",
         "Stew, and Hide Armour."
       ],
       "4": [
-        "Leather Pack (+6 slots).",
-        "Tame a Dog (with Mind 2)."
+        "Leather Pack (+6 slots)."
       ],
       "5": [
         "Trail Rations: dense food for long trips."
@@ -1476,12 +1561,12 @@
     },
     "mind": {
       "1": [
-        "Mind grows by going places: scenic finds, villages, the wild.",
+        "Mind grows by meditating at scenic places and exploring the wild.",
         "Find herbs. Flint Amulet (+1 defence)."
       ],
       "2": [
         "Salve heals 5 (needs a pot).",
-        "Dogs will trust you."
+        "Wild dogs may trust you (feed Cooked Meal or Raw Meat)."
       ],
       "3": [
         "LORE: read the rock. Ore shows itself, and you can prospect.",
@@ -1513,7 +1598,8 @@
         "grain",
         "bread",
         "meal",
-        "pot"
+        "pot",
+        "cloak"
       ],
       "station": "hearth",
       "favours": [
@@ -1533,6 +1619,8 @@
         "log",
         "plank",
         "cord",
+        "stone_knife",
+        "walking_stick",
         "bow"
       ],
       "station": "workbench",
@@ -1591,9 +1679,12 @@
       "name": "Herbalists",
       "sells": [
         "herb",
+        "herb_seed",
         "salve",
+        "stone_knife",
         "amulet",
-        "clay"
+        "clay",
+        "cloak"
       ],
       "station": "hearth",
       "favours": [

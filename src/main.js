@@ -13,8 +13,8 @@ import { Rng } from './core/rng.js';
 import { Player } from './game/player.js';
 import { pickHex, pointInHex, tileCenter, traceTopFace, distance, neighbors, columnBaseY, GEOM } from './world/hexgrid.js';
 
-import { createState, itemName, RECIPES, ITEMS, dayOf, moonOf, isNight, DAY_LENGTH, hasBuilt } from './game/state.js';
-import { walkOneStep, recomputeEnergy, countItem, removeItem, foodValue, usedSlots, capacity } from './game/inventory.js';
+import { createState, itemName, RECIPES, ITEMS, dayOf, moonOf, isNight, hasBuilt } from './game/state.js';
+import { walkOneStep, recomputeEnergy, countItem, removeItem, foodValue, usedSlots, capacity, isWorn } from './game/inventory.js';
 import { craft, checkRecipe, recipeKnown } from './game/crafting.js';
 import { ensureVillage, buy, sell, giveFavour, villageContext, isTrusted, isRaided } from './game/economy.js';
 import { villageNear } from './game/context.js';
@@ -27,13 +27,16 @@ import { makeMasks } from './render/masks.js';
 import { createFx, drawColumnNodes, drawCampfire, SHAKE_MS } from './render/resources.js';
 import { onStep as mindStep, onExplored, onMeditated, onTrade } from './game/mind.js';
 import { Explorer } from './game/explorer.js';
-import { attackDice, reach, maxHp } from './game/gear.js';
+import { attackDice, reach, maxHp, playerGearSnapshot } from './game/gear.js';
 import { levelOf } from './game/skills.js';
 import { checkJourney, STAGES } from './game/journey.js';
 import {
   updateUnits, garrisonCamps, guardsAt, hostiles, strike, spoils, rally, burnCamp,
-  campsLeft, ensureRaidState, raidSize, abroad, KINDS,
+  campsLeft, ensureRaidState, raidSize, abroad, KINDS, tickSchedule, stepRaidTurn, TURN_UNIT_SECONDS,
 } from './game/raiders.js';
+import { ensureTurnState, advanceTurn, spendMoveStep, spendAction } from './game/turns.js';
+import { sleepContext, canSleep, sleepNight } from './game/sleep.js';
+import { seedWildDogs, tryTameWildDog, strikeWildDog, wildDogAt } from './game/wild_dogs.js';
 import { drawExploreCharge, drawMeditationGlow, Pings, loadResourceIcons, drawResourceIcons, drawScenicRings } from './render/discovery_fx.js';
 import { chime, updateMeditationHum } from './ui/chime.js';
 
@@ -97,6 +100,7 @@ async function boot() {
   const state = restored ? restored.state : createState();
   if (params.get('free') === '1') state.free = true;
   ensureMind(state);
+  ensureTurnState(state);
   state.stats ||= {};
   state.trust ||= {};
   state.goals ||= {};
@@ -105,6 +109,7 @@ async function boot() {
   if (state.hp == null) state.hp = maxHp(state);
   ensureRaidState(state);
   if (!restored) garrisonCamps(map, state);
+  if (!restored || !state.wildDogsSeeded) seedWildDogs(map, state, () => rng.next());
   recomputeEnergy(state);
 
   const camera = new Camera({ scale: 3 });
@@ -113,6 +118,10 @@ async function boot() {
 
   const player = new Player(map, restored?.player || map.spawn);
   if (!restored) player.seated = true;
+  const syncPlayerGear = () => {
+    player.equipped = playerGearSnapshot(state);
+  };
+  syncPlayerGear();
   ensureDog(map, state, player);
   const start = player.restingPos;
   camera.centerOn(start.cx, start.cy);
@@ -126,11 +135,11 @@ async function boot() {
   let features = [];
   let eye = false;
   let swing = 0;               // seconds until you can strike again
-  let regen = 0;
-  let cropClock = 0;
+  let turnSimBudget = 0;       // simulated raid-unit seconds queued by turns
   let hudClock = 0;
   let saveClock = 0;
-  let combatUntil = 0;         // world time; regen pauses while fighting
+  let combatUntilTurn = -1;
+  let currentShadeAlpha = isNight(state) ? 0.36 : 0;
   let dead = false;
   const fx = createFx();
   const explorer = new Explorer(map, state);
@@ -150,6 +159,7 @@ async function boot() {
 
   const game = {
     state, world, map, player, camera, rng, tileCenter,
+    syncPlayerGear,
     panels: {
       inventory: inventoryPanel, crafting: craftingPanel, skills: skillsPanel, trade: tradePanel,
       build: buildPanel, menu: menuPanel, stash: stashPanel, message: messagePanel,
@@ -173,7 +183,7 @@ async function boot() {
       chime('tick', 0.05);
       announceLevels(result.recipe.skill, result.levelsGained);
       checkItemThoughts(result.produced.map(p => p.id));
-      afterChange();
+      takeAction(1);
     },
 
     beginPlacement(recipeId) {
@@ -208,8 +218,11 @@ async function boot() {
             refreshArt(world, result.changed.filter(c => c.terrain !== 'farm'));
           }
           rebuildFeatures();
-        } else game.ui.notify(result.message);
-        afterChange();
+          takeAction(1);
+        } else {
+          game.ui.notify(result.message);
+          afterChange();
+        }
       });
     },
 
@@ -222,7 +235,8 @@ async function boot() {
         if (result.found?.length) chime('silver');
         announceLevels('metalworking', result.levels);
         rebuildFeatures();
-        afterChange();
+        if (result.ok) takeAction(1);
+        else afterChange();
       });
     },
 
@@ -269,7 +283,7 @@ async function boot() {
         const left = campsLeft(map).length;
         game.ui.ping({ kind: 'victory', title: `${camp.feature.name} burns`, sub: left ? `${left} left` : '' });
         game.ui.floatText(playerPos, `+${gold} gold`, 'gain');
-        afterChange();
+        takeAction(1);
         if (!campsLeft(map).length && !state.won) victory();
       });
     },
@@ -292,11 +306,62 @@ async function boot() {
         game.ui.murmur(result.message, { tone: 'good', ms: 5200 });
         announceLevels('homesteading', result.levels);
         rebuildFeatures();
-        afterChange();
+        takeAction(1);
       });
     },
 
+    doSleep() {
+      if (dead || player.moving) return;
+      const check = canSleep(map, state, player);
+      if (!check.ok) {
+        game.ui.notify(check.reason, 3600, 'bad');
+        return;
+      }
+      player.stop();
+      player.seated = true;
+      const res = sleepNight(world, state, player, { rng: () => rng.next() });
+      if (!res.ok) {
+        game.ui.notify(res.message, 3600, 'bad');
+        return;
+      }
+      if (res.cropsChanged?.length) rebuildFeatures();
+      if (res.died) {
+        game.ui.notify(res.message, 4600, 'bad');
+        die();
+        return;
+      }
+      if (res.wokenByDog) {
+        chime('raid');
+        game.ui.floatText(playerPos, `-${res.ambushDamage} wild dog!`, 'bad');
+        game.ui.murmur(res.message, { tone: 'bad', ms: 5200 });
+      } else {
+        chime('gold', 0.05);
+        game.ui.murmur(res.message, { tone: res.coldDamage > 0 ? 'bad' : 'good', ms: 5200 });
+        if (res.coldDamage > 0) game.ui.floatText(playerPos, `-${res.coldDamage} cold`, 'bad');
+      }
+      const ev = [];
+      tickSchedule(world, state, ev);
+      handleEvents(ev);
+      afterChange();
+    },
+
+    doWaitTurn() {
+      if (dead || player.moving) return;
+      const res = advanceTurn(world, state, player, {
+        inCombat: (state.turn || 0) < combatUntilTurn,
+        rng: () => rng.next(),
+        resetProgress: true,
+      });
+      onTurnAdvanced(res);
+    },
+
     toggleEye() { eye = !eye; game.ui.setEye(eye); },
+
+    doSetColor(id) {
+      state.playerColor = id;
+      syncPlayerGear();
+      game.ui.refreshPanel();
+    },
 
     doToggleFree() {
       state.free = !state.free;
@@ -379,7 +444,42 @@ async function boot() {
     return "If only I had a ladder... I'll need planks (cut with an axe and knife) and reed cord to build one.";
   }
 
+  function onTurnAdvanced(res) {
+    if (!res) return;
+    const events = [...(res.events || [])];
+    tickSchedule(world, state, events);
+    const m = moonOf(state);
+    if (m.phase === 'raid' || abroad(state).length > 0
+      || (state.units || []).some(u => u.hp > 0 && distance(u.q, u.r, player.q, player.r) <= 8)) {
+      turnSimBudget = Math.min(TURN_UNIT_SECONDS * 2, turnSimBudget + TURN_UNIT_SECONDS);
+    }
+    handleEvents(events);
+    if (res.cropsChanged?.length) rebuildFeatures();
+    if (res.becameNight) {
+      game.ui.murmur('Dusk falls — 12 turns until dawn. Find shelter and warmth to sleep.', { ms: 4600 });
+    } else if (res.becameDawn) {
+      game.ui.murmur('Dawn breaks across the valley.', { tone: 'good', ms: 4200 });
+    }
+    if (res.becameLate) {
+      game.ui.murmur('You are up too late — your energy starts draining faster.', { tone: 'bad', ms: 5200 });
+    } else if (res.drain > 0 && res.dayInfo?.isNight && (state.sleepDebt || 0) >= 3) {
+      game.ui.murmur(`Exhaustion drains ${res.drain.toFixed(1).replace(/\.0$/, '')} energy — get some sleep.`, { tone: 'bad', ms: 3400 });
+    }
+    if (state.hp <= 0 && !dead) { die(); return; }
+    afterChange();
+  }
+
+  function takeAction(cost = 1) {
+    const adv = spendAction(world, state, player, cost, {
+      inCombat: (state.turn || 0) < combatUntilTurn,
+      rng: () => rng.next(),
+    });
+    if (adv.advanced) onTurnAdvanced(adv);
+    else afterChange();
+  }
+
   function afterChange() {
+    syncPlayerGear();
     const j = checkJourney(state, world);
     for (const g of j.goals) game.ui.ping({ kind: 'goal', title: g.text });
     for (const st of j.stages) {
@@ -562,10 +662,39 @@ async function boot() {
     return [{ q: d.q, r: d.r, draw: ctx => drawDog(ctx, p.x, p.y, dogDrawOpts(d)) }];
   };
 
+  const wildDogEntities = () => (state.wildDogs || []).filter(d => d.hp > 0).map(d => {
+    const { cx, cy } = tileCenter(d.q, d.r, Math.max(0, map.surfaceAt(d.q, d.r)));
+    return {
+      q: d.q, r: d.r,
+      draw: ctx => {
+        drawDog(ctx, cx, cy, {
+          facing: d.facing || 1,
+          t: state.time,
+          stance: 'idle',
+          wild: true,
+          hostile: !!d.hostile,
+        });
+        if (d.hp < d.maxHp) {
+          hpBar(ctx, Math.round(cx), Math.round(cy) - 16, d.hp / d.maxHp, d.hostile ? '#d1596d' : '#d9b45b');
+        }
+      },
+    };
+  });
+
   const onDogBody = (w) => {
     if (!w || !countItem(state, 'dog') || !state.dog) return false;
     const p = dogPos(map, state.dog);
     return Math.hypot(w.x - p.x, w.y - (p.y - 4)) <= 8;
+  };
+
+  const onWildDogBody = (w) => {
+    if (!w || !(state.wildDogs || []).length) return null;
+    for (const d of state.wildDogs) {
+      if (d.hp <= 0) continue;
+      const { cx, cy } = tileCenter(d.q, d.r, Math.max(0, map.surfaceAt(d.q, d.r)));
+      if (Math.hypot(w.x - cx, w.y - (cy - 4)) <= 9) return d;
+    }
+    return null;
   };
 
   /** A bridge is highlighted where its deck will be, not down on the water. */
@@ -637,7 +766,7 @@ async function boot() {
     // Your health, over your head, when you are hurt.
     if (state.hp < maxHp(state)) {
       const p = player.pos;
-      hpBar(ctx, Math.round(p.x), Math.round(p.y) - 20, state.hp / maxHp(state), '#7ad15a');
+      hpBar(ctx, Math.round(p.x), Math.round(p.y) - 21, state.hp / maxHp(state), '#7ad15a');
     }
     if (!preview || preview.length < 2) return;
     ctx.fillStyle = 'rgba(255, 248, 220, 0.5)';
@@ -647,14 +776,10 @@ async function boot() {
     }
   };
 
-  /** Night falls over the last quarter of each day. */
+  /** Night falls across the 12 night turns of each 24-turn day. */
   const nightShade = (ctx) => {
-    const { frac } = dayOf(state);
-    let a = 0;
-    if (frac > 0.72) a = Math.min(1, (frac - 0.72) / 0.06);
-    if (frac > 0.96) a = Math.max(0, 1 - (frac - 0.96) / 0.04);
-    if (a <= 0) return;
-    ctx.fillStyle = `rgba(14, 18, 52, ${0.38 * a})`;
+    if (currentShadeAlpha <= 0.005) return;
+    ctx.fillStyle = `rgba(14, 18, 52, ${currentShadeAlpha.toFixed(3)})`;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   };
 
@@ -688,21 +813,48 @@ async function boot() {
   // --------------------------------------------------------------- context
 
   function refreshContext() {
-    game.ui.clearContext();
+    if (dead || placing || player.moving) {
+      game.ui.clearContext();
+      return;
+    }
+    const offers = [];
+    if (isNight(state)) {
+      const sc = sleepContext(map, state, player);
+      if (!sc.raidActive) {
+        const label = sc.inVillage
+          ? `Sleep at ${sc.village.feature.name} (${state.free ? 'free' : `${sc.cost}g`})`
+          : sc.inHut && sc.nearFire ? 'Sleep in Hut'
+            : sc.inHut ? (sc.cloaked ? 'Sleep in Hut' : 'Sleep in Hut (cold)')
+              : sc.nearFire ? 'Sleep by Fire (exposed)'
+                : sc.cloaked ? 'Sleep Outdoors (exposed)' : 'Sleep Outdoors (cold & exposed)';
+        offers.push({ id: 'sleep', label, important: true });
+      }
+      offers.push({ id: 'wait', label: 'Wait 1 Turn' });
+    } else if (abroad(state).length > 0 || state.raid?.stage === 'night') {
+      offers.push({ id: 'wait', label: 'Wait 1 Turn' });
+    }
+    if (!offers.length) {
+      game.ui.clearContext();
+      return;
+    }
+    game.ui.setContext(offers, player, offer => {
+      if (offer.id === 'sleep') game.doSleep();
+      else if (offer.id === 'wait') game.doWaitTurn();
+    });
   }
 
   player.speedAt = (from, to) => {
     const a = map.get(from.q, from.r), b = map.get(to.q, to.r);
     let m = 1;
     if (b && isWater(b.terrain) && !isBridged(map, to)) m *= 0.65;
-    if (a?.terrain === 'path' && b?.terrain === 'path' && countItem(state, 'cart')) m *= 1.6;
+    if (a?.terrain === 'path' && b?.terrain === 'path' && isWorn(state, 'cart')) m *= 1.6;
     if (state.energy <= 0 && foodValue(state) === 0 && !state.free) m *= 0.55;
     return m;
   };
 
   player.onStep = () => {
     const col = map.get(player.q, player.r);
-    const step = walkOneStep(state, { cartOnRoad: col?.terrain === 'path' && countItem(state, 'cart') > 0 });
+    const step = walkOneStep(state, { cartOnRoad: col?.terrain === 'path' && isWorn(state, 'cart') });
     if (step.exhausted && state.stepsWalked % 10 === 0) game.ui.notify('You are starving.', 3600, 'bad');
     if (col && (isWater(col.terrain) || isBridged(map, player)) && !state.stats.crossed) state.stats.crossed = 1;
     const mindRes = mindStep(world, state, player);
@@ -723,7 +875,12 @@ async function boot() {
     if (map.spawn && !map.get(map.spawn.q, map.spawn.r)?.feature) {
       thinkOnce('cold_campfire', 'The campfire here is cold. If I find a dry branch and a piece of flint, I can strike a spark and relight it.', 5800);
     }
-    afterChangeLight();
+    const turnStep = spendMoveStep(world, state, player, {
+      inCombat: (state.turn || 0) < combatUntilTurn,
+      rng: () => rng.next(),
+    });
+    if (turnStep.advanced) onTurnAdvanced(turnStep);
+    else afterChangeLight();
   };
 
   /** A step is too frequent for the full refresh; just the cheap parts. */
@@ -756,27 +913,55 @@ async function boot() {
 
   function nearestFoe() {
     let best = null;
+    const r = reach(state);
     for (const u of hostiles(state)) {
       const d = distance(u.q, u.r, player.q, player.r);
-      if (d > reach(state)) continue;
-      if (!best || d < best.d) best = { u, d };
+      if (d > r) continue;
+      if (!best || d < best.d) best = { kind: 'unit', target: u, d };
     }
-    return best?.u || null;
+    for (const wd of state.wildDogs || []) {
+      if (wd.hp <= 0 || !wd.hostile) continue;
+      const d = distance(wd.q, wd.r, player.q, player.r);
+      if (d > r) continue;
+      if (!best || d < best.d) best = { kind: 'wildDog', target: wd, d };
+    }
+    return best;
+  }
+
+  function wildDogAnchor(wd) {
+    return () => {
+      const { cx, cy } = tileCenter(wd.q, wd.r, Math.max(0, map.surfaceAt(wd.q, wd.r)));
+      return { x: cx, y: cy };
+    };
   }
 
   function playerStrikes(dt) {
     swing -= dt;
     if (swing > 0 || player.moving || dead) return;
-    const foe = nearestFoe();
-    if (!foe) return;
+    const found = nearestFoe();
+    if (!found) return;
+    const foe = found.target;
     swing = PLAYER_COOLDOWN;
-    combatUntil = state.time + 4;
-    if (foe.q !== player.q) player.facing = foe.q > player.q ? 1 : -1;
+    combatUntilTurn = (state.turn || 0) + 1;
+    player.faceToward(foe.q, foe.r);
     player.triggerAction('attack', 0.45);
+    if (found.kind === 'wildDog') {
+      const res = strikeWildDog(state, foe, attackDice(state), { next: () => rng.next() });
+      game.ui.showDice(wildDogAnchor(foe), res.roll, { friendly: true });
+      if (res.killed) {
+        chime('copper', 0.05);
+        if (res.loot.length) {
+          game.ui.floatText(wildDogAnchor(foe), `+ ${res.loot.map(g => `${g.qty} ${itemName(g.id)}`).join(', ')}`, 'gain');
+        }
+      }
+      takeAction(1);
+      return;
+    }
     const roll = strike(state, foe, attackDice(state));
     foe.hitAt = performance.now();
     game.ui.showDice(unitAnchor(foe), roll, { friendly: true });
     if (foe.hp <= 0) fell(foe, 'player');
+    takeAction(1);
   }
 
   function fell(u, by) {
@@ -813,7 +998,7 @@ async function boot() {
         afterChange();
       } else if (e.type === 'clash') {
         if (e.target === 'player') {
-          combatUntil = state.time + 4;
+          combatUntilTurn = (state.turn || 0) + 1;
           e.who.facing = player.q >= e.who.q ? 1 : -1;
           game.ui.showDice(playerPos, e.roll);
           if (e.roll.damage) chime('tick', 0.03);
@@ -821,6 +1006,10 @@ async function boot() {
           e.target.hitAt = performance.now();
           game.ui.showDice(unitAnchor(e.target), e.roll, { friendly: e.target.faction === 'raider' });
         }
+      } else if (e.type === 'wildDogClash') {
+        combatUntilTurn = (state.turn || 0) + 1;
+        game.ui.showDice(playerPos, e.roll);
+        if (e.roll.damage) chime('tick', 0.03);
       } else if (e.type === 'dogClash') {
         e.target.hitAt = performance.now();
         game.ui.showDice(unitAnchor(e.target), e.roll, { friendly: true });
@@ -845,20 +1034,21 @@ async function boot() {
   function updateAlert() {
     const raid = state.raid;
     const m = moonOf(state);
+    const turn = Math.max(0, Math.floor(state.turn || 0));
     const out = abroad(state).length;
-    const clock = s => { const t = Math.max(0, Math.round(s)); return t >= 60 ? `${Math.floor(t / 60)}m ${String(t % 60).padStart(2, '0')}s` : `${t}s`; };
+    const turnsTxt = n => { const k = Math.max(0, Math.round(n)); return `${k} ${k === 1 ? 'turn' : 'turns'}`; };
     if (raid?.stage === 'night') {
       const left = raid.waves.length - raid.sent;
       const more = left ? `, ${left} more wave${left > 1 ? 's' : ''} to come` : '';
-      game.ui.setAlert(`${out} abroad${more} · dawn in ${clock(m.dawnAt - state.time)}`, 'raid');
+      game.ui.setAlert(`${out} abroad${more} · dawn in ${turnsTxt(m.dawnAt - turn)}`, 'raid');
     } else if (raid?.stage === 'omen') {
-      game.ui.setAlert(`${raidSize(raid.waves)} at dusk · ${clock(m.duskAt - state.time)}`, 'omens');
+      game.ui.setAlert(`${raidSize(raid.waves)} at dusk · ${turnsTxt(m.duskAt - turn)}`, 'omens');
     } else if (out) {
       game.ui.setAlert(`${out} still abroad`, 'omens');
     } else game.ui.setAlert('');
   }
 
-  function healthTick(dt) {
+  function healthTick() {
     if (dead) return;
     const max = maxHp(state);
     if (state.hp > max) state.hp = max;
@@ -868,14 +1058,7 @@ async function boot() {
       state.hp = Math.min(max, state.hp + ITEMS.salve.heal);
       game.ui.floatText(playerPos, '+5 salve', 'heal');
     }
-    if (state.hp <= 0) return die();
-    if (state.hp >= max) { regen = 0; return; }
-    // Damage is serious: food never heals, only salve heals actively, and passive
-    // recovery is slow (1 hp per day out of combat).
-    const fighting = state.time < combatUntil;
-    if (fighting) return;
-    regen += dt;
-    if (regen >= DAY_LENGTH) { regen = 0; state.hp = Math.min(max, state.hp + 1); }
+    if (state.hp <= 0) die();
   }
 
   function homeHex() {
@@ -1077,6 +1260,43 @@ async function boot() {
     return true;
   }
 
+  function interactWildDog(wd) {
+    if (!wd || wd.hp <= 0) return;
+    if (wd.hostile) {
+      const d = distance(wd.q, wd.r, player.q, player.r);
+      if (d <= reach(state)) {
+        swing = 0;
+        playerStrikes(0.1);
+        return;
+      }
+      walkToAndDo(map.get(wd.q, wd.r), reach(state), () => {
+        swing = 0;
+        playerStrikes(0.1);
+      });
+      return;
+    }
+    walkToAndDo(map.get(wd.q, wd.r), 1, () => {
+      const live = wildDogAt(state, wd.q, wd.r);
+      if (!live) return;
+      player.faceToward(live.q, live.r);
+      player.triggerAction('forage', 0.55);
+      const res = tryTameWildDog(map, state, player, live, () => rng.next());
+      if (!res.ok) {
+        game.ui.notify(res.message, 3600, 'bad');
+        return;
+      }
+      if (res.tamed) {
+        chime('gold');
+        game.ui.floatText(playerPos, '+ Dog', 'gain');
+        game.ui.murmur(res.message, { tone: 'good', ms: 5200 });
+      } else {
+        chime('tick', 0.05);
+        game.ui.murmur(res.message, { ms: 4400 });
+      }
+      takeAction(1);
+    });
+  }
+
   function interactCliff(info) {
     if (!canMine()) {
       game.ui.notify('If I had the right tool, I might be able to mine that...');
@@ -1139,6 +1359,7 @@ async function boot() {
     }
     if (node.kind === 'tree' && !state.free && countItem(state, 'stone_axe') === 0 && countItem(state, 'iron_axe') === 0) {
       fx.shake.set(`${node.q},${node.r}`, performance.now());
+      player.dir = 'side';
       player.facing = node.dx >= 0 ? 1 : -1;
       player.triggerAction('chop', SHAKE_MS / 1000);
       chime('tick', 0.04);
@@ -1147,10 +1368,11 @@ async function boot() {
         game.ui.floatText(playerPos, '+ 1 Branch', 'gain');
         checkItemThoughts(res.gained.map(g => g.id));
         game.ui.notify('A branch shakes loose — you need an axe to fell the tree.');
+        takeAction(1);
       } else {
         game.ui.notify('Nothing else shakes loose. You need an axe to fell the tree.');
+        afterChange();
       }
-      afterChange();
       return;
     }
     const entry = harvestsHere(map, state, player).find(h => h.spec.id === node.harvest);
@@ -1191,7 +1413,8 @@ async function boot() {
     // the world's edge), so the node is asked for even when `hit` is null.
     fx.hover = (!placing && !dead) ? hitNodeAt(e, hit) : null;
     const hoverCol = hit && map.get(hit.q, hit.r);
-    const interactive = !placing && !dead && (dogSelected || onDogBody(ptrWorld) || !!fx.hover || !!hit && (
+    const hoverWild = (!placing && !dead) ? (onWildDogBody(ptrWorld) || (hit && wildDogAt(state, hit.q, hit.r))) : null;
+    const interactive = !placing && !dead && (dogSelected || onDogBody(ptrWorld) || !!hoverWild || !!fx.hover || !!hit && (
       (hoverCol?.feature?.type === 'village')
       || (hoverCol?.feature?.type === 'structure' && ['hut', 'hearth', 'workbench', 'forge'].includes(hoverCol.feature.item))
       || (hoverCol?.feature?.type === 'camp' && !hoverCol.feature.burned && !guardsAt(state, hoverCol))
@@ -1232,7 +1455,7 @@ async function boot() {
         announceLevels(RECIPES[placing.recipeId].skill, result.levels);
         placing = null;
         rebuildFeatures();
-        afterChange();
+        takeAction(1);
       }
       return;
     }
@@ -1271,12 +1494,21 @@ async function boot() {
       }
     }
 
-    // Clicking a raider walks you up to it; the fight starts on its own.
+    // Clicking a raider walks you up to it; clicking a wild dog interacts or fights.
     const foe = hostiles(state).find(u => u.q === target.q && u.r === target.r);
+    const wd = !foe ? (onWildDogBody(clickWorld) || wildDogAt(state, target.q, target.r)) : null;
+    if (wd) {
+      interactWildDog(wd);
+      return;
+    }
     let goal = target;
     if (foe) {
       const d = distance(foe.q, foe.r, player.q, player.r);
-      if (d <= reach(state)) return;
+      if (d <= reach(state)) {
+        swing = 0;
+        playerStrikes(0.1);
+        return;
+      }
       const beside = neighbors(foe.q, foe.r).map(n => map.get(n.q, n.r)).filter(Boolean)
         .sort((a, b) => distance(a.q, a.r, player.q, player.r) - distance(b.q, b.r, player.q, player.r));
       goal = beside.find(c => findPath(map, player, c, pathOpts())) || target;
@@ -1414,6 +1646,8 @@ async function boot() {
     if (k === 'c') game.ui.togglePanel('crafting');
     if (k === 'b') game.ui.togglePanel('build');
     if (k === 'k') game.ui.togglePanel('skills');
+    if (k === 'z' && !game.ui.openPanelName) game.doSleep();
+    if (e.key === '.' && !game.ui.openPanelName) game.doWaitTurn();
     if (/^[1-9]$/.test(e.key) && !game.ui.openPanelName) game.ui.pickContext(Number(e.key) - 1);
   });
 
@@ -1436,18 +1670,26 @@ async function boot() {
 
     if (running) {
       state.time += dt;
+      const { turnInDay } = dayOf(state);
+      const targetShade = turnInDay < 10 ? 0
+        : turnInDay === 10 ? 0.06
+          : turnInDay === 11 ? 0.17
+            : turnInDay <= 21 ? 0.36
+              : turnInDay === 22 ? 0.24
+                : 0.11;
+      currentShadeAlpha += (targetShade - currentShadeAlpha) * Math.min(1, dt * 4);
+
       const events = [];
       updateDog({ world, state, player, events, boat: hasBoat() }, dt);
-      updateUnits({ world, state, player, events, playerDown: dead }, dt);
+      const simDt = Math.min(turnSimBudget, dt * 3.0);
+      if (simDt > 0) {
+        turnSimBudget -= simDt;
+        updateUnits({ world, state, player, events, playerDown: dead }, simDt);
+      }
       handleEvents(events);
       playerStrikes(dt);
-      healthTick(dt);
+      healthTick();
 
-      cropClock += dt;
-      if (cropClock > 1) {
-        cropClock = 0;
-        if (growCrops(world, state).length) rebuildFeatures();
-      }
       hudClock += dt;
       if (hudClock > 0.25) { hudClock = 0; game.ui.updateHud(); updateAlert(); }
     }
@@ -1468,7 +1710,7 @@ async function boot() {
         if (res.meditated.xp) game.ui.floatText(playerPos, `+${res.meditated.xp} Mind`, 'gain');
         game.ui.murmur('Your mind clears, and the land feels sharper.', { tone: 'good', ms: 4500 });
         announceLevels('mind', res.levels);
-        afterChange();
+        takeAction(1);
       }
     }
 
@@ -1484,7 +1726,7 @@ async function boot() {
       // that hex and hidden by whatever hides the hex. As an overlay it was
       // painted over everything: stand behind a peak and the ring ran round the
       // mountain's face, as if that were what you were exploring.
-      entities: [...features, ...chargeEntity(now), ...meditationEntity(now), ...pings.entities(map, now, inView), ...unitEntities(), ...dogEntity(), player],
+      entities: [...features, ...chargeEntity(now), ...meditationEntity(now), ...pings.entities(map, now, inView), ...unitEntities(), ...wildDogEntities(), ...dogEntity(), player],
       overlays: [
         drawOverlays,
         ctx => pings.draw(ctx, map, now, inView),
@@ -1496,6 +1738,11 @@ async function boot() {
           ctx.save();
           ctx.globalAlpha = 0.38;
           for (const u of state.units || []) drawUnit(ctx, map, u, performance.now(), true);
+          for (const wd of state.wildDogs || []) {
+            if (wd.hp <= 0) continue;
+            const { cx, cy } = tileCenter(wd.q, wd.r, Math.max(0, map.surfaceAt(wd.q, wd.r)));
+            drawDog(ctx, cx, cy, { facing: wd.facing || 1, t: state.time, stance: 'idle', wild: true, hostile: !!wd.hostile });
+          }
           if (countItem(state, 'dog') && state.dog) {
             const p = dogPos(map, state.dog);
             drawDog(ctx, p.x, p.y, dogDrawOpts(state.dog, false));
@@ -1522,10 +1769,14 @@ async function boot() {
       if (col) {
         const f = col.feature;
         const foe = hostiles(state).find(u => u.q === col.q && u.r === col.r);
+        const wd = wildDogAt(state, col.q, col.r);
         const structureHint = f?.type === 'structure'
           ? ({ hut: 'click for stash', hearth: 'click to craft & cook', workbench: 'click to craft', forge: 'click to smelt' }[f.item] || '')
           : '';
         label = foe ? `${KINDS[foe.kind].name.toLowerCase()} · ${foe.hp}/${foe.maxHp} · ${KINDS[foe.kind].atk} attack, ${KINDS[foe.kind].def} defence`
+          : wd ? (wd.hostile
+            ? `wild dog (hostile) · ${wd.hp}/${wd.maxHp} · click to fight`
+            : `wild dog · click with meat or meal to tame (Mind 2)`)
           : fx.hover?.kind === 'ore' ? `ore vein · ${canMine() ? 'click to mine' : 'needs hammer or pickaxe'}`
             : cliffInfoAt(hoverWorld, hover) ? `cliff face · ${canMine() ? 'click to mine stone & flint' : 'needs hammer or pickaxe'}`
               : f?.type === 'village' ? `${f.name}, ${f.kind}${isTrusted(state, col.q, col.r) ? ' · trusts you' : ''}`
@@ -1541,10 +1792,21 @@ async function boot() {
   }
   requestAnimationFrame(frame);
 
-  /** Run the world forward by hand, a frame at a time — for testing from the console. */
-  game.advance = (seconds = 1) => {
-    for (let t = 0; t < seconds; t += 0.05) tick(last + 50);
-    return state.time;
+  /** Run the world forward by `turns` turns — for testing from the console. */
+  game.advance = (turns = 1) => {
+    const count = Math.max(1, Math.round(turns));
+    for (let i = 0; i < count; i++) {
+      const res = advanceTurn(world, state, player, {
+        inCombat: (state.turn || 0) < combatUntilTurn,
+        rng: () => rng.next(),
+      });
+      const ev = [...(res.events || [])];
+      stepRaidTurn({ world, state, player, events: ev, playerDown: dead });
+      handleEvents(ev);
+      if (res.cropsChanged?.length) rebuildFeatures();
+    }
+    afterChange();
+    return state.turn;
   };
 
   refreshContext();

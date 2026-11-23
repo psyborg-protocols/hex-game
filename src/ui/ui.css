@@ -102,6 +102,7 @@ html, body {
 .vital i { display: block; height: 100%; transition: width 220ms ease-out; }
 .vital.hp i { background: #c9566a; }
 .vital.en i { background: #d8b04a; }
+.vital.en.tired i { background: #d97745; }
 /* Low, and worth a glance: the only time a bar asks for one. */
 .vital.low { opacity: 1; animation: vital-low 1.7s ease-in-out infinite; }
 @keyframes vital-low { 50% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 9px 1px rgba(232, 104, 118, 0.95); } }
@@ -113,6 +114,7 @@ html, body {
 .sky { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: #e9d9a6; }
 .sky.night { color: #a9b8ff; }
 .sky .orb { font-size: 11px; line-height: 1; width: 12px; text-align: center; opacity: 0.9; }
+.sky .turn-clock { font-size: 11px; opacity: 0.85; white-space: nowrap; }
 .moon {
   position: relative;
   width: 114px;
@@ -448,7 +450,68 @@ kbd {
 .icon { image-rendering: pixelated; vertical-align: middle; }
 .dim { color: var(--ink-dim); }
 
+/* ------------------------------------------------------------ your colour */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 4px;
+}
+/* Each swatch is a scrap of the cloak: lit, mid and shade bands with its scarf stripe. */
+.swatch {
+  inline-size: 34px;
+  block-size: 34px;
+  padding: 0;
+  border: 2px solid var(--sw-edge);
+  border-radius: 3px;
+  background: linear-gradient(135deg,
+    var(--sw-lit) 0 30%, var(--sw-mid) 30% 62%, var(--sw-shade) 62% 78%,
+    var(--sw-accent) 78% 88%, var(--sw-shade) 88%);
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+.swatch:hover { transform: translateY(-1px); }
+.swatch.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+.swatch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (pointer: coarse) {
+  .swatch { inline-size: 44px; block-size: 44px; }
+}
+
 /* ------------------------------------------------------------ inventory */
+
+.worn-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 10px 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(107, 88, 54, 0.45);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.worn-slot {
+  flex: 1 0 44px;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  max-width: 64px;
+  aspect-ratio: 1;
+}
+.worn-slot.empty { opacity: 0.65; }
+.worn-slot.filled { background: rgba(217, 180, 91, 0.08); border-color: #5b4b2f; }
+.worn-label {
+  font-size: 10px;
+  line-height: 1.1;
+  color: var(--ink-dim);
+  text-align: center;
+  padding: 2px;
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .worn-slot { min-inline-size: 48px; min-block-size: 48px; }
+}
 
 .slots {
   display: grid;
@@ -468,7 +531,13 @@ kbd {
   border-radius: 3px;
 }
 
+.slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .slot { transition: border-color 140ms ease-out, background-color 140ms ease-out; }
+}
+
 .slot.empty { opacity: 0.4; }
+.worn-slot.empty { opacity: 0.65; }
 .slot .qty { position: absolute; right: 3px; bottom: 1px; font-size: 11px; }
 
 .line {
@@ -607,11 +676,18 @@ kbd {
 .where { color: #d8c79d; font-size: 12px; }
 
 .slot { color: inherit; font-family: inherit; cursor: pointer; padding: 0; }
-button.slot:hover, .slot.selected { border-color: var(--accent); }
+.slot.selected { border-color: var(--accent); }
+@media (hover: hover) {
+  button.slot:hover { border-color: var(--accent); }
+}
+@media (forced-colors: active) {
+  .slot { border-color: ButtonText; }
+  .slot.selected, .slot:focus-visible { outline: 2px solid Highlight; border-color: Highlight; }
+}
 .pack-stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
 .detail { margin-top: 8px; padding: 10px 12px; border: 1px solid #3a3227; border-radius: 4px; background: rgba(0,0,0,0.2); }
 .detail-head { display: flex; gap: 10px; align-items: center; }
-.detail-head > div { display: flex; flex-direction: column; }
+.detail-head > div { flex: 1; display: flex; flex-direction: column; }
 .detail .kind { font-size: 11px; text-transform: capitalize; }
 .detail p { font-family: Georgia, serif; font-size: 13px; }
 

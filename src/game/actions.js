@@ -18,8 +18,8 @@ import { regrowsAt } from './harvests.js';
 /** How far Lore reaches when you prospect. */
 export const PROSPECT_RADIUS = 4;
 
-/** World seconds a sown field takes to ripen: most of a day. */
-export const FIELD_RIPENS_IN = DAY_LENGTH * 0.6;
+/** Turns a sown field takes to ripen. */
+export const FIELD_RIPENS_IN = 18;
 
 /** The widest water a bridge will span. */
 export const MAX_SPAN = 9;
@@ -100,7 +100,7 @@ export function harvest(world, state, at, id, rng) {
 
   if (spec.depletes === 'field' && col.feature) {
     col.feature.ripe = false;
-    col.feature.plantedAt = state.time;
+    col.feature.plantedAt = state.turn || 0;
     col.frame = cropFrame(0, col.feature.variant || 0);
     changed.push(col);
   }
@@ -119,8 +119,8 @@ export function harvest(world, state, at, id, rng) {
   return { ok: true, gained, levels, changed, message: `+ ${what}` };
 }
 
-/** How long before a shaken wood has anything loose in it again. */
-const SHAKE_AGAIN = 60;
+/** How many turns before a shaken wood has anything loose in it again. */
+const SHAKE_AGAIN = 4;
 
 /**
  * Shake a tree you have no axe for. It does not come down, but a branch does:
@@ -133,8 +133,9 @@ export function shakeTree(world, state, at) {
   if (!col || col.feature?.type !== 'trees' || !(col.feature.remaining > 0)) return { ok: false };
   const k = `${col.q},${col.r}:shake`;
   state.picked ||= {};
-  if ((state.picked[k] ?? -1) > (state.time || 0)) return { ok: true, gained: [] };
-  state.picked[k] = (state.time || 0) + SHAKE_AGAIN;
+  const turn = state.turn || 0;
+  if ((state.picked[k] ?? -1) > turn) return { ok: true, gained: [] };
+  state.picked[k] = turn + SHAKE_AGAIN;
   const got = addItem(state, 'branch', 1);
   return { ok: true, gained: got ? [{ id: 'branch', qty: got }] : [] };
 }
@@ -300,7 +301,7 @@ export function build(world, state, at, recipeId, target, ctx = {}) {
     const variant = isHerb ? 1 : 0;
     map.place(col.q, col.r, 'farm', col.h, { sprite: CROPS[crop].sheet, frame: cropFrame(0, variant) });
     map.get(col.q, col.r).feature = {
-      type: 'field', kind: isHerb ? 'herb' : 'grain', crop, variant, ripe: false, plantedAt: state.time,
+      type: 'field', kind: isHerb ? 'herb' : 'grain', crop, variant, ripe: false, plantedAt: state.turn || 0,
       hp: STRUCTURE_HP.field, maxHp: STRUCTURE_HP.field,
     };
   } else {
@@ -334,13 +335,14 @@ export function destroyStructure(world, state, col) {
   return { item, loot };
 }
 
-/** Fields ripen with the world clock. Call every so often. */
+/** Fields ripen with the turn clock. Call each turn. */
 export function growCrops(world, state) {
   const changed = [];
+  const turn = state.turn || 0;
   for (const col of world.map) {
     const f = col.feature;
     if (f?.type !== 'field' || f.ripe) continue;
-    const age = state.time - (f.plantedAt ?? state.time);
+    const age = turn - (f.plantedAt ?? turn);
     const stage = Math.min(2, Math.floor((age / FIELD_RIPENS_IN) * 3));
     const frame = cropFrame(stage, f.variant || 0);
     if (frame !== col.frame) {

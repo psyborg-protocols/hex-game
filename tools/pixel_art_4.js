@@ -116,4 +116,48 @@ export const PART4 = {
     p.ellipse(10, 7, 2, 1, 'o');
     p.px(8, 6, 'w'); p.px(4, 9, 'w');
   },
+  walking_stick: (p) => {
+    p.diag(3, 12, 12, 3, 'o');
+    p.diag(4, 12, 13, 3, 'r');
+    p.px(11, 3, 'y'); p.px(12, 2, 'y'); p.px(12, 3, 'y'); p.px(13, 2, 'o');
+    p.px(8, 6, 'w'); p.px(9, 5, 'y'); p.px(9, 6, 'y'); p.px(10, 6, 'r');
+    p.px(2, 13, 'x'); p.px(3, 13, 's');
+  },
+  cloak: (p) => {
+    // a hooded cloak hung up: peaked hood, teal scarf, hem flaring out
+    p.ellipse(8, 4, 3, 3, 'r');
+    p.px(5, 2, 'r'); p.px(4, 1, 'r');
+    for (let y = 7; y <= 13; y++) {
+      const half = 3 + ((y - 7) >> 1);
+      p.rect(8 - half, y, half * 2 + 1, 1, 'r');
+    }
+    // light from the top left, shade down the right
+    p.px(6, 2, 'o'); p.px(6, 3, 'o'); p.px(5, 1, 'o');
+    p.vline(6, 8, 5, 'o'); p.vline(5, 10, 3, 'o');
+    p.vline(10, 8, 6, 'p'); p.vline(11, 9, 5, 'p'); p.vline(12, 11, 3, 'p');
+    p.px(9, 3, 'p'); p.px(10, 4, 'p');
+    // shadowed face opening
+    p.rect(7, 4, 3, 2, 'd'); p.px(8, 6, 'd');
+    // scarf, tail hanging down the front
+    p.rect(5, 7, 7, 1, 't'); p.px(8, 7, 'c');
+    p.px(6, 8, 't'); p.px(6, 9, 'b');
+  },
+  boots: (p) => {
+    // left boot
+    p.rect(2, 4, 4, 1, 'y');
+    p.rect(2, 5, 4, 6, 'o');
+    p.vline(2, 5, 5, 'y');
+    p.rect(2, 10, 5, 2, 'o');
+    p.px(6, 10, 'y');
+    p.px(3, 7, 'w'); p.px(3, 9, 'w');
+    p.rect(2, 12, 5, 1, 'd');
+    // right boot slightly forward
+    p.rect(8, 5, 4, 1, 'y');
+    p.rect(8, 6, 4, 6, 'o');
+    p.vline(11, 6, 5, 'r');
+    p.rect(8, 11, 5, 2, 'r');
+    p.rect(8, 11, 4, 1, 'o');
+    p.px(9, 8, 'w'); p.px(9, 10, 'w');
+    p.rect(8, 13, 5, 1, 'd');
+  },
 };

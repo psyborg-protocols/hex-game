@@ -47,6 +47,7 @@ export const stashPanel = {
         if (!slot) return;
         const moved = stashAdd(s, slot.id, slot.qty);
         if (moved) removeItem(s, slot.id, Math.min(moved, countItem(s, slot.id)));
+        game.syncPlayerGear?.();
         game.ui.refreshPanel();
       });
     }
@@ -59,6 +60,7 @@ export const stashPanel = {
         slot.qty -= got;
         if (slot.qty <= 0) s.stash[i] = null;
         if (!got) game.ui.notify('Your pack is full.');
+        game.syncPlayerGear?.();
         game.ui.refreshPanel();
       });
     }

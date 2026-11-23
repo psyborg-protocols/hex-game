@@ -12,7 +12,7 @@ import { test, run, eq, ok } from './_harness.mjs';
 import { ITEMS, RECIPES, SKILL_INFO, ITEM_BASE_PRICES, VILLAGE_KINDS } from '../data/game_data.js';
 import { HARVESTS } from '../src/game/harvests.js';
 import { createState, isBuilding, MAX_LEVEL } from '../src/game/state.js';
-import { addItem, countItem, removeItem, hasRoomFor, capacity, spend, maxEnergy, topUp } from '../src/game/inventory.js';
+import { addItem, countItem, removeItem, hasRoomFor, capacity, spend, maxEnergy, topUp, equipFromPack, unequipSlot, MAX_BITES_PER_TURN } from '../src/game/inventory.js';
 import { checkRecipe, craft, recipeKnown } from '../src/game/crafting.js';
 import { attackDice, defenseDice } from '../src/game/gear.js';
 import { addXp } from '../src/game/skills.js';
@@ -54,6 +54,7 @@ const CODED = new Set([
   'rally_banner',  // raiders.js: militia near a camp
   'dog',           // gear.js + harvests: +1 attack die, extra catch
   'cart',          // slots, and faster roads
+  'cloak',         // sleep.js: once donned, no cold damage sleeping away from a fire
   'hut', 'shrine', 'watchtower', 'palisade', 'stone_wall', 'ladder', 'bridge', 'field', 'hearth',
 ]);
 
@@ -68,7 +69,7 @@ test('significance: every item is an input, a tool, a station, or does something
     for (const id of Object.keys(h.bonus || {})) used.add(id);
   }
   const idle = Object.values(ITEMS).filter(i => !used.has(i.id) && !CODED.has(i.id)
-    && !i.food && !i.heal && !i.attack && !i.defense && !i.slots && !i.attackBonus);
+    && !i.food && !i.heal && !i.attack && !i.defense && !i.slots && !i.attackBonus && !i.moveBonus);
   eq(idle.map(i => i.id), [], 'these items do nothing');
 });
 
@@ -108,7 +109,10 @@ test('circularity: it takes tongs to make tongs', () => {
  * opens only once everything it needs has been made.
  */
 test('the whole graph is reachable from an empty pack', () => {
-  const have = new Set();
+  // Rare wild dogs are tamed in the wild rather than crafted at a bench, and
+  // the cloak has no recipe yet: it is only bought from villages.
+  const have = new Set(['dog', 'cloak']);
+  ok(Object.values(VILLAGE_KINDS).some(k => k.sells.includes('cloak')), 'a cloak can be bought');
   for (const h of Object.values(HARVESTS)) {
     if (h.tool || h.depletes) continue;
     for (const id of Object.keys(h.yields)) have.add(id);
@@ -151,7 +155,7 @@ test('cooking is worth it: a meal is twice the meat', () => {
   ok(ITEMS.stew.food * 2 > ITEMS.meat.food + ITEMS.grain.food + 2, 'stew is a good deal');
 });
 
-test('food is eaten on its own, cheapest first, without waste', () => {
+test('food is eaten on its own, cheapest first, rate-limited per turn, without waste', () => {
   const s = createState();
   s.inventory = s.inventory.map(() => null);
   s.energy = 2;
@@ -159,6 +163,10 @@ test('food is eaten on its own, cheapest first, without waste', () => {
   addItem(s, 'stew', 2);
   addItem(s, 'meat', 2);
   topUp(s);
+  eq(countItem(s, 'berries'), 2, 'rate-limited: eats 1 berry on this turn');
+  eq(s.eatenThisTurn, MAX_BITES_PER_TURN, 'eatenThisTurn counts bites');
+  // Simulate turn resets so remaining berries and 1 stew top up over turns.
+  for (let i = 0; i < 4; i++) { s.eatenThisTurn = 0; topUp(s); }
   eq(countItem(s, 'berries'), 0, 'berries go first');
   eq(countItem(s, 'stew'), 1, 'then a stew, and only as much as you need');
   ok(countItem(s, 'meat') === 2, 'the meat is left to be cooked');
@@ -166,13 +174,18 @@ test('food is eaten on its own, cheapest first, without waste', () => {
   ok(spend(s, 3), 'can spend what food covers');
 });
 
-test('gear changes the dice, and packs change the slots', () => {
+test('gear changes the dice, and packs change the slots while worn', () => {
   const s = createState();
   const base = capacity(s);
   addItem(s, 'basket', 1);
-  eq(capacity(s), base + 4, 'basket +4');
+  eq(capacity(s), base + 4, 'basket +4 (auto-equipped into empty pack slot)');
   addItem(s, 'basket', 1);
   eq(capacity(s), base + 4, 'a second basket adds nothing');
+  ok(unequipSlot(s, 'pack').ok, 'can take off worn basket');
+  eq(capacity(s), base, 'unworn basket does not add slots');
+  const idx = s.inventory.findIndex(x => x?.id === 'basket');
+  ok(equipFromPack(s, idx).ok, 'can re-equip basket from pack');
+  eq(capacity(s), base + 4, 'equipped again');
   eq(attackDice(s), 1, 'fists');
   addItem(s, 'stone_axe', 1);
   eq(attackDice(s), 2, 'axe');

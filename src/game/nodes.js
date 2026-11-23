@@ -49,8 +49,8 @@ const ROCKS = {
 const HOME_RADIUS = 4;
 const HOME_ROCKS = 0.35;
 
-/** How long an animal is in one place, in world seconds. */
-const GAME_STAYS = 90;
+/** How long an animal is in one place, in turns. */
+const GAME_STAYS = 5;
 const GAME_CHANCE = 0.13;
 
 // ------------------------------------------------------------------ rolls
@@ -104,11 +104,11 @@ function beeOn(map, col) {
   return !isSpawn(map, col) && col.terrain === 'meadow' && roll(map, col.q, col.r, 'bee') < 0.24;
 }
 
-/** Is there game on this hex at this moment? It moves on every so often. */
-function gameOn(map, col, time) {
+/** Is there game on this hex at this turn? It moves on every so often. */
+function gameOn(map, col, turn) {
   if (isSpawn(map, col)) return false;
   if (!HARVESTS.hunt.where(col, map)) return false;
-  const when = Math.floor((time || 0) / GAME_STAYS);
+  const when = Math.floor((turn || 0) / GAME_STAYS);
   return roll(map, col.q, col.r, `game:${when}`) < GAME_CHANCE;
 }
 
@@ -126,9 +126,9 @@ const taken = col => col.terrain === 'path' || col.terrain === 'farm'
 export function nodesAt(map, state, col) {
   if (!col || isWaterCol(col) || isSpawn(map, col)) return [];
   const out = [];
-  const time = state?.time || 0;
+  const turn = state?.turn || 0;
   const k = key(col.q, col.r);
-  const back = id => regrowsAt(state, col, id) > time;
+  const back = id => regrowsAt(state, col, id) > turn;
   const base = { q: col.q, r: col.r };
 
   if (col.feature?.type === 'trees' && col.feature.remaining > 0) {
@@ -180,7 +180,7 @@ export function nodesAt(map, state, col) {
         out.push({ ...base, kind: 'fish', harvest: 'fish', dx: 0, dy: 0, ready: true, variant: 0, on: { q: w.q, r: w.r } });
       }
     }
-    if (!back('hunt') && gameOn(map, col, time)) place('game', 'hunt', true, Math.floor(roll(map, col.q, col.r, 'gamev') * 2));
+    if (!back('hunt') && gameOn(map, col, turn)) place('game', 'hunt', true, Math.floor(roll(map, col.q, col.r, 'gamev') * 2));
     if (beeOn(map, col) && !state?.taken?.[`${k}:bee`]) place('bee', null, true, Math.floor(roll(map, col.q, col.r, 'beev') * 8));
   }
 

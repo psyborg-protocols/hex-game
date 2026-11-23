@@ -6,14 +6,12 @@
 import { tileCenter } from '../world/hexgrid.js';
 import { isWater } from '../world/tileset.js';
 import { isBridged } from '../world/pathfinding.js';
+import { drawPawn } from '../render/player_sprite.js';
 
+export { drawPawn };
 export const WALK_TILES_PER_SEC = 3.2;
 
-const INK = '#1b1420';
-const px = (ctx, c, x, y, w = 1, h = 1) => {
-  ctx.fillStyle = c;
-  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
-};
+const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
 export class Player {
   constructor(map, at) {
@@ -22,14 +20,27 @@ export class Player {
     this.r = at.r;
     this.path = [];        // remaining columns, current tile first
     this.leg = null;       // { from, to, t, duration }
-    this.facing = 1;       // +1 right, -1 left
+    this.facing = 1;       // +1 right, -1 left (when dir === 'side')
+    this.dir = 'side';     // 'side' | 'up' | 'down'
+    this.walkPhase = 0;    // continuous locomotion phase [0, 1) across multi-hex walks
     this.seated = false;   // resting beside the cold campfire at start
     this.animTime = 0;     // accumulated animation clock (seconds)
     this.actionAnim = null;// { kind, start, until }
-    this.equipped = null;  // optional { weapon, shield }
+    this.equipped = null;  // 6-slot snapshot { head, hand, offhand, body, feet, pack, chopTool, mineTool }
     this.onArrive = null;
     this.onStep = null;    // called with (q, r) each time a tile is reached
     this.speedAt = null;   // (from, to) => speed multiplier for that step
+  }
+
+  /** Face toward an adjacent or distant hex across 4 directions (up, down, left, right). */
+  faceToward(q, r) {
+    if (q === this.q && r === this.r) return;
+    if (q === this.q) {
+      this.dir = r < this.r ? 'up' : 'down';
+    } else {
+      this.dir = 'side';
+      this.facing = q > this.q ? 1 : -1;
+    }
   }
 
   get h() { return Math.max(0, this.map.surfaceAt(this.q, this.r)); }
@@ -66,8 +77,8 @@ export class Player {
   }
 
   /**
-   * Interpolated screen position. During a leg the pawn arcs upward, except
-   * when climbing a ladder where they ascend steadily up the cliff face.
+   * Interpolated screen position with per-tile quadratic easing across every
+   * step, hopping only when stepping up/down elevation or climbing ladders.
    */
   get pos() {
     if (!this.leg) {
@@ -75,12 +86,15 @@ export class Player {
       return { x: cx, y: cy };
     }
     const { from, to, t } = this.leg;
-    const a = tileCenter(from.q, from.r, Math.max(0, this.map.surfaceAt(from.q, from.r)));
-    const b = tileCenter(to.q, to.r, Math.max(0, this.map.surfaceAt(to.q, to.r)));
-    const e = ease(t);
+    const ah = Math.max(0, this.map.surfaceAt(from.q, from.r));
+    const bh = Math.max(0, this.map.surfaceAt(to.q, to.r));
+    const a = tileCenter(from.q, from.r, ah);
+    const b = tileCenter(to.q, to.r, bh);
+    const clampedT = Math.min(1, t);
+    const e = ease(clampedT);
     const hop = this.climbing
-      ? Math.sin(t * Math.PI) * 1
-      : Math.sin(t * Math.PI) * (2 + Math.abs(b.cy - a.cy) * 0.12);
+      ? Math.sin(clampedT * Math.PI) * 1
+      : (ah !== bh ? Math.sin(clampedT * Math.PI) * 1.5 : 0);
     return {
       x: a.cx + (b.cx - a.cx) * e,
       y: a.cy + (b.cy - a.cy) * e - hop,
@@ -93,6 +107,7 @@ export class Player {
     if (!path || path.length < 2) {
       this.path = [];
       this.leg = null;
+      this.walkPhase = 0;
       if (onArrive) onArrive();
       return;
     }
@@ -104,6 +119,7 @@ export class Player {
   stop() {
     this.path = [];
     this.leg = null;
+    this.walkPhase = 0;
     this.onArrive = null;
   }
 
@@ -111,13 +127,14 @@ export class Player {
     const next = this.path.shift();
     if (!next) {
       this.leg = null;
+      this.walkPhase = 0;
       const done = this.onArrive;
       this.onArrive = null;
       if (done) done();
       return;
     }
     const from = { q: this.q, r: this.r };
-    if (next.q !== from.q) this.facing = next.q > from.q ? 1 : -1;
+    this.faceToward(next.q, next.r);
     const mult = this.speedAt ? this.speedAt(from, next) : 1;
     this.leg = { from, to: next, t: 0, duration: 1 / (WALK_TILES_PER_SEC * mult) };
   }
@@ -127,7 +144,11 @@ export class Player {
     if (this.actionAnim && this.animTime >= this.actionAnim.until) {
       this.actionAnim = null;
     }
-    if (!this.leg) return;
+    if (!this.leg) {
+      this.walkPhase = 0;
+      return;
+    }
+    this.walkPhase = (this.walkPhase + dt * 2.2) % 1;
     this.leg.t += dt / this.leg.duration;
 
     // Hand the depth sorter the tile the pawn visually belongs to.
@@ -161,8 +182,10 @@ export class Player {
     }
     drawPawn(ctx, Math.round(x), Math.round(y), this.facing, ghost, {
       t: this.animTime,
+      dir: this.dir,
       moving: this.moving,
       legT: this.leg ? this.leg.t : 0,
+      walkPhase: this.walkPhase,
       climbing: this.climbing,
       boat: this.onWater,
       seated: this.seated && !this.moving && !action,
@@ -172,235 +195,3 @@ export class Player {
   }
 }
 
-const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-
-/**
- * Draw the handcrafted pixel-art explorer at (x, y) on 1x canvas grid.
- * Supports idle breathing, 4-phase walk stride, ladder climbing, coracle boat
- * rowing on water, harvesting/mining swings, and combat blade slashes.
- */
-export function drawPawn(ctx, x, y, facing = 1, ghost = false, anim = {}) {
-  const {
-    t = 0,
-    moving = false,
-    legT = 0,
-    climbing = false,
-    boat = false,
-    seated = false,
-    action = null,
-    equipped = null,
-  } = anim;
-
-  const f = facing >= 0 ? 1 : -1;
-
-  // Water coracle / rowboat mode
-  if (boat) {
-    drawBoatRider(ctx, x, y, f, t, moving, legT, ghost);
-    return;
-  }
-
-  // Seated by the cold campfire at start
-  if (seated) {
-    const breathe = Math.sin(t * 2.2) > 0.35 ? 1 : 0;
-    const sx = x + 3;
-    const sy = y + 3;
-    if (!ghost) {
-      ctx.fillStyle = 'rgba(20, 16, 30, 0.34)';
-      ctx.fillRect(sx - 5, sy, 12, 2);
-      ctx.fillRect(sx - 4, sy - 1, 10, 1);
-    }
-    // Grounded pack resting beside them
-    px(ctx, INK, sx + 3, sy - 4, 4, 4);
-    px(ctx, '#8f5b32', sx + 4, sy - 3, 2, 2);
-    px(ctx, '#c48d56', sx + 4, sy - 3, 1, 1);
-    // Resting walking staff leaned behind
-    px(ctx, INK, sx - 5, sy - 9, 2, 9);
-    px(ctx, '#8e5a32', sx - 4, sy - 8, 1, 7);
-    // Cloak & torso lowered to sit
-    px(ctx, INK, sx - 4, sy - 6 + breathe, 8, 6);
-    px(ctx, '#6b2835', sx - 3, sy - 5 + breathe, 6, 4);
-    px(ctx, '#963d4c', sx - 3, sy - 5 + breathe, 5, 4);
-    px(ctx, '#bd5968', sx - 3, sy - 5 + breathe, 2, 3);
-    px(ctx, '#e2c26b', sx - 2, sy - 2 + breathe, 4, 1);
-    // Cross-legged boots tucked forward toward the campfire
-    px(ctx, INK, sx - 4, sy - 1, 4, 2);
-    px(ctx, '#6b4228', sx - 3, sy - 1, 2, 1);
-    px(ctx, INK, sx, sy - 1, 3, 2);
-    px(ctx, '#8f5b32', sx + 1, sy - 1, 1, 1);
-    // Hooded head looking toward the cold fire
-    const hy = sy - 10 + breathe;
-    px(ctx, INK, sx - 3, hy, 6, 5);
-    px(ctx, INK, sx - 2, hy - 1, 4, 1);
-    px(ctx, '#963d4c', sx - 2, hy, 4, 2);
-    px(ctx, '#bd5968', sx - 2, hy, 2, 2);
-    px(ctx, '#eccca2', sx - 2, hy + 1, 3, 3);
-    px(ctx, INK, sx - 1, hy + 2, 1, 1);
-    return;
-  }
-
-  // Contact shadow (omitted on ghost silhouette pass)
-  if (!ghost) {
-    ctx.fillStyle = 'rgba(20, 16, 30, 0.34)';
-    ctx.fillRect(x - 5, y, 10, 2);
-    ctx.fillRect(x - 4, y - 1, 8, 1);
-    ctx.fillRect(x - 4, y + 2, 8, 1);
-  }
-
-  // Climbing pose on ladders
-  if (climbing) {
-    const climbPhase = Math.floor(legT * 6) % 2;
-    const cy = y - 1;
-    // Boots alternating rungs
-    px(ctx, INK, x - 3, cy - 2 - (climbPhase ? 2 : 0), 3, 3);
-    px(ctx, '#6b4228', x - 2, cy - 1 - (climbPhase ? 2 : 0), 1, 1);
-    px(ctx, INK, x, cy - 2 - (climbPhase ? 0 : 2), 3, 3);
-    px(ctx, '#6b4228', x + 1, cy - 1 - (climbPhase ? 0 : 2), 1, 1);
-    // Cloak back view + leather pack
-    px(ctx, INK, x - 4, cy - 10, 8, 8);
-    px(ctx, '#8c3745', x - 3, cy - 9, 6, 6);
-    px(ctx, '#b85060', x - 3, cy - 9, 2, 5);
-    px(ctx, '#63232f', x + 1, cy - 9, 2, 6);
-    // Backpack on shoulders
-    px(ctx, INK, x - 2, cy - 8, 5, 4);
-    px(ctx, '#9e683a', x - 1, cy - 7, 3, 2);
-    // Reaching hands
-    px(ctx, INK, x - 4, cy - 12 - (climbPhase ? 0 : 2), 2, 3);
-    px(ctx, '#eccca2', x - 4, cy - 12 - (climbPhase ? 0 : 2), 1, 1);
-    px(ctx, INK, x + 2, cy - 12 - (climbPhase ? 2 : 0), 2, 3);
-    px(ctx, '#eccca2', x + 3, cy - 12 - (climbPhase ? 2 : 0), 1, 1);
-    // Hooded head from behind
-    px(ctx, INK, x - 3, cy - 15, 6, 5);
-    px(ctx, '#963d4c', x - 2, cy - 14, 4, 3);
-    px(ctx, '#bd5968', x - 2, cy - 14, 2, 2);
-    return;
-  }
-
-  // Compute stride, breathing, and action offsets
-  const breathe = !moving && !action && Math.sin(t * 2.6) > 0.35 ? 1 : 0;
-  const stride = moving ? Math.sin(legT * Math.PI * 2) : 0;
-  const stepLift = moving ? Math.round(Math.abs(Math.cos(legT * Math.PI * 2))) : 0;
-  const lunge = action?.kind === 'attack' ? Math.round(Math.sin(action.p * Math.PI) * 2) * f : 0;
-  const crouch = action?.kind === 'forage' ? Math.round(Math.sin(action.p * Math.PI) * 2) : 0;
-
-  const bx = x + lunge;
-  const by = y - stepLift + crouch;
-
-  // 1. Trailing traveller's backpack on the back shoulder
-  const packX = bx - f * 4;
-  px(ctx, INK, packX - 1, by - 9 + breathe, 3, 5);
-  px(ctx, '#8f5b32', packX, by - 8 + breathe, 1, 3);
-  px(ctx, '#c48d56', packX, by - 8 + breathe, 1, 1);
-
-  // 2. Flowing crimson-and-ochre cloak body (billows back while walking)
-  const billow = moving ? -f * (Math.abs(stride) > 0.4 ? 2 : 1) : 0;
-  px(ctx, INK, bx - 4 + Math.min(0, billow), by - 9 + breathe, 8 + Math.abs(billow), 7);
-  px(ctx, INK, bx - 3, by - 10 + breathe, 6, 1);
-  // Cloak fill: deep shade right, main body, sunlit left edge
-  px(ctx, '#6b2835', bx - 3 + Math.min(0, billow), by - 9 + breathe, 6 + Math.abs(billow), 6);
-  px(ctx, '#963d4c', bx - 3, by - 9 + breathe, 5, 6);
-  px(ctx, '#bd5968', bx - 3, by - 9 + breathe, 2, 5);
-  // Gold cloak hem & throat clasp
-  px(ctx, '#e2c26b', bx - 2, by - 4 + breathe, 4, 1);
-  px(ctx, '#ffcd75', bx + f, by - 9 + breathe, 1, 1);
-
-  // 3. Boots / feet (drawn after cloak hem so walking stride stays clearly visible)
-  const footA = Math.round(stride * 2);
-  const footB = -footA;
-  const liftA = moving && footA > 0 ? 1 : 0;
-  const liftB = moving && footB > 0 ? 1 : 0;
-  px(ctx, INK, bx - 3 + footA, y - 2 - liftA, 3, 3);
-  px(ctx, '#6b4228', bx - 2 + footA, y - 1 - liftA, 2, 1);
-  px(ctx, INK, bx + 1 + footB, y - 2 - liftB, 3, 3);
-  px(ctx, '#8f5b32', bx + 1 + footB, y - 1 - liftB, 2, 1);
-
-  // 4. Head, peaked traveller's hood & face
-  const hy = by - 14 + breathe;
-  px(ctx, INK, bx - 3, hy, 6, 5);
-  px(ctx, INK, bx - 2, hy - 1, 4, 1);
-  px(ctx, INK, bx - f * 2, hy - 2, 2, 1); // peaked hood tip
-  // Hood cowl
-  px(ctx, '#963d4c', bx - 2, hy, 4, 2);
-  px(ctx, '#bd5968', bx - 2, hy, 2, 2);
-  px(ctx, '#963d4c', bx - f, hy - 1, 2, 1);
-  // Warm skin face turned toward facing
-  px(ctx, '#eccca2', bx - 1 + (f > 0 ? 0 : -1), hy + 1, 3, 3);
-  px(ctx, '#d4aa78', bx - (f > 0 ? 1 : 0), hy + 3, 2, 1);
-  // Crisp eye
-  px(ctx, INK, bx + (f > 0 ? 1 : -1), hy + 2, 1, 1);
-
-  // 5. Held gear / walking staff / tool swing / combat slash
-  const staffX = bx + f * 4;
-  if (action && (action.kind === 'chop' || action.kind === 'mine' || action.kind === 'build')) {
-    const swing = Math.sin(action.p * Math.PI);
-    const tx = bx + f * (3 + Math.round(swing * 3));
-    const ty = by - 11 + Math.round(swing * 6);
-    px(ctx, INK, bx + f * 2, by - 8, 2, 2);
-    px(ctx, '#8e5a32', tx - f, ty, 1, 4);
-    px(ctx, INK, tx - 1, ty - 2, 3, 3);
-    px(ctx, action.kind === 'mine' ? '#b8d0df' : '#d4dde6', tx, ty - 1, 2, 2);
-    if (action.p > 0.45 && action.p < 0.85) {
-      // Impact sparks / wood chips
-      const col = action.kind === 'mine' ? '#ffe588' : '#e2c26b';
-      px(ctx, col, tx + f * 2, ty + 2, 1, 1);
-      px(ctx, col, tx + f * 3, ty, 1, 1);
-    }
-  } else if (action && action.kind === 'attack') {
-    const sx = bx + f * 5;
-    const sy = by - 8;
-    // Blade lunge + crescent slash arc
-    px(ctx, '#f7f4e8', sx, sy - 1, f * 3, 1);
-    px(ctx, '#ffe288', sx + f * 2, sy - 4, 1, 3);
-    px(ctx, '#f7a53b', sx + f * 3, sy - 2, 1, 4);
-    px(ctx, '#ffe288', sx + f * 2, sy + 2, 1, 2);
-  } else {
-    // Explorer's ash walking staff (or iron sword tip if equipped) with subtle arm swing
-    const swingY = moving ? Math.round(-stride * 1.5) : breathe;
-    px(ctx, INK, staffX - 1, by - 12 + swingY, 3, 12);
-    px(ctx, '#8e5a32', staffX, by - 11 + swingY, 1, 10);
-    px(ctx, '#c48d56', staffX, by - 11 + swingY, 1, 3);
-    if (equipped?.weapon) {
-      px(ctx, '#d4dde6', staffX, by - 13 + swingY, 1, 3);
-    } else {
-      px(ctx, '#e2c26b', staffX, by - 12 + swingY, 1, 1);
-    }
-  }
-}
-
-/** Draw the explorer seated in a wooden coracle/rowboat with animated oar & ripples. */
-function drawBoatRider(ctx, x, y, f, t, moving, legT, ghost) {
-  const bob = Math.sin(t * 2.4) > 0.3 ? 1 : 0;
-  const by = y + bob;
-
-  if (!ghost) {
-    // Water reflection shadow + lapping ripples
-    ctx.fillStyle = 'rgba(18, 24, 58, 0.34)';
-    ctx.fillRect(x - 7, by + 2, 14, 2);
-    const rip = Math.floor(t * 3) % 2;
-    px(ctx, 'rgba(232, 244, 255, 0.55)', x - 8 - rip, by + 2, 2, 1);
-    px(ctx, 'rgba(232, 244, 255, 0.55)', x + 7 + rip, by + 1, 2, 1);
-  }
-
-  // Seated explorer upper body inside hull
-  px(ctx, INK, x - 3, by - 9, 6, 6);
-  px(ctx, '#963d4c', x - 2, by - 8, 4, 4);
-  px(ctx, '#bd5968', x - 2, by - 8, 2, 3);
-  px(ctx, INK, x - 3, by - 14, 6, 5);
-  px(ctx, '#963d4c', x - 2, by - 13, 4, 2);
-  px(ctx, '#eccca2', x - 1 + (f > 0 ? 0 : -1), by - 11, 3, 2);
-  px(ctx, INK, x + (f > 0 ? 1 : -1), by - 11, 1, 1);
-
-  // Wooden rowboat hull
-  px(ctx, INK, x - 8, by - 4, 16, 5);
-  px(ctx, INK, x - 6, by + 1, 12, 2);
-  px(ctx, '#5e381d', x - 7, by - 3, 14, 3);
-  px(ctx, '#8e5a32', x - 6, by - 3, 12, 2);
-  px(ctx, '#be8550', x - 6, by - 3, 7, 1);
-  // Bow accent in facing direction
-  px(ctx, '#e2c26b', x + f * 6, by - 4, 1, 1);
-
-  // Animated rowing oar
-  const stroke = moving ? Math.round(Math.sin(legT * Math.PI * 2) * 2) : Math.round(Math.sin(t * 1.8));
-  px(ctx, INK, x - 1 + stroke, by - 3, 2, 6);
-  px(ctx, '#c48d56', x + stroke, by - 2, 1, 4);
-  px(ctx, '#e5c690', x + stroke, by + 2, 2, 1);
-}

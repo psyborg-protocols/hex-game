@@ -2,6 +2,7 @@
 
 import { hasLocal, localSavedAt } from '../../game/save.js';
 import { escapeHtml } from '../ui.js';
+import { CLOAK_COLORS, cloakColor } from '../../render/player_sprite.js';
 
 export const menuPanel = {
   title: () => 'Game',
@@ -17,6 +18,19 @@ export const menuPanel = {
       <p class="dim">${skills}</p>
 
       <button class="line" data-act="help"><span></span><span>How to play</span></button>
+
+      <h3>Your colour</h3>
+      <div class="swatches" role="radiogroup" aria-label="Your colour">
+        ${CLOAK_COLORS.map(c => {
+          const on = cloakColor(game.state.playerColor).id === c.id;
+          return `<button type="button" class="swatch${on ? ' on' : ''}" role="radio" aria-checked="${on}"
+            data-color="${c.id}" title="${escapeHtml(c.name)}" aria-label="${escapeHtml(c.name)}"
+            style="--sw-lit:${c.cloak.h};--sw-mid:${c.cloak.l};--sw-shade:${c.cloak.m};--sw-edge:${c.cloak.o};--sw-accent:${c.scarf.b}"></button>`;
+        }).join('')}
+      </div>
+      <p class="dim">${game.state.cloak
+        ? `Your cloak is dyed <b>${escapeHtml(cloakColor(game.state.playerColor).name)}</b>.`
+        : 'Dyes your cloak, once you have one. Farming and herbalist villages sell them.'}</p>
 
       <h3>Save</h3>
       <button class="line" data-act="save"><span></span><span>Save to this browser</span></button>
@@ -58,6 +72,9 @@ export const menuPanel = {
       free: () => game.doToggleFree(),
       help: () => game.showHelp(),
     };
+    for (const btn of body.querySelectorAll('[data-color]')) {
+      btn.addEventListener('click', () => game.doSetColor(btn.dataset.color));
+    }
     for (const btn of body.querySelectorAll('[data-act]')) {
       btn.addEventListener('click', () => actions[btn.dataset.act]());
     }

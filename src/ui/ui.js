@@ -18,10 +18,14 @@
 // Everything that can be asked is still answerable: point at a corner, open a
 // panel. It just does not speak first.
 
-import { SKILLS, MAX_LEVEL, moonOf, isNight, MOON_DAYS, DUSK, OMENS_AT, isFree } from '../game/state.js';
+import {
+  SKILLS, MAX_LEVEL, DAY_TURNS, NIGHT_TURNS, TURNS_PER_DAY, OMENS_TURN,
+  dayOf, moonOf, MOON_DAYS, isFree, ACTIONS_PER_TURN,
+} from '../game/state.js';
 import { levelOf, progress, skillIcon } from '../game/skills.js';
 import { foodValue, maxEnergy, capacity, usedSlots } from '../game/inventory.js';
 import { attackDice, defenseDice, maxHp } from '../game/gear.js';
+import { maxMoveDistance, lateEnergyDrain, ensureTurnState } from '../game/turns.js';
 import { STAGES, currentStage } from '../game/journey.js';
 import { chime } from './chime.js';
 
@@ -231,28 +235,37 @@ export class UI {
    */
   updateHud() {
     const s = this.game.state;
+    ensureTurnState(s);
     const hpMax = maxHp(s);
     const eMax = maxEnergy(s);
+    const dInfo = dayOf(s);
     const moon = moonOf(s);
-    const night = isNight(s);
+    const night = dInfo.isNight;
     const pct = (v, m) => Math.max(0, Math.min(100, Math.round((v / m) * 100)));
     const food = foodValue(s);
     const hurt = s.hp <= hpMax * 0.4;
-    const hungry = !isFree(s) && s.energy <= eMax * 0.4 && food === 0;
+    const tired = !isFree(s) && (s.sleepDebt || 0) > 0;
+    const hungry = !isFree(s) && (tired || (s.energy <= eMax * 0.4 && food === 0));
     const phase = moon.phase === 'fair' ? '' : PHASE_NAMES[moon.phase];
+    const phaseLabel = night ? `Night ${dInfo.phaseTurn}/${NIGHT_TURNS}` : `Day ${dInfo.phaseTurn}/${DAY_TURNS}`;
+    const moveMax = maxMoveDistance(s);
+    const drain = tired ? lateEnergyDrain(s.sleepDebt) : 0;
 
     this.hudStats.innerHTML = `
       <div class="vital hp${hurt ? ' low' : ''}"><i style="width:${pct(s.hp, hpMax)}%"></i></div>
-      <div class="vital en${hungry ? ' low' : ''}"><i style="width:${pct(s.energy, eMax)}%"></i></div>
+      <div class="vital en${hungry ? ' low' : ''}${tired ? ' tired' : ''}"><i style="width:${pct(s.energy, eMax)}%"></i></div>
       <div class="sky ${night ? 'night' : ''}">
         <span class="orb">${night ? '&#9790;' : '&#9728;'}</span>
+        <span class="turn-clock">${phaseLabel}</span>
         <div class="moon" style="--omens:${MOON_MARKS.omens}%; --dusk:${MOON_MARKS.dusk}%"><i style="left:${(moon.progress * 100).toFixed(1)}%"></i></div>
       </div>
       ${this.alert.text ? `<div class="omen ${this.alert.tone}">${escapeHtml(this.alert.text)}</div>` : ''}`;
 
     this.hudMore.innerHTML = `
       <div><b>${Math.max(0, s.hp)}</b>/${hpMax} health &middot; <b>${Math.floor(s.energy)}</b>/${eMax} energy</div>
-      <div>${food ? `food for <b>${food}</b> more` : 'no food in your pack'}</div>
+      <div>${food ? `food for <b>${food}</b> more (1 bite/turn)` : 'no food in your pack'}</div>
+      <div><b>${moveMax}</b> hexes/turn &middot; <b>${ACTIONS_PER_TURN}</b> actions/turn &middot; turn <b>${s.turn || 0}</b></div>
+      ${tired ? `<div>up too late &mdash; draining <b>${drain.toFixed(1).replace(/\.0$/, '')}</b> energy/turn (sleep to rest)</div>` : ''}
       <div><b>${s.gold}</b> gold &middot; ${usedSlots(s)}/${capacity(s)} slots &middot; ${attackDice(s)} attack, ${defenseDice(s)} defence</div>
       <div>moon <b>${moon.moon}</b>, day <b>${moon.day}</b> of ${MOON_DAYS}${phase ? ` &middot; ${phase}` : ' &middot; fair days'}</div>
       <div class="skills">${SKILLS.map(skill => {
@@ -470,8 +483,8 @@ const PHASE_NAMES = { fair: 'fair days', omens: 'omens', raid: 'raid night' };
 
 /** Where on the moon dial the omens and the last dusk fall, as percentages. */
 const MOON_MARKS = {
-  omens: ((MOON_DAYS - 1 + OMENS_AT) / MOON_DAYS) * 100,
-  dusk: ((MOON_DAYS - 1 + DUSK) / MOON_DAYS) * 100,
+  omens: (((MOON_DAYS - 1) * TURNS_PER_DAY + OMENS_TURN) / (MOON_DAYS * TURNS_PER_DAY)) * 100,
+  dusk: (((MOON_DAYS - 1) * TURNS_PER_DAY + DAY_TURNS) / (MOON_DAYS * TURNS_PER_DAY)) * 100,
 };
 
 const svg = body => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;

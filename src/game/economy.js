@@ -46,14 +46,23 @@ export function ensureVillage(state, village, q, r, worldSeed = '') {
     if (!prices.stone_knife) prices.stone_knife = Math.max(1, Math.round(ITEM_BASE_PRICES.stone_knife * rng.range(0.95, 1.15)));
     state.prices[key] = prices;
   }
-  return state.prices[key];
+  // Older saves: a village first visited before its kind sold something new
+  // (the cloak) stocks it now, at its usual discount.
+  const prices = state.prices[key];
+  for (const id of kindOf(village).sells) {
+    if (prices[id] == null && ITEM_BASE_PRICES[id] != null) {
+      const rng = new Rng(`${worldSeed}:village:${key}:${id}`);
+      prices[id] = Math.max(1, Math.round(ITEM_BASE_PRICES[id] * rng.range(0.7, 0.95)));
+    }
+  }
+  return prices;
 }
 
 export const trustOf = (state, q, r) => state.trust?.[villageKey(q, r)] || null;
 export const isTrusted = (state, q, r) => !!trustOf(state, q, r)?.done;
 
 /** A village recently raided is shuttered until the next day. */
-export const isRaided = (state, q, r) => (state.raidedUntil?.[villageKey(q, r)] ?? -1) > (state.time || 0);
+export const isRaided = (state, q, r) => (state.raidedUntil?.[villageKey(q, r)] ?? -1) > (state.turn || 0);
 
 /** What crafting needs to know about a village you are standing at. */
 export function villageContext(state, col) {

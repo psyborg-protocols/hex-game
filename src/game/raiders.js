@@ -17,29 +17,30 @@ import { neighbors, distance } from '../world/hexgrid.js';
 import { isWater } from '../world/tileset.js';
 import { findPath } from '../world/pathfinding.js';
 import { clash } from './combat.js';
-import { DAY_LENGTH, dayOf, moonOf, itemName } from './state.js';
+import { TURNS_PER_DAY, dayOf, moonOf, itemName } from './state.js';
 import { destroyStructure } from './actions.js';
 import { villageKey } from './economy.js';
 import { addItem, countItem } from './inventory.js';
 import { defenseDice } from './gear.js';
 
+/** Simulated unit-movement seconds pulsed per turn during raids. */
+export const TURN_UNIT_SECONDS = 4.0;
+
 export const KINDS = {
   // Slower than you on purpose: you can always outrun a war band, and you can
-  // watch one coming across the map and decide what to do about it. Not so slow
-  // that a band setting out at dusk is still on the road at dawn: the longest
-  // march a world gives them is fifty-odd hexes, and the night is two minutes.
-  raider:  { name: 'Raider',  hp: 4,  atk: 2, def: 1, speed: 1.6, cd: 1.6, gold: [2, 4] },
-  brute:   { name: 'Brute',   hp: 7,  atk: 3, def: 2, speed: 1.35, cd: 1.8, gold: [5, 8] },
-  warlord: { name: 'Warlord', hp: 14, atk: 4, def: 3, speed: 1.2, cd: 1.7, gold: [30, 30] },
-  militia: { name: 'Militia', hp: 7,  atk: 2, def: 2, speed: 2.4, cd: 1.5, gold: [0, 0] },
+  // watch one coming across the map and decide what to do about it.
+  raider:  { name: 'Raider',  hp: 4,  atk: 2, def: 1, speed: 1.6, cd: 2.0, gold: [2, 4] },
+  brute:   { name: 'Brute',   hp: 7,  atk: 3, def: 2, speed: 1.35, cd: 2.2, gold: [5, 8] },
+  warlord: { name: 'Warlord', hp: 14, atk: 4, def: 3, speed: 1.2, cd: 2.0, gold: [30, 30] },
+  militia: { name: 'Militia', hp: 7,  atk: 2, def: 2, speed: 2.4, cd: 1.8, gold: [0, 0] },
 };
 
 const AGGRO = 2;           // raiders turn on you this close
 const GUARD_AGGRO = 3;
 const GUARD_LEASH = 6;
-const PILLAGE_SECONDS = 18;
+const PILLAGE_SECONDS = 8;
 const TOWER_RANGE = 3;
-const TOWER_EVERY = 2.2;
+const TOWER_EVERY = 2.0;
 const SHRINE_RADIUS = 2;
 
 let nextId = 1;
@@ -161,8 +162,8 @@ export function raidWaves(moon, burned = 0) {
 /** Everyone a set of waves adds up to. */
 export const raidSize = waves => (waves || []).reduce((n, w) => n + w.length, 0);
 
-/** Seconds between one wave setting out and the next. */
-export const WAVE_GAP = 25;
+/** Turns between one wave setting out and the next. */
+export const WAVE_GAP = 3;
 
 /** What a band goes for: something you built, far from any shrine, else a village. */
 function chooseTarget(map, state, from) {
@@ -221,18 +222,20 @@ function sendWave(world, state, raid, events) {
 
 /** The way the band will come, for the map to show. Reworked as walls go up. */
 function scoutRoute(world, state, raid) {
-  if (state.time < (raid.routeAt || 0)) return;
-  raid.routeAt = state.time + 4;
+  const turn = Math.max(0, Math.floor(state.turn || 0));
+  if (turn < (raid.routeAt || 0)) return;
+  raid.routeAt = turn + 1;
   if (!raid.from || !raid.target) { raid.route = null; return; }
   const from = { q: raid.from.q, r: raid.from.r, faction: 'raider' };
   const p = pathFor(world.map, from, besideHex(world.map, from, raid.target));
   raid.route = p ? p.map(s => ({ q: s.q, r: s.r })) : null;
 }
 
-/** Tick the moon. Emits omen / nightfall / raid / held / dawn events. */
-function tickSchedule(world, state, events) {
+/** Tick the moon (in turns). Emits omen / nightfall / raid / held / dawn events. */
+export function tickSchedule(world, state, events) {
   const raid = ensureRaidState(state);
   state.stats ||= {};
+  const turn = Math.max(0, Math.floor(state.turn || 0));
   const m = moonOf(state);
 
   if (raid.moon !== m.moon) {
@@ -246,9 +249,9 @@ function tickSchedule(world, state, events) {
 
   // A watchtower sees the fires being lit: the omens come at first light.
   const tower = state.built.some(b => b.item === 'watchtower');
-  const omensAt = tower ? m.dawnAt - DAY_LENGTH : m.omensAt;
+  const omensAt = tower ? m.dawnAt - TURNS_PER_DAY : m.omensAt;
 
-  if (raid.stage === 'idle' && state.time >= omensAt) {
+  if (raid.stage === 'idle' && turn >= omensAt) {
     const from = sources[Math.floor(Math.random() * sources.length)];
     const burned = allCamps(world.map).length - campsLeft(world.map).length;
     raid.from = { q: from.q, r: from.r, name: from.feature.name };
@@ -258,18 +261,18 @@ function tickSchedule(world, state, events) {
     raid.routeAt = 0;
     events.push({
       type: 'omen', from: raid.from, target: raid.target, waves: raid.waves, size: raidSize(raid.waves),
-      seconds: Math.max(0, Math.round(m.duskAt - state.time)), tower,
+      turns: Math.max(0, Math.round(m.duskAt - turn)), tower,
     });
   }
 
-  if (raid.stage === 'omen' && state.time >= m.duskAt) {
+  if (raid.stage === 'omen' && turn >= m.duskAt) {
     raid.stage = 'night';
-    raid.startedAt = state.time;
+    raid.startedAt = turn;
     events.push({ type: 'nightfall', from: raid.from, waves: raid.waves.length, size: raidSize(raid.waves) });
   }
 
   if (raid.stage === 'night') {
-    while (raid.sent < raid.waves.length && state.time >= raid.startedAt + raid.sent * WAVE_GAP) {
+    while (raid.sent < raid.waves.length && turn >= raid.startedAt + raid.sent * WAVE_GAP) {
       sendWave(world, state, raid, events);
     }
     if (raid.sent >= raid.waves.length && !abroad(state).length) {
@@ -428,10 +431,9 @@ export function updateUnits(ctx, dt) {
         if (u.pillage >= PILLAGE_SECONDS) {
           state.raidedUntil ||= {};
           const k2 = villageKey(t.q, t.r);
-          if (!(state.raidedUntil[k2] > state.time)) {
-            // Shut for the whole of the next day: a raid comes at night, and
-            // "until tomorrow" measured from then would be no time at all.
-            state.raidedUntil[k2] = (dayOf(state).day + 1) * DAY_LENGTH;
+          if (!(state.raidedUntil[k2] > (state.turn || 0))) {
+            // Shut for the whole of the next day.
+            state.raidedUntil[k2] = (dayOf(state).day + 1) * TURNS_PER_DAY;
             if (state.raid) state.raid.lost = (state.raid.lost || 0) + 1;
             events.push({ type: 'villageRaided', name: tcol.feature.name, q: t.q, r: t.r });
           }
@@ -559,6 +561,17 @@ export function burnCamp(state, camp) {
   const gold = camp.feature.boss ? 40 : 15;
   state.gold += gold;
   return { gold };
+}
+
+/** Advance raid schedule and simulate one turn burst of unit movement/combat. */
+export function stepRaidTurn(ctx, seconds = TURN_UNIT_SECONDS, step = 0.1) {
+  const { world, state, events } = ctx;
+  tickSchedule(world, state, events);
+  const steps = Math.max(1, Math.round(seconds / step));
+  for (let i = 0; i < steps; i++) {
+    state.time = (state.time || 0) + step;
+    updateUnits(ctx, step);
+  }
 }
 
 export { countItem };

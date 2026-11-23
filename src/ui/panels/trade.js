@@ -1,7 +1,8 @@
 // panels/trade.js — a village: its favour first, then its market.
 
-import { ITEMS, itemName } from '../../game/state.js';
+import { ITEMS, itemName, isNight } from '../../game/state.js';
 import { stockOf, trustOf, isRaided, kindOf, sellPrice, FAVOUR_REWARD, ensureVillage } from '../../game/economy.js';
+import { VILLAGE_SLEEP_COST } from '../../game/sleep.js';
 import { countItem } from '../../game/inventory.js';
 import { icon, escapeHtml } from '../ui.js';
 
@@ -47,10 +48,14 @@ export const tradePanel = {
     const head = `<p class="village-kind"><b>${escapeHtml(kind.name)}</b>
       <span class="dim">&middot; sell ${kind.sells.map(itemName).map(escapeHtml).join(', ')} &middot; keep a ${escapeHtml(station)}</span></p>`;
 
+    const sleepInn = (isNight(state) && !isRaided(state, col.q, col.r))
+      ? `<p><button type="button" class="link-btn" data-sleep-village ${state.gold >= VILLAGE_SLEEP_COST || state.free ? '' : 'disabled'}>Sleep in the village until dawn (${state.free ? 'free' : `${VILLAGE_SLEEP_COST}g`})</button></p>`
+      : '';
+
     if (!trust?.done) {
       const { item, qty } = trust.favour;
       const have = countItem(state, item);
-      return `${head}
+      return `${head}${sleepInn}
         <div class="favour">
           <p class="elder">&ldquo;We don't trade with strangers. Do us a turn first &mdash;
             bring us <b>${qty} ${escapeHtml(itemName(item))}</b>, and you'll find us friendly.&rdquo;</p>
@@ -80,7 +85,7 @@ export const tradePanel = {
         <span class="dim">have ${countItem(state, s.id)}</span>
         <button data-sell="${s.id}">Sell ${sellPrice(col.feature, s.id)}g</button></div>`).join('');
 
-    return `${head}
+    return `${head}${sleepInn}
       <p class="dim">You have <b>${state.gold}</b> gold. You may use their ${escapeHtml(station)} while you stand here.</p>
       <div class="trade-cols">
         <div><h3>They sell</h3><div class="trade">${buyRows}</div></div>
@@ -92,6 +97,10 @@ export const tradePanel = {
   bind(game, body, props) {
     const col = props.village;
     body.querySelector('[data-favour]')?.addEventListener('click', () => game.doFavour(col));
+    body.querySelector('[data-sleep-village]')?.addEventListener('click', () => {
+      game.ui.closePanel();
+      game.doSleep();
+    });
     body.querySelector('[data-rumour]')?.addEventListener('click', () => {
       props.hintIndex = ((props.hintIndex ?? 0) + 1 + Math.floor(Math.random() * (VILLAGE_HINTS.length - 1))) % VILLAGE_HINTS.length;
       game.ui.refreshPanel();

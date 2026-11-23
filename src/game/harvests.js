@@ -44,14 +44,14 @@ const waterside = (col, map) => beside(o => water(o) && col.h - o.h <= 1)(col, m
  */
 export const HARVESTS = {
   forage: {
-    id: 'forage', name: 'Forage', skill: 'homesteading', level: 1, xp: 1, energy: 0, regrows: 140,
+    id: 'forage', name: 'Forage', skill: 'homesteading', level: 1, xp: 1, energy: 0, regrows: 8,
     where: on(...OPEN, ...FOREST, ...WOODED),
     yields: { berries: [2, 3] },
     bonus: { dog: { berries: [1, 1] } },
     verb: 'Foraging',
   },
   gather_grain: {
-    id: 'gather_grain', name: 'Gather Tall Grass', skill: 'homesteading', level: 1, xp: 1, energy: 0.5, regrows: 150,
+    id: 'gather_grain', name: 'Gather Tall Grass', skill: 'homesteading', level: 1, xp: 1, energy: 0.5, regrows: 8,
     where: on('meadow', 'grass'),
     yields: { grain: [1, 2] },
     bonusYields: { herb: [1, 1], herb_seed: [1, 1] },
@@ -62,7 +62,7 @@ export const HARVESTS = {
     verb: 'Gathering',
   },
   find_herb: {
-    id: 'find_herb', name: 'Pick Herbs', skill: 'mind', level: 1, xp: 0, energy: 0.5, regrows: 90,
+    id: 'find_herb', name: 'Pick Herbs', skill: 'mind', level: 1, xp: 0, energy: 0.5, regrows: 5,
     where: on(...OPEN, ...FOREST, ...WOODED),
     yields: { herb: [1, 2] },
     bonusYields: { herb_seed: [1, 1] },
@@ -72,7 +72,7 @@ export const HARVESTS = {
     verb: 'Searching',
   },
   gather_branch: {
-    id: 'gather_branch', name: 'Gather Branches', skill: 'woodworking', level: 1, xp: 1, energy: 0.5, regrows: 360,
+    id: 'gather_branch', name: 'Gather Branches', skill: 'woodworking', level: 1, xp: 1, energy: 0.5, regrows: 20,
     where: on(...WOODED, ...FOREST, 'meadow'),
     yields: { branch: [1, 2] },
     verb: 'Gathering',
@@ -87,13 +87,13 @@ export const HARVESTS = {
     verb: 'Chopping',
   },
   cut_reeds: {
-    id: 'cut_reeds', name: 'Cut Reeds', skill: 'woodworking', level: 1, xp: 1, energy: 0.5, regrows: 220,
+    id: 'cut_reeds', name: 'Cut Reeds', skill: 'woodworking', level: 1, xp: 1, energy: 0.5, regrows: 12,
     where: waterside,
     yields: { reed: [2, 2] },
     verb: 'Cutting',
   },
   dig_clay: {
-    id: 'dig_clay', name: 'Dig Clay', skill: 'homesteading', level: 1, xp: 2, energy: 0.5, regrows: 210,
+    id: 'dig_clay', name: 'Dig Clay', skill: 'homesteading', level: 1, xp: 2, energy: 0.5, regrows: 12,
     where: waterside,
     yields: { clay: [1, 2] },
     verb: 'Digging',
@@ -108,13 +108,13 @@ export const HARVESTS = {
     verb: 'Gathering',
   },
   gather_flint: {
-    id: 'gather_flint', name: 'Pick Flint', skill: 'stoneworking', level: 1, xp: 2, energy: 0.5, regrows: 300,
+    id: 'gather_flint', name: 'Pick Flint', skill: 'stoneworking', level: 1, xp: 2, energy: 0.5, regrows: 16,
     where: on(...ROCKY),
     yields: { flint: [1, 2] },
     verb: 'Searching',
   },
   hunt: {
-    id: 'hunt', name: 'Hunt', skill: 'homesteading', level: 1, xp: 3, energy: 1, regrows: 45,
+    id: 'hunt', name: 'Hunt', skill: 'homesteading', level: 1, xp: 3, energy: 1, regrows: 3,
     where: on(...OPEN, ...WOODED, ...FOREST),
     // A snare costs a cord; a bow is not spent. Handled in actions.js.
     tool: ['bow', 'cord'],
@@ -123,7 +123,7 @@ export const HARVESTS = {
     verb: 'Hunting',
   },
   fish: {
-    id: 'fish', name: 'Fish', skill: 'homesteading', level: 1, xp: 2, energy: 0.5, regrows: 30,
+    id: 'fish', name: 'Fish', skill: 'homesteading', level: 1, xp: 2, energy: 0.5, regrows: 2,
     where: (col, map) => beside(water)(col, map),
     tool: ['fishing_rod'],
     yields: { fish: [1, 2] },
@@ -194,7 +194,7 @@ export function markPicked(state, col, id) {
   const spec = HARVESTS[id];
   if (!spec?.regrows) return;
   state.picked ||= {};
-  state.picked[pickKey(col, id)] = (state.time || 0) + spec.regrows;
+  state.picked[pickKey(col, id)] = (state.turn || 0) + spec.regrows;
 }
 
 export function harvestSpec(id) {
@@ -223,8 +223,10 @@ export function availableHarvests(map, state, at) {
       reasons.push(`Needs ${spec.tool.map(t => t.replace(/_/g, ' ')).join(' or ')}.`);
     }
     const back = regrowsAt(state, col, id);
-    if (back > (state.time || 0)) {
-      reasons.push(`${REGROW_TEXT[id] || 'Spent'} — back in ${Math.ceil(back - state.time)}s.`);
+    const turn = state.turn || 0;
+    if (back > turn) {
+      const left = Math.ceil(back - turn);
+      reasons.push(`${REGROW_TEXT[id] || 'Spent'} — back in ${left} ${left === 1 ? 'turn' : 'turns'}.`);
     }
     out.push({ spec, ok: reasons.length === 0, reasons, col });
   }

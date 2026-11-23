@@ -7,40 +7,79 @@
 // go and find more? Better food packs more energy into each slot.
 
 import { ITEMS } from '../../data/game_data.js';
-import { isFree, BASE_SLOTS, BASE_MAX_ENERGY, hasBuilt } from './state.js';
+import { isFree, BASE_SLOTS, BASE_MAX_ENERGY, WORN_SLOTS, createWorn, hasBuilt } from './state.js';
+
+export const MAX_BITES_PER_TURN = 1;
+
+// ------------------------------------------------------------------ worn
+
+export function ensureWorn(state) {
+  if (!state.worn) state.worn = createWorn();
+  for (const s of WORN_SLOTS) if (!(s.id in state.worn)) state.worn[s.id] = null;
+  // Migrate saves where walking_stick lived in offhand before moving to hand.
+  if (state.worn.offhand === 'walking_stick') {
+    state.worn.offhand = null;
+    if (!state.worn.hand) {
+      state.worn.hand = 'walking_stick';
+    } else if (Array.isArray(state.inventory)) {
+      const idx = state.inventory.findIndex(x => !x);
+      if (idx >= 0) state.inventory[idx] = { id: 'walking_stick', qty: 1 };
+    }
+  }
+  return state.worn;
+}
+
+export function isWorn(state, id) {
+  const worn = ensureWorn(state);
+  return WORN_SLOTS.some(s => worn[s.id] === id);
+}
+
+export function wornItem(state, slotId) {
+  return ensureWorn(state)[slotId] || null;
+}
 
 // ---------------------------------------------------------------- capacity
 
-/** Gear that opens pack slots counts once each, however many you carry. */
+/** Only a worn pack (basket, leather pack, or cart) opens extra pack slots. */
 export function capacity(state) {
-  let n = BASE_SLOTS;
-  const seen = new Set();
-  for (const slot of state.inventory) {
-    const item = slot && ITEMS[slot.id];
-    if (item?.slots && !seen.has(slot.id)) { seen.add(slot.id); n += item.slots; }
-  }
-  return Math.min(state.inventory.length, n);
+  const packId = ensureWorn(state).pack;
+  const bonus = packId ? (ITEMS[packId]?.slots || 0) : 0;
+  return Math.min(state.inventory.length, BASE_SLOTS + bonus);
+}
+
+export function countInPack(state, id) {
+  let n = 0;
+  for (const slot of state.inventory) if (slot && slot.id === id) n += slot.qty;
+  return n;
 }
 
 export function countItem(state, id) {
-  let n = 0;
-  for (const slot of state.inventory) if (slot && slot.id === id) n += slot.qty;
+  let n = countInPack(state, id);
+  const worn = ensureWorn(state);
+  for (const s of WORN_SLOTS) if (worn[s.id] === id) n += 1;
   return n;
 }
 
 export const hasItem = (state, id, qty = 1) => countItem(state, id) >= qty;
 
 /**
- * Add up to `qty`, topping up part-filled stacks before opening new slots.
+ * Add up to `qty`, auto-equipping into an empty worn slot if wearable, then
+ * topping up part-filled pack stacks before opening new pack slots.
  * @returns {number} how many actually fitted.
  */
 export function addItem(state, id, qty = 1) {
   const item = ITEMS[id];
   if (!item) return 0;
   const stack = item.stack || 1;
-  const cap = capacity(state);
+  const worn = ensureWorn(state);
   let left = qty;
 
+  if (item.slot && !worn[item.slot] && left > 0) {
+    worn[item.slot] = id;
+    left -= 1;
+  }
+
+  const cap = capacity(state);
   for (let i = 0; i < state.inventory.length && left > 0; i++) {
     const slot = state.inventory[i];
     if (!slot || slot.id !== id) continue;
@@ -67,7 +106,7 @@ export function hasSeenItem(state, id) {
   return !!(state?.seen?.[id] || countItem(state, id) > 0 || hasBuilt(state, id));
 }
 
-/** Remove `qty`. Returns false and changes nothing if there are not enough. */
+/** Remove `qty` from pack first, then from worn slots if needed. */
 export function removeItem(state, id, qty = 1) {
   if (!hasItem(state, id, qty)) return false;
   let left = qty;
@@ -79,7 +118,100 @@ export function removeItem(state, id, qty = 1) {
     left -= take;
     if (slot.qty <= 0) state.inventory[i] = null;
   }
+  if (left > 0) {
+    const worn = ensureWorn(state);
+    for (const s of WORN_SLOTS) {
+      if (left <= 0) break;
+      if (worn[s.id] === id) {
+        worn[s.id] = null;
+        left -= 1;
+      }
+    }
+  }
   return true;
+}
+
+/** Keep pack entries packed below `limit` when capacity shrinks. */
+function compactBelow(state, limit) {
+  for (let i = limit; i < state.inventory.length; i++) {
+    if (!state.inventory[i]) continue;
+    const dst = state.inventory.findIndex((s, j) => j < limit && !s);
+    if (dst < 0) return false;
+    state.inventory[dst] = state.inventory[i];
+    state.inventory[i] = null;
+  }
+  return true;
+}
+
+/**
+ * Put on a donnable item (the Hooded Cloak) from `packIndex`. It leaves the pack
+ * and becomes part of you for good; there is no taking it off.
+ */
+export function donFromPack(state, packIndex) {
+  const slot = state.inventory[packIndex];
+  const item = slot && ITEMS[slot.id];
+  if (!item?.don) return { ok: false, reason: 'You cannot put that on.' };
+  if (state.cloak) return { ok: false, reason: 'You already wear a cloak.' };
+  slot.qty -= 1;
+  if (slot.qty <= 0) state.inventory[packIndex] = null;
+  state.cloak = true;
+  return { ok: true, donned: item.id };
+}
+
+/** Equip a wearable item from `packIndex`, swapping with any item already in that worn slot. */
+export function equipFromPack(state, packIndex) {
+  const slot = state.inventory[packIndex];
+  const item = slot && ITEMS[slot.id];
+  if (!item?.slot) return { ok: false, reason: 'You cannot wear that.' };
+
+  const worn = ensureWorn(state);
+  const slotKey = item.slot;
+  const prev = worn[slotKey];
+
+  if (slotKey === 'pack') {
+    const newCap = Math.min(state.inventory.length, BASE_SLOTS + (item.slots || 0));
+    const needed = prev ? usedSlots(state) : Math.max(0, usedSlots(state) - 1);
+    if (needed > newCap) return { ok: false, reason: 'Make room in your pack before swapping to a smaller pack.' };
+  }
+
+  if (slot.qty > 1) {
+    if (prev && !hasRoomFor(state, prev, 1)) return { ok: false, reason: 'Your pack is full.' };
+    slot.qty -= 1;
+    worn[slotKey] = slot.id;
+    if (prev) addItem(state, prev, 1);
+  } else {
+    state.inventory[packIndex] = prev ? { id: prev, qty: 1 } : null;
+    worn[slotKey] = slot.id;
+  }
+
+  if (slotKey === 'pack') compactBelow(state, capacity(state));
+  return { ok: true, equipped: item.id, replaced: prev, slot: slotKey };
+}
+
+/** Take off the item in `slotKey` and return it to the pack. */
+export function unequipSlot(state, slotKey) {
+  const worn = ensureWorn(state);
+  const id = worn[slotKey];
+  if (!id) return { ok: false, reason: 'Nothing worn there.' };
+
+  if (slotKey === 'pack') {
+    if (usedSlots(state) + 1 > BASE_SLOTS) {
+      return { ok: false, reason: 'Make room in your pack before taking that off.' };
+    }
+    compactBelow(state, BASE_SLOTS);
+    const dst = state.inventory.findIndex((s, i) => i < BASE_SLOTS && !s);
+    if (dst < 0) return { ok: false, reason: 'Your pack is full.' };
+    worn[slotKey] = null;
+    state.inventory[dst] = { id, qty: 1 };
+    return { ok: true, unequipped: id };
+  }
+
+  const cap = capacity(state);
+  const dst = state.inventory.findIndex((s, i) => i < cap && !s);
+  if (dst < 0) return { ok: false, reason: 'Your pack is full.' };
+  worn[slotKey] = null;
+  state.inventory[dst] = { id, qty: 1 };
+  return { ok: true, unequipped: id };
 }
 
 /** Is there anywhere to put this at all? */
@@ -131,9 +263,11 @@ export const HUNGRY_AT = 0.4;
 /** ...and eat raw food only below this. */
 export const STARVING_AT = 0.15;
 
+export const canEatMore = state => (state.eatenThisTurn || 0) < MAX_BITES_PER_TURN;
+
 /**
- * Eat from the pack when you are getting low, in EAT_ORDER, and only food that
- * fits whole — so nothing is wasted.
+ * Eat from the pack when you are getting low, in EAT_ORDER, at most
+ * MAX_BITES_PER_TURN per turn, and only food that fits whole — so nothing is wasted.
  * @returns {string[]} what was eaten
  */
 export function topUp(state, force = false) {
@@ -141,15 +275,17 @@ export function topUp(state, force = false) {
   const max = maxEnergy(state);
   if (!force && state.energy >= max * HUNGRY_AT) return [];
   const eaten = [];
-  // A bite at a time, just enough to stay above the line: what you carry stays
-  // in your pack, visible, until you actually need it.
-  for (let guard = 0; guard < 200 && state.energy < max * HUNGRY_AT; guard++) {
+  const target = force ? max : max * HUNGRY_AT;
+  // Rate-limited to MAX_BITES_PER_TURN per turn: staying up too late drains
+  // energy faster than eating can replenish it.
+  while (canEatMore(state) && state.energy < target) {
     const desperate = force || state.energy < max * STARVING_AT;
-    const id = EAT_ORDER.find(f => countItem(state, f) > 0 && state.energy + ITEMS[f].food <= max
+    const id = EAT_ORDER.find(f => countInPack(state, f) > 0 && state.energy + ITEMS[f].food <= max
       && (desperate || !RAW.has(f)));
     if (!id) break;
     removeItem(state, id, 1);
     state.energy += ITEMS[id].food;
+    state.eatenThisTurn = (state.eatenThisTurn || 0) + 1;
     eaten.push(id);
   }
   return eaten;
@@ -162,12 +298,12 @@ export function recomputeEnergy(state) {
   return state.energy;
 }
 
-/** Can you afford this much work? Eats first if it has to. */
+/** Can you afford this much work? Eats first if it has to (respecting turn bite limit). */
 export function canSpend(state, n) {
   if (isFree(state) || n <= 0) return true;
   if (state.energy < n) topUp(state, true);
-  // Out of room to top up without waste, but starving: eat anyway.
-  while (state.energy < n && eatAnything(state));
+  // Out of room to top up without waste, but starving: eat anyway if bite limit permits.
+  while (state.energy < n && canEatMore(state) && eatAnything(state));
   return state.energy >= n;
 }
 
@@ -181,10 +317,12 @@ export function spend(state, n) {
 }
 
 function eatAnything(state) {
-  const id = EAT_ORDER.find(f => countItem(state, f) > 0);
+  if (!canEatMore(state)) return null;
+  const id = EAT_ORDER.find(f => countInPack(state, f) > 0);
   if (!id) return null;
   removeItem(state, id, 1);
   state.energy = Math.min(maxEnergy(state), state.energy + ITEMS[id].food);
+  state.eatenThisTurn = (state.eatenThisTurn || 0) + 1;
   return id;
 }
 
