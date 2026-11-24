@@ -129,3 +129,27 @@ canvas {
 
 .instructions { font-size: 12px; line-height: 1.7; color: #aaa; }
 #info { margin-top: auto; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------ play test */
+
+.setup { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; font-size: 13px; }
+.setup label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #ccc; }
+.setup label.check { justify-content: flex-start; }
+.setup select, .setup input[type=number] {
+    background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 6px; width: 150px;
+}
+.setup .play { background-color: #c9772f; font-size: 14px; }
+.setup .play:hover { background-color: #b5682a; }
+.setup .hint { margin: 0; font-size: 11px; color: #999; line-height: 1.4; }
+
+#pieces { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+.piece-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #999; margin: 6px 0 0; }
+.piece-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.piece {
+    display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #444;
+    border: 2px solid transparent; border-radius: 4px; cursor: pointer; font-size: 12px; color: #eee; text-align: left;
+    font-weight: normal; line-height: 1.2;
+}
+.piece:hover { background: #555; }
+.piece.selected { border-color: #c9772f; background: #5a4a3a; }
+.piece canvas { width: 32px; height: 32px; image-rendering: pixelated; flex: none; background: #1d1f26; border-radius: 2px; }

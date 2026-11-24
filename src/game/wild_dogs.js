@@ -68,7 +68,7 @@ function canStandWildDog(col) {
   return true;
 }
 
-function makeWildDog(state, at, region, hostile = false) {
+export function makeWildDog(state, at, region, hostile = false) {
   return {
     id: nextDogId(state),
     q: at.q,

@@ -15,14 +15,27 @@
                 <button id="btn-load">Load Map</button>
                 <input type="file" id="file-load" accept=".json" style="display:none">
             </div>
-            <h3>Palette</h3>
+
+            <h3>Play test</h3>
+            <div id="setup" class="setup">
+                <label>Start at <select id="setup-start"></select></label>
+                <label>Gold <input id="setup-gold" type="number" min="0" max="9999" value="10"></label>
+                <label class="check"><input id="setup-free" type="checkbox"> Free mode (building costs nothing)</label>
+                <button id="btn-play" class="play">Play test &#9654;</button>
+                <p class="hint">Opens the game in a new tab on this map, with the pieces you put down. Nothing it does is saved.</p>
+            </div>
+
+            <h3>Test pieces</h3>
+            <div id="pieces"></div>
+
+            <h3>Terrain</h3>
             <div id="palette">
                 <!-- Palette items injected by JS -->
             </div>
             <p class="instructions">
-                <strong>Left drag</strong> paint the selected terrain<br>
+                <strong>Left drag</strong> paint the selected terrain, or drop the selected piece<br>
                 <strong>Shift + left</strong> raise a level<br>
-                <strong>Right drag</strong> lower a level, and away at zero<br>
+                <strong>Right drag</strong> lower a level, and away at zero; with a piece selected, take pieces away<br>
                 <strong>Middle drag / Alt</strong> pan<br>
                 <strong>Wheel</strong> zoom, whole steps only
             </p>

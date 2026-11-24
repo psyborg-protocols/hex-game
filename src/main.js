@@ -6,6 +6,7 @@ import { drawStructure, drawVillage, drawCamp, drawBridgeDeck, drawLadder, drawL
 import { drawUnit, unitPos, drawDog, dogPos } from './render/units.js';
 import { drawLootPile } from './render/loot.js';
 import { dropAt, lootText } from './game/drops.js';
+import { buildPlaytest, PLAYTEST_KEY } from './game/playtest.js';
 import { ensureDog, updateDog, commandDogGuard, commandDogFollow } from './game/dog.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath, isBridged } from './world/pathfinding.js';
@@ -98,8 +99,10 @@ async function boot() {
   const joined = params.get('join') ? await joinScreen(params.get('join')) : null;
   // ?resume=1: the game you host, back up and open to your friends again.
   const resumed = !joined && params.get('resume') === '1' ? loadRoom() : null;
+  // ?playtest=1: the map editor's map, with the pieces it put down (playtest.js).
+  const playtest = !joined && !resumed && params.get('playtest') === '1' ? loadPlaytest() : null;
   const restored = joined ? fromWelcome(joined.welcome)
-    : resumed || (params.get('load') === '1' ? loadLocal() : null);
+    : resumed || playtest || (params.get('load') === '1' ? loadLocal() : null);
   // A save carries no live room: the room is opened again below, or not at all.
   if (restored && !joined) { delete restored.state.room; delete restored.state.waitingForDawn; }
 
@@ -2299,7 +2302,8 @@ async function boot() {
     if (state.room?.host && game.mp.active) saveRoom(world, state, player, game.mp.roomSave(hostName));
     else if (!state.room) saveLocal(world, state, player);
   };
-  if (params.get('nosave') !== '1') {
+  // A play test never writes over your game.
+  if (params.get('nosave') !== '1' && !playtest) {
     setInterval(autosave, 45000);
     window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') autosave();
@@ -2312,6 +2316,17 @@ async function boot() {
 }
 
 /** A host's welcome, as a world to boot: their map and shared world, your own fresh self. */
+/** The play test the editor left for us, built into a world. */
+function loadPlaytest() {
+  try {
+    const raw = localStorage.getItem(PLAYTEST_KEY);
+    return raw ? buildPlaytest(JSON.parse(raw)) : null;
+  } catch (err) {
+    console.error('play test', err);
+    return null;
+  }
+}
+
 function fromWelcome(welcome) {
   const snap = welcome.snapshot;
   // Back in a world you played before: your own progress, as the host kept it.

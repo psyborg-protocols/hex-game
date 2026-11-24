@@ -11,6 +11,9 @@
 //   right drag          lower the column a level, and away at zero
 //   middle drag / alt  pan
 //   wheel               zoom, whole steps only
+//
+// Test pieces (src/game/playtest.js): pick one and left-click to drop it in,
+// right-click to take pieces away. "Play test" opens the game on this map.
 
 import { loadTileset, TERRAIN, variantFor } from './src/world/tileset.js';
 import { drawColumn } from './src/render/columns.js';
@@ -20,6 +23,14 @@ import { resolveAutotiles } from './src/world/worldgen.js';
 import {
   GEOM, tileCenter, columnBaseY, pickHex, traceTopFace, neighbors,
 } from './src/world/hexgrid.js';
+import { loadDecor, drawColumnDecor } from './src/render/decor.js';
+import { drawStructure, drawVillage, drawCamp } from './src/render/structures.js';
+import { drawFigure, drawDog } from './src/render/units.js';
+import { drawPawn } from './src/render/player_sprite.js';
+import { drawLootPile } from './src/render/loot.js';
+import {
+  PIECES, pieceById, placePiece, removePiece, emptyPieces, START_TIMES, PLAYTEST_KEY, playtestData,
+} from './src/game/playtest.js';
 
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
@@ -32,6 +43,10 @@ const input = { painting: false, erasing: false, panning: false, last: null, las
 let res = null;
 let map = new WorldMap({ name: 'untitled' });
 let selected = 'grass';
+/** A test piece to drop in, or null while painting terrain. */
+let piece = null;
+let pieces = emptyPieces();
+const setup = { start: 'morning', gold: 10, free: false };
 let hover = null;
 
 // ---------------------------------------------------------------- palette
@@ -55,11 +70,106 @@ function buildPalette() {
 
     el.addEventListener('click', () => {
       selected = brush.id;
-      for (const other of root.children) other.classList.remove('selected');
-      el.classList.add('selected');
+      piece = null;
+      markSelected();
     });
+    el.dataset.terrain = brush.id;
     root.appendChild(el);
   }
+}
+
+/** Show which brush is live: one terrain or one piece. */
+function markSelected() {
+  for (const el of document.querySelectorAll('#palette .palette-item')) {
+    el.classList.toggle('selected', !piece && el.dataset.terrain === selected);
+  }
+  for (const el of document.querySelectorAll('#pieces .piece')) {
+    el.classList.toggle('selected', el.dataset.piece === piece);
+  }
+}
+
+/** A piece's own look, for its button. */
+function drawPieceIcon(ctx, p, t = 0) {
+  const x = 16, y = 22;
+  if (p.id === 'player') drawPawn(ctx, x, y + 2, 1, false, { t, equipped: { cloak: true, color: 'crimson' } });
+  else if (p.unit) drawFigure(ctx, x, y + 2, p.unit, 1, t);
+  else if (p.dog) drawDog(ctx, x, y + 2, { facing: 1, t, stance: 'idle', wild: true, hostile: p.dog.hostile });
+  else if (p.structure) drawStructure(ctx, x, y, p.structure, t);
+  else if (p.field) { ctx.fillStyle = '#c9a44a'; ctx.fillRect(6, 16, 20, 9); ctx.fillStyle = '#7a9a3a'; for (let i = 0; i < 5; i++) ctx.fillRect(8 + i * 4, 13, 2, 9); }
+  else if (p.village) drawVillage(ctx, x, y, t, 'farmers');
+  else if (p.camp) drawCamp(ctx, x, y, t, { boss: p.camp.boss });
+  else if (p.trees) { ctx.fillStyle = p.trees === 'pine' ? '#2f5d3a' : '#4f7a3a'; ctx.beginPath(); ctx.arc(16, 12, 8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#5e3a22'; ctx.fillRect(15, 18, 3, 8); }
+  else if (p.ore) drawOre(ctx, x, y);
+  else if (p.loot) drawLootPile(ctx, x, y - 4, t);
+  else if (p.remove) { ctx.strokeStyle = '#e05a5a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(9, 9); ctx.lineTo(23, 23); ctx.moveTo(23, 9); ctx.lineTo(9, 23); ctx.stroke(); }
+}
+
+function drawOre(ctx, x, y) {
+  ctx.fillStyle = '#1b1420'; ctx.fillRect(x - 4, y - 4, 9, 6);
+  ctx.fillStyle = '#c9a227'; ctx.fillRect(x - 3, y - 3, 3, 2); ctx.fillRect(x + 1, y - 1, 3, 2);
+  ctx.fillStyle = '#f0dc8a'; ctx.fillRect(x - 3, y - 3, 1, 1);
+}
+
+function buildPieces() {
+  const root = document.getElementById('pieces');
+  root.innerHTML = '';
+  let grid = null;
+  let group = null;
+  for (const p of PIECES) {
+    if (p.group !== group) {
+      group = p.group;
+      const h = document.createElement('p');
+      h.className = 'piece-group';
+      h.textContent = group;
+      root.appendChild(h);
+      grid = document.createElement('div');
+      grid.className = 'piece-grid';
+      root.appendChild(grid);
+    }
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'piece';
+    el.dataset.piece = p.id;
+    el.title = p.note ? `${p.name}: ${p.note}` : p.name;
+    const icon = document.createElement('canvas');
+    icon.width = 32;
+    icon.height = 32;
+    const ictx = icon.getContext('2d');
+    ictx.imageSmoothingEnabled = false;
+    try { drawPieceIcon(ictx, p); } catch (err) { console.warn('icon', p.id, err); }
+    el.append(icon, Object.assign(document.createElement('span'), { textContent: p.name }));
+    el.addEventListener('click', () => { piece = p.id; markSelected(); });
+    grid.appendChild(el);
+  }
+}
+
+function buildSetup() {
+  const start = document.getElementById('setup-start');
+  start.innerHTML = Object.entries(START_TIMES).map(([id, s]) => `<option value="${id}">${s.name}</option>`).join('');
+  start.value = setup.start;
+  start.addEventListener('change', () => { setup.start = start.value; });
+  const gold = document.getElementById('setup-gold');
+  gold.value = setup.gold;
+  gold.addEventListener('change', () => { setup.gold = Math.max(0, Math.floor(+gold.value || 0)); });
+  const free = document.getElementById('setup-free');
+  free.checked = setup.free;
+  free.addEventListener('change', () => { setup.free = free.checked; });
+  document.getElementById('btn-play').addEventListener('click', playTest);
+}
+
+/** Hand this map and its pieces to the game, in a new tab. */
+function playTest() {
+  if (!map.get(map.spawn?.q, map.spawn?.r)) {
+    alert('Put the Wanderer down first: pick "Wanderer starts here" and click a hex.');
+    return;
+  }
+  try {
+    localStorage.setItem(PLAYTEST_KEY, JSON.stringify(playtestData(map, pieces, setup)));
+  } catch (err) {
+    alert(`Could not hand the map to the game: ${err.message}`);
+    return;
+  }
+  window.open('index.html?playtest=1&nosave=1', '_blank');
 }
 
 // ------------------------------------------------------------------ edits
@@ -149,7 +259,33 @@ function render() {
   // Back to front, exactly as the game does it.
   const columns = [...map].sort((a, b) =>
     (columnBaseY(a.q, a.r) - columnBaseY(b.q, b.r)) || (a.q - b.q));
-  for (const col of columns) drawColumn(ctx, res, col);
+  const t = performance.now() / 1000;
+  const onHex = list => new Map(list.map(x => [`${x.q},${x.r}`, x]));
+  const units = onHex(pieces.units);
+  const dogs = onHex(pieces.dogs);
+  const drops = onHex(pieces.drops);
+  for (const col of columns) {
+    drawColumn(ctx, res, col);
+    const { cx, cy } = tileCenter(col.q, col.r, Math.max(0, col.h));
+    const x = Math.round(cx), y = Math.round(cy);
+    const f = col.feature;
+    if (f?.type === 'trees') drawColumnDecor(ctx, res, col);
+    else if (f?.type === 'structure') drawStructure(ctx, x, y, f.item, t, f);
+    else if (f?.type === 'village') drawVillage(ctx, x, y, t, f.kind);
+    else if (f?.type === 'camp') drawCamp(ctx, x, y, t, f);
+    else if (f?.type === 'ore') drawOre(ctx, x, y);
+    const k = `${col.q},${col.r}`;
+    if (drops.has(k)) drawLootPile(ctx, x, y, t);
+    if (dogs.has(k)) drawDog(ctx, x, y, { facing: 1, t, stance: 'idle', wild: true, hostile: dogs.get(k).hostile });
+    if (units.has(k)) {
+      const u = units.get(k);
+      drawFigure(ctx, x, y, u.kind, 1, t);
+      if (u.raiding) { ctx.fillStyle = '#e05a5a'; ctx.fillRect(x + 4, y - 16, 2, 2); }
+    }
+    if (map.spawn && map.spawn.q === col.q && map.spawn.r === col.r) {
+      drawPawn(ctx, x, y, 1, false, { t, equipped: { cloak: true, color: 'crimson' } });
+    }
+  }
 
   if (hover) {
     const { cx, cy } = tileCenter(hover.q, hover.r, Math.max(0, hover.h));
@@ -165,8 +301,13 @@ function render() {
 
   const info = document.getElementById('info');
   if (info) {
+    const what = hover && [
+      map.get(hover.q, hover.r)?.feature?.name || map.get(hover.q, hover.r)?.feature?.type,
+      ...['units', 'dogs', 'drops'].map(key => pieces[key].find(x => x.q === hover.q && x.r === hover.r))
+        .filter(Boolean).map(x => x.kind || (x.gold != null ? 'loot' : 'wild dog')),
+    ].filter(Boolean).join(', ');
     info.textContent = hover
-      ? `${hover.q}, ${hover.r} · height ${Math.max(0, hover.h)} · ${map.terrainAt(hover.q, hover.r) || 'empty'}`
+      ? `${hover.q}, ${hover.r} · height ${Math.max(0, hover.h)} · ${map.terrainAt(hover.q, hover.r) || 'empty'}${what ? ` · ${what}` : ''}`
       : `${map.size} columns`;
   }
 
@@ -200,6 +341,11 @@ function applyStroke(hex, e) {
   const key = `${hex.q},${hex.r}`;
   if (input.lastHex === key) return;
   input.lastHex = key;
+  if (piece) {
+    if (input.erasing) removePiece(map, pieces, hex.q, hex.r);
+    else if (placePiece(map, pieces, piece, hex.q, hex.r)) retileAround(hex.q, hex.r);
+    return;
+  }
   if (input.erasing) lower(hex.q, hex.r);
   else if (e.shiftKey) raise(hex.q, hex.r);
   else paint(hex.q, hex.r);
@@ -249,7 +395,7 @@ function setupInput() {
   }, { passive: false });
 
   document.getElementById('btn-save').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(map.toJSON())], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ ...map.toJSON(), pieces, setup })], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${map.name || 'map'}.json`;
@@ -265,8 +411,11 @@ function setupInput() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
-      map = WorldMap.fromJSON(JSON.parse(ev.target.result));
+      const data = JSON.parse(ev.target.result);
+      map = WorldMap.fromJSON(data);
       resolveAutotiles(map, res.resolvers);
+      pieces = { ...emptyPieces(), ...(data.pieces || {}) };
+      if (data.setup) Object.assign(setup, data.setup);
       const { minQ, minR } = map.extent();
       view.x = minQ * GEOM.stepX - 40;
       view.y = minR * GEOM.stepY - 40;
@@ -279,11 +428,12 @@ function setupInput() {
 // ------------------------------------------------------------------- boot
 
 async function init() {
-  const tileset = await loadTileset();
+  const [tileset, decor] = await Promise.all([loadTileset(), loadDecor().catch(() => null)]);
   res = {
     images: tileset.images,
     resolvers: tileset.resolvers,
     index: tileset.index,
+    decor,
   };
 
   // Start with a small patch so there is something to paint onto.
@@ -292,6 +442,10 @@ async function init() {
   for (let q = 0; q < startW; q++) for (let r = 0; r < startD; r++) map.place(q, r, 'grass', 0);
 
   buildPalette();
+  buildPieces();
+  buildSetup();
+  // The Wanderer starts in the middle of the patch.
+  map.spawn = { q: Math.floor(startW / 2), r: Math.floor(startD / 2) };
   resize();
   // Open looking at the patch rather than at empty space beside it.
   view.x = (startW * GEOM.stepX - canvas.width / view.scale) / 2;
@@ -300,7 +454,7 @@ async function init() {
   setupInput();
   requestAnimationFrame(render);
 
-  window.editor = { get map() { return map; }, view, res };
+  window.editor = { get map() { return map; }, get pieces() { return pieces; }, setup, view, res };
 }
 
 init().catch(err => {
