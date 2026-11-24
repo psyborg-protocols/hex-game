@@ -1312,7 +1312,7 @@ async function boot() {
         // The line under the moon counts them; nothing more needs saying.
       } else if (e.type === 'held' || e.type === 'dawn') {
         const felled = e.felled ? `${e.felled} of them fell` : '';
-        const when = e.type === 'dawn' ? 'Dawn' : 'They have gone';
+        const when = e.type !== 'dawn' ? 'They have gone' : e.morning ? 'They turn for home' : 'Dawn';
         if (e.lost) game.ui.ping({ kind: 'raid', title: `${when}. The night cost you`, sub: felled });
         else game.ui.ping({ kind: 'victory', title: `${when}. The valley held`, sub: felled });
         afterChange();
@@ -1373,7 +1373,10 @@ async function boot() {
     if (raid?.stage === 'night') {
       const left = raid.waves.length - raid.sent;
       const more = left ? `, ${left} more wave${left > 1 ? 's' : ''} to come` : '';
-      game.ui.setAlert(`${out} abroad${more} · dawn in ${turnsTxt(m.dawnAt - turn)}`, 'raid');
+      // Late bands keep at it past dawn: count down to when they turn for home.
+      const home = raid.endsAt ?? m.dawnAt;
+      const ends = home > moonOf({ turn: raid.startedAt }).dawnAt ? 'home in' : 'dawn in';
+      game.ui.setAlert(`${out} abroad${more} · ${ends} ${turnsTxt(home - turn)}`, 'raid');
     } else if (raid?.stage === 'omen') {
       game.ui.setAlert(`${raidSize(raid.waves)} at dusk · ${turnsTxt(m.duskAt - turn)}`, 'omens');
     } else if (out) {

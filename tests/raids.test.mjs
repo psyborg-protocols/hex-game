@@ -13,6 +13,7 @@ import { clash, expectedDamage } from '../src/game/combat.js';
 import {
   garrisonCamps, campsLeft, guardsAt, updateUnits, ensureRaidState,
   hostiles, abroad, burnCamp, raidWaves, raidSize, makeUnit, stepRaidTurn, setRaidRandom,
+  RAID_WINDOW, RAID_MIN_TURNS,
 } from '../src/game/raiders.js';
 
 // These tests are about what a raid does once it sets out; the random start
@@ -157,6 +158,44 @@ test('at dawn whoever is still raiding turns for home', () => {
   eq(state.units.filter(u => u.faction === 'raider' && u.mode === 'raid').length, 0, 'raiders were still at it after dawn');
   eq(moonOf(state).moon, 2, 'a new moon should have begun');
   eq(state.raid.stage, 'idle', 'the new moon should start quiet');
+});
+
+test('a band that sets out late is out its full length, into the morning', () => {
+  const { map, world, state } = homestead('gamma');
+  for (const b of state.built) {
+    const f = map.get(b.q, b.r).feature;
+    f.hp = f.maxHp = 5000;
+  }
+  const player = { ...farAway(map, state), moving: false };
+  const m = firstMoon();
+  setRaidRandom(() => 0.99); // the last turn of the window
+  try {
+    state.turn = m.omensAt - 1;
+    simulateTurns(world, state, player, m.dawnAt - state.turn);
+    const { startedAt, endsAt } = state.raid;
+    eq(startedAt, m.duskAt + RAID_WINDOW, 'set out at the end of the window');
+    eq(endsAt, startedAt + RAID_MIN_TURNS, 'out a full raid length');
+    ok(endsAt > m.dawnAt, 'which runs past dawn');
+    // Dawn has come, and they are still at it.
+    eq(state.turn, m.dawnAt);
+    eq(state.raid.stage, 'night', 'the raid is not called off at dawn');
+    ok(state.units.some(u => u.faction === 'raider' && u.mode === 'raid'), 'raiders still at it in the morning');
+    const events = simulateTurns(world, state, player, endsAt - state.turn);
+    const over = events.find(e => e.type === 'dawn' || e.type === 'held');
+    ok(over, 'the raid was never called over');
+    if (over.type === 'dawn') ok(over.morning, 'told as a morning, not a dawn');
+    eq(state.units.filter(u => u.faction === 'raider' && u.mode === 'raid').length, 0, 'they turn for home');
+    eq(state.raid.moon, 2);
+    eq(state.raid.stage, 'idle', 'and the new moon starts quiet');
+  } finally {
+    setRaidRandom(() => 0);
+  }
+});
+
+test('the earliest band is out a night: from dusk to dawn', () => {
+  eq(RAID_MIN_TURNS, TURNS_PER_DAY / 2, 'a raid lasts at least a night');
+  const m = firstMoon();
+  ok(m.duskAt + RAID_MIN_TURNS === m.dawnAt, 'dusk to dawn');
 });
 
 test('a watchtower brings the omens at first light', () => {

@@ -133,13 +133,14 @@ export function garrisonCamps(map, state) {
 // the far end of the map, or stand in a field, without the hut burning behind
 // you. On the last afternoon come the omens — which camp, how many, and the way
 // they will come. At dusk the first wave sets out, the rest behind it, and at
-// dawn whoever is still in your lands turns for home.
+// dawn whoever is still in your lands turns for home: unless the band set out
+// late, in which case it keeps at it into the morning (RAID_MIN_TURNS).
 //
 // state.raid.stage runs idle -> omen -> night -> done, once a moon.
 
 const freshRaid = moon => ({
   moon, stage: 'idle', from: null, target: null, waves: [], sent: 0,
-  startedAt: 0, startAt: null, route: null, routeAt: 0, felled: 0, lost: 0,
+  startedAt: 0, startAt: null, endsAt: null, route: null, routeAt: 0, felled: 0, lost: 0,
 });
 
 /**
@@ -147,6 +148,15 @@ const freshRaid = moon => ({
  * random turn from dusk to RAID_WINDOW turns after it, rolled with the omens.
  */
 export const RAID_WINDOW = 4;
+
+/**
+ * A raid is out at least this many turns from its first wave, a night's length.
+ * One that set out late is not called home at dawn but runs on into the day.
+ */
+export const RAID_MIN_TURNS = 12;
+
+/** The turn a raid that set out at `startedAt` turns for home. */
+export const raidEndsAt = (startedAt, dawnAt) => Math.max(dawnAt, startedAt + RAID_MIN_TURNS);
 
 let raidRandom = Math.random;
 /** Tests pin the start window (`() => 0` sets out right at dusk). */
@@ -210,20 +220,25 @@ function chooseTarget(map, state, from) {
 /** Raiders out in your lands, as against the guards who stay by their fires. */
 export const abroad = state => hostiles(state).filter(u => u.mode !== 'guard');
 
-/** The moon turned: whoever is still raiding goes home, and the night is told. */
-function dawn(state, raid, events) {
+/** The raid has run its length: whoever is still raiding goes home, and the night is told. */
+function dawn(state, raid, events, turn) {
   for (const u of state.units || []) {
     if (u.faction === 'raider' && u.mode === 'raid') { u.mode = 'return'; u.target = null; u.path = []; }
   }
   // A night that ended before dawn has already been told, by `held`.
-  if (raid.stage === 'night' && raid.sent > 0) endNight(state, raid, events, 'dawn');
+  if (raid.stage === 'night' && raid.sent > 0) {
+    endNight(state, raid, events, 'dawn', { morning: turn > moonOf({ turn: raid.startedAt }).dawnAt });
+  }
 }
 
 /** The night is over, one way or the other. A night nothing was lost in is held. */
-function endNight(state, raid, events, type) {
+function endNight(state, raid, events, type, extra = {}) {
   if (!raid.lost) state.stats.nightsHeld = (state.stats.nightsHeld || 0) + 1;
-  events.push({ type, moon: raid.moon, felled: raid.felled || 0, lost: raid.lost || 0 });
+  events.push({ type, moon: raid.moon, felled: raid.felled || 0, lost: raid.lost || 0, ...extra });
 }
+
+/** A raid that is still within its length, though the moon has turned. */
+const runningLate = (raid, turn) => raid.stage === 'night' && raid.endsAt != null && turn < raid.endsAt;
 
 /** Send out the next wave. */
 function sendWave(world, state, raid, events) {
@@ -263,8 +278,9 @@ export function tickSchedule(world, state, events, clock = worldClock(state)) {
   const turn = Math.max(0, Math.floor(clock));
   const m = moonOf({ turn });
 
-  if (raid.moon !== m.moon) {
-    if (raid.moon) dawn(state, raid, events);
+  // The moon turns at dawn, but a band that set out late runs on into the morning.
+  if (raid.moon !== m.moon && !runningLate(raid, turn)) {
+    if (raid.moon) dawn(state, raid, events, turn);
     Object.assign(raid, freshRaid(m.moon));
   }
 
@@ -294,6 +310,7 @@ export function tickSchedule(world, state, events, clock = worldClock(state)) {
   if (raid.stage === 'omen' && turn >= m.duskAt) {
     raid.stage = 'night';
     raid.startedAt = Math.max(turn, raid.startAt ?? turn);
+    raid.endsAt = raidEndsAt(raid.startedAt, m.dawnAt);
     events.push({ type: 'nightfall', from: raid.from, waves: raid.waves.length, size: raidSize(raid.waves) });
   }
 

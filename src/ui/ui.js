@@ -250,7 +250,8 @@ export class UI {
     const eFull = restedMaxEnergy(s);
     const lostPct = tired ? Math.round(((eFull - eMax) / eFull) * 100) : 0;
     const hungry = !isFree(s) && s.energy <= eMax * 0.4 && food === 0;
-    const phase = moon.phase === 'fair' ? '' : PHASE_NAMES[moon.phase];
+    // A raid that runs on into the morning is still a raid.
+    const phase = s.raid?.stage === 'night' ? PHASE_NAMES.raid : moon.phase === 'fair' ? '' : PHASE_NAMES[moon.phase];
     const phaseLabel = night ? `Night ${dInfo.phaseTurn}/${NIGHT_TURNS}` : `Day ${dInfo.phaseTurn}/${DAY_TURNS}`;
     const moveMax = maxMoveDistance(s);
 
