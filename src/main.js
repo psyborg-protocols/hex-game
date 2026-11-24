@@ -4,6 +4,8 @@ import { loadTileset, BRIDGE_SHEET, bridgeFrame, isWater, variantFor } from './w
 import { loadDecor, BAKED_SHEETS } from './render/decor.js';
 import { drawStructure, drawVillage, drawCamp, drawBridgeDeck, drawLadder, drawLadderTop, drawCrossing, hpBar } from './render/structures.js';
 import { drawUnit, unitPos, drawDog, dogPos } from './render/units.js';
+import { drawLootPile } from './render/loot.js';
+import { dropAt, lootText } from './game/drops.js';
 import { ensureDog, updateDog, commandDogGuard, commandDogFollow } from './game/dog.js';
 import { generateWorld } from './world/worldgen.js';
 import { findPath, isBridged } from './world/pathfinding.js';
@@ -33,7 +35,7 @@ import { attackDice, defenseDice, reach, maxHp, playerGearSnapshot } from './gam
 import { levelOf } from './game/skills.js';
 import { checkJourney, STAGES, currentStage } from './game/journey.js';
 import {
-  updateUnits, garrisonCamps, guardsAt, hostiles, strike, spoils, rally, burnCamp,
+  updateUnits, garrisonCamps, guardsAt, hostiles, strike, spoilsOf, rally, burnCamp,
   campsLeft, ensureRaidState, raidSize, abroad, KINDS, tickSchedule, stepRaidTurn, TURN_UNIT_SECONDS,
 } from './game/raiders.js';
 import { ensureTurnState, advanceTurn, advanceWorldTurn, spendMoveStep, spendAction } from './game/turns.js';
@@ -430,6 +432,7 @@ async function boot() {
     hurtMe: (damage, roll, source, by) => {
       if (by) lastHitBy = { by, turn: state.turn || 0 };
       state.hp = Math.max(0, state.hp - damage);
+      struck(by);
       combatUntilTurn = (state.turn || 0) + 1;
       if (roll) game.ui.showDice(playerPos, roll);
       else if (damage) game.ui.floatText(playerPos, `-${damage}`, 'bad');
@@ -498,11 +501,21 @@ async function boot() {
     },
     hostRally: (from, m) => { rally(state, m.at, map, m.n, from); },
     removeWildDog: id => { state.wildDogs = (state.wildDogs || []).filter(d => d.id !== id); },
-    // A raider your tower or militia felled, far away.
+    // A raider your tower or militia felled, far away. What it carried lies where it fell.
     onSpoils: unit => {
-      const got = spoils(state, unit);
-      game.ui.floatText(playerPos, got.text, 'gain');
-      chime('copper', 0.05);
+      countKill(unit);
+      game.ui.murmur(`Your ${unit.by === 'tower' ? 'watchtower' : 'militia'} felled a ${unit.kind}. Its loot lies where it fell.`, { tone: 'good', ms: 4200 });
+      afterChange();
+    },
+    // Loot you picked up off the ground (or found gone).
+    onPickedUp: res => {
+      if (!res) { game.ui.notify('Someone got to it first.'); return; }
+      const text = lootText(res);
+      if (text) {
+        game.ui.floatText(playerPos, `+ ${text}`, 'gain');
+        chime(res.gold ? 'gold' : 'copper', 0.05);
+      }
+      if (res.left.length) game.ui.notify(`Your pack is full. Left on the ground: ${lootText({ items: res.left })}.`, 3600);
       afterChange();
     },
     onPvpHit: m => {
@@ -878,7 +891,17 @@ async function boot() {
     ctx.fillRect(x - 3, y - 3, 1, 1);
   }
 
-  const unitEntities = () => (state.units || []).map(u => ({
+  const lootEntities = () => (state.drops || []).filter(d => inView(d.q, d.r)).map(d => {
+    const { cx, cy } = tileCenter(d.q, d.r, Math.max(0, map.surfaceAt(d.q, d.r)));
+    return {
+      q: d.q, r: d.r,
+      draw: ctx => drawLootPile(ctx, cx, cy, performance.now() / 1000, !dead && hover?.q === d.q && hover?.r === d.r),
+    };
+  });
+
+  // The fallen are gone from sight at once (the board clears them on the next turn),
+  // leaving their loot on the ground to be seen.
+  const unitEntities = () => (state.units || []).filter(u => u.hp > 0).map(u => ({
     q: u.q, r: u.r,
     draw: ctx => drawUnit(ctx, map, u, performance.now()),
   }));
@@ -1198,6 +1221,34 @@ async function boot() {
   let rivalTarget = null;
   let lastHitBy = null;
 
+  /** When you last told your feet where to go, and when a blow last stopped them. */
+  let orderAt = 0;
+  let haltedAt = 0;
+  /** Set off again within this long of being stopped, and you are running: for this long, blows don't stop you. */
+  const FLEE_MS = 8000;
+
+  /**
+   * Something hit you: you hit back. Walking, you finish the step and turn on
+   * them (unless you set off again after the last time, to get away); standing,
+   * the usual swing finds them. A rival who hits you in Competitive becomes
+   * the one you swing at.
+   */
+  function struck(by = null) {
+    if (dead) return;
+    const now = performance.now();
+    if (by && by !== meId() && game.mp?.mode === 'competitive' && !rivalTarget && game.mp.remotes.get(by)) {
+      rivalTarget = { kind: 'player', id: by };
+    }
+    // Running: you were stopped, then soon set off again, and not long ago.
+    const fleeing = haltedAt > 0 && orderAt > haltedAt && orderAt - haltedAt < FLEE_MS && now - orderAt < FLEE_MS;
+    if (player.moving && !fleeing) {
+      player.path = [];
+      player.onArrive = null;
+      haltedAt = now;
+    }
+    player.seated = false;
+  }
+
   function strikeRival() {
     const t = rivalTarget;
     if (game.mp?.mode !== 'competitive') { rivalTarget = null; return false; }
@@ -1277,25 +1328,29 @@ async function boot() {
     takeAction(1);
   }
 
+  /** A raider down to you (or your dog, tower or militia). */
+  function countKill(u) {
+    state.stats.kills = (state.stats.kills || 0) + 1;
+    if (u.kind === 'warlord') {
+      state.stats.warlord = true;
+      game.ui.ping({ kind: 'victory', title: 'The Warlord is dead' });
+    } else chime('copper', 0.05);
+  }
+
   function fell(u, by, owner = null) {
     if (u.faction !== 'raider') {
       game.ui.notify('One of the villagers has fallen.', 4200, 'bad');
       return;
     }
-    // A kill by someone else's watchtower or militia is theirs.
+    // Whatever it carried falls where it did, for whoever picks it up.
+    game.mp.drop(u.q, u.r, spoilsOf(u));
+    // A kill by someone else's watchtower or militia is theirs to count.
     const credit = owner || (by?.faction === 'ally' ? by.owner : null);
     if (game.mp?.active && credit && credit !== meId()) {
-      game.mp.sendTo(credit, { t: 'spoils', unit: { kind: u.kind, carry: u.carry || [] } });
-      afterChange();
-      return;
-    }
-    if (by === 'player' || by === 'tower' || by === 'dog' || by?.faction === 'ally') {
-      const got = spoils(state, u);
-      game.ui.floatText(unitAnchor(u), got.text, 'gain');
-      if (u.kind === 'warlord') {
-        state.stats.warlord = true;
-        game.ui.ping({ kind: 'victory', title: 'The Warlord is dead' });
-      } else chime('copper', 0.05);
+      game.mp.sendTo(credit, { t: 'spoils', unit: { kind: u.kind, by: by === 'tower' ? 'tower' : 'militia' } });
+    } else if (by === 'player' || by === 'tower' || by === 'dog' || by?.faction === 'ally') {
+      countKill(u);
+      game.ui.floatText(unitAnchor(u), 'dropped its loot', 'gain');
     }
     afterChange();
   }
@@ -1323,6 +1378,7 @@ async function boot() {
           game.ui.showDice(() => other.pos, e.roll);
         } else if (e.target === 'player') {
           combatUntilTurn = (state.turn || 0) + 1;
+          struck();
           e.who.facing = player.q >= e.who.q ? 1 : -1;
           game.ui.showDice(playerPos, e.roll);
           if (e.roll.damage) chime('tick', 0.03);
@@ -1336,6 +1392,7 @@ async function boot() {
           game.ui.showDice(() => bitten.pos, e.roll);
         } else {
           combatUntilTurn = (state.turn || 0) + 1;
+          struck();
           game.ui.showDice(playerPos, e.roll);
           if (e.roll.damage) chime('tick', 0.03);
         }
@@ -1416,18 +1473,17 @@ async function boot() {
     rivalTarget = null;
     state.stats.deaths = (state.stats.deaths || 0) + 1;
     const loss = penaltyOnDeath(state);
-    // Struck down by another player: the gold you lose is theirs.
-    const killer = lastHitBy && (state.turn || 0) - lastHitBy.turn <= 1 ? lastHitBy.by : null;
     lastHitBy = null;
-    if (killer && game.mp?.active && loss.gold) game.mp.sendTo(killer, { t: 'loot', gold: loss.gold });
+    // What you lose lies where you fell: go back for it, before someone else does.
+    game.mp.drop(player.q, player.r, { gold: loss.gold, items: loss.lost });
     const home = homeHex();
     // Out on a raid, the band that killed you goes home with what it took.
     game.ui.openPanel('message', {
       sticky: true,
       title: 'You have fallen',
       html: `<p class="lede">You wake by your fire, aching.</p>
-        <p>You lost ${loss.gold} gold and half of everything that was not a tool or gear.
-        What is in your hut's stash is safe.</p>`,
+        <p>You dropped ${loss.gold} gold and half of everything that was not a tool or gear.
+        It lies where you fell, for whoever gets there first. What is in your hut's stash is safe.</p>`,
       buttons: [{ label: 'Get up', run: () => {
         player.q = home.q; player.r = home.r; player.path = []; player.leg = null;
         state.hp = maxHp(state);
@@ -1805,7 +1861,8 @@ async function boot() {
     const hoverCol = hit && map.get(hit.q, hit.r);
     const hoverWild = (!placing && !dead) ? (onWildDogBody(ptrWorld) || (hit && wildDogAt(state, hit.q, hit.r))) : null;
     const interactive = !placing && !dead && (dogSelected || onDogBody(ptrWorld) || !!hoverWild || !!fx.hover || !!hit && (
-      (hoverCol?.feature?.type === 'village')
+      !!dropAt(state, hit.q, hit.r)
+      || (hoverCol?.feature?.type === 'village')
       || (hoverCol?.feature?.type === 'structure' && ['hut', 'hearth', 'workbench', 'forge'].includes(hoverCol.feature.item))
       || (hoverCol?.feature?.type === 'camp' && !hoverCol.feature.burned && !guardsAt(state, hoverCol))
       || !!cliffInfoAt(hoverWorld, hit)
@@ -1834,6 +1891,7 @@ async function boot() {
       if (tree) target = { q: tree.q, r: tree.r, h: map.get(tree.q, tree.r)?.h ?? 0 };
     }
     if (!target) return;
+    orderAt = performance.now();
 
     if (placing) {
       // A click anywhere but a highlight puts the thing away again. The lit
@@ -1941,6 +1999,18 @@ async function boot() {
           refreshContext();
           return;
         }
+      }
+
+      // Clicking loot on the ground walks you over and picks it up.
+      const pile = dropAt(state, target.q, target.r);
+      if (pile && clickedCol) {
+        walkToAndDo(clickedCol, 0, () => {
+          const still = dropAt(state, target.q, target.r);
+          if (!still) return game.ui.notify('Someone got to it first.');
+          player.triggerAction('forage', 0.45);
+          game.mp.pickUp(still.id);
+        });
+        return;
       }
 
       // Clicking a visible resource node, cold campfire, or ore vein works it.
@@ -2124,7 +2194,7 @@ async function boot() {
       // that hex and hidden by whatever hides the hex. As an overlay it was
       // painted over everything: stand behind a peak and the ring ran round the
       // mountain's face, as if that were what you were exploring.
-      entities: [...features, ...chargeEntity(now), ...meditationEntity(now), ...pings.entities(map, now, inView), ...unitEntities(), ...wildDogEntities(), ...dogEntity(), ...game.mp.entities(), player],
+      entities: [...features, ...chargeEntity(now), ...meditationEntity(now), ...pings.entities(map, now, inView), ...lootEntities(), ...unitEntities(), ...wildDogEntities(), ...dogEntity(), ...game.mp.entities(), player],
       overlays: [
         drawOverlays,
         ctx => pings.draw(ctx, map, now, inView),
@@ -2135,7 +2205,7 @@ async function boot() {
         ctx => {
           ctx.save();
           ctx.globalAlpha = 0.38;
-          for (const u of state.units || []) drawUnit(ctx, map, u, performance.now(), true);
+          for (const u of state.units || []) if (u.hp > 0) drawUnit(ctx, map, u, performance.now(), true);
           for (const wd of state.wildDogs || []) {
             if (wd.hp <= 0) continue;
             const { cx, cy } = tileCenter(wd.q, wd.r, Math.max(0, map.surfaceAt(wd.q, wd.r)));

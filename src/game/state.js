@@ -137,6 +137,9 @@ export function createState({ gold = 10, free = false } = {}) {
     raid: null,             // the raid schedule; see raiders.js
     wildDogs: [],
     wildDogsSeeded: false,
+    // Loot lying on the ground, for whoever picks it up (drops.js).
+    drops: [],
+    dropSeq: 0,
     won: false,
     log: [],
     mind: createMindState(),

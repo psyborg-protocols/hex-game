@@ -45,7 +45,8 @@ export const HOW_TO_PLAY = `
     <div><b>The moon</b><span>A moon is three days (72 turns). For two days and the third morning nothing comes;
       on the third afternoon the omens show who is coming tonight and the way they will take.</span></div>
     <div><b>Raiders</b><span>They cross the river at their rafts, after dusk, in waves, to burn what you built. They stay out a night’s length, so a band that sets out late is still at it in the morning.
-      Walls slow them, watchtowers shoot, shrines protect. Stand next to a raider to fight: attack dice hit on 4+, defence dice block on 5+.</span></div>
+      Walls slow them, watchtowers shoot, shrines protect. Stand next to a raider to fight: attack dice hit on 4+, defence dice block on 5+.
+      Anything that hits you, you hit back. A fallen raider drops its loot on the ground, and so do you when you fall: click the sack to pick it up.</span></div>
     <div><b>Space</b><span>The eye: everything you know of the land.</span></div>
     <div><b>The corners</b><span>Top left: health, energy, day/night turn &amp; the moon. Point at it for full details.</span></div>
   </div>`;

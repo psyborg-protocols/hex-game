@@ -17,10 +17,10 @@ import { neighbors, distance } from '../world/hexgrid.js';
 import { isWater } from '../world/tileset.js';
 import { findPath } from '../world/pathfinding.js';
 import { clash } from './combat.js';
-import { TURNS_PER_DAY, dayOf, moonOf, itemName } from './state.js';
+import { TURNS_PER_DAY, dayOf, moonOf } from './state.js';
 import { destroyStructure } from './actions.js';
 import { villageKey } from './economy.js';
-import { addItem, countItem } from './inventory.js';
+import { countItem } from './inventory.js';
 import { defenseDice } from './gear.js';
 import { worldClock } from './shared.js';
 
@@ -589,22 +589,19 @@ export function strike(state, unit, attackDice, rng = null) {
   return roll;
 }
 
-/** What a fallen raider leaves you: gold, whatever it stole, sometimes more. */
-export function spoils(state, unit) {
+/**
+ * What a fallen raider drops where it fell: gold, whatever it stole, sometimes
+ * more. It lies on the ground until someone picks it up (drops.js).
+ */
+export function spoilsOf(unit, rnd = Math.random) {
   const k = KINDS[unit.kind];
   const [lo, hi] = k.gold;
-  const gold = lo + Math.floor(Math.random() * (hi - lo + 1));
-  state.gold += gold;
-  const items = [];
-  for (const s of unit.carry || []) {
-    const got = addItem(state, s.id, s.qty);
-    if (got) items.push({ id: s.id, qty: got });
-  }
-  if (unit.kind === 'brute' && Math.random() < 0.5 && addItem(state, 'ingot', 1)) items.push({ id: 'ingot', qty: 1 });
-  if (unit.kind === 'raider' && Math.random() < 0.4 && addItem(state, 'hide', 1)) items.push({ id: 'hide', qty: 1 });
-  if (unit.kind === 'warlord') for (const [id, n] of [['ingot', 3], ['iron_mail', 1]]) if (addItem(state, id, n)) items.push({ id, qty: n });
-  state.stats.kills = (state.stats.kills || 0) + 1;
-  return { gold, items, text: [`${gold} gold`, ...items.map(i => `${i.qty} ${itemName(i.id)}`)].join(', ') };
+  const gold = lo + Math.floor(rnd() * (hi - lo + 1));
+  const items = (unit.carry || []).filter(s => s?.qty > 0).map(s => ({ id: s.id, qty: s.qty }));
+  if (unit.kind === 'brute' && rnd() < 0.5) items.push({ id: 'ingot', qty: 1 });
+  if (unit.kind === 'raider' && rnd() < 0.4) items.push({ id: 'hide', qty: 1 });
+  if (unit.kind === 'warlord') items.push({ id: 'ingot', qty: 3 }, { id: 'iron_mail', qty: 1 });
+  return { gold, items };
 }
 
 /** Raise the militia: one fighter per village that trusts you, up to four. They follow `owner`. */

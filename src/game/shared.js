@@ -16,6 +16,8 @@ export const SHARED_KEYS = [
   'unitSeq',      // the next unit id, so ids never collide between browsers
   'wildDogs',
   'wildDogsSeeded',
+  'drops',        // loot on the ground (drops.js)
+  'dropSeq',
   'taken',        // depleted resource nodes ("q,r:harvest" -> turn)
   'picked',
   'clock',        // the world clock in a room (see worldClock)

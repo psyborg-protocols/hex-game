@@ -13,10 +13,11 @@
 //   columns      last writer wins (two players rarely fell the same tree at once)
 //   built        a set keyed item@q,r, so two players building at once both keep theirs
 //   taken/picked per key: the later turn (or the bigger count) wins
-//   host keys    the host's copy is the truth; guests never send them
+//   host keys    the host's copy is the truth; guests never send them (a guest
+//                asks the host to drop or pick up loot: see multiplayer.js)
 
 const GUEST_KEYS = ['built', 'taken', 'picked'];
-export const HOST_KEYS = ['units', 'raid', 'raidedUntil', 'towerClock', 'unitSeq', 'wildDogs', 'wildDogsSeeded', 'clock'];
+export const HOST_KEYS = ['units', 'raid', 'raidedUntil', 'towerClock', 'unitSeq', 'wildDogs', 'wildDogsSeeded', 'drops', 'dropSeq', 'clock'];
 
 const colJson = c => JSON.stringify({
   h: c.h, terrain: c.terrain, sprite: c.sprite, frame: c.frame, ...(c.feature ? { feature: c.feature } : {}),

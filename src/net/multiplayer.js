@@ -15,6 +15,7 @@ import { HostSession, GuestSession } from './session.js';
 import { WorldSync } from './sync.js';
 import { PlayerTrade, TradeReferee } from './trade.js';
 import { distance } from '../world/hexgrid.js';
+import { addDrop, removeDrop, takeLoot, pickUp } from '../game/drops.js';
 
 const ID_KEY = 'hexquest.playerId';
 const TAB_KEY = 'hexquest.tabPlayerId';
@@ -286,6 +287,9 @@ export class Multiplayer {
       case 'won': if (this.isHost) this.announceWinner(from); return;
       case 'winner': x.onWinner?.(m); return;
       case 'trade': this.onTrade(from, m); return;
+      case 'drop': if (this.isHost) addDrop(this.ctx.state, m.q, m.r, m); return;
+      case 'pickup': if (this.isHost) this.sendTo(from, { t: 'pickedUp', id: m.id, pile: removeDrop(this.ctx.state, m.id) }); return;
+      case 'pickedUp': this.onPickedUp(m); return;
       case 'personal': if (this.isHost) this.personal[from] = { state: m.state, pos: m.pos, at: Date.now() }; return;
       default: break;
     }
@@ -350,6 +354,36 @@ export class Multiplayer {
     const roll = this.ctx.clash(m.dice, def);
     this.hurt(m.target, roll.damage, { kind: 'pvp' }, roll, from);
     this.sendTo(from, { t: 'pvp-hit', target: m.target, roll });
+  }
+
+  // ------------------------------------------------------- loot on the ground
+
+  /**
+   * Leave loot lying at (q, r). Alone or hosting it goes straight on the ground;
+   * a guest asks the host, who keeps the world's piles.
+   */
+  drop(q, r, { gold = 0, items = [] } = {}) {
+    if (!(gold > 0) && !items.some(s => s?.qty > 0)) return;
+    if (this.isGuest) this.toHost({ t: 'drop', q, r, gold, items });
+    else addDrop(this.ctx.state, q, r, { gold, items });
+  }
+
+  /**
+   * Pick up the pile `id`. The host hands the whole pile to whoever asked first;
+   * what does not fit in their pack goes back on the ground. Reports through
+   * ctx.onPickedUp({ got, gold, left } | null).
+   */
+  pickUp(id) {
+    if (!this.isGuest) { this.ctx.onPickedUp?.(pickUp(this.ctx.state, id)); return; }
+    removeDrop(this.ctx.state, id); // gone from here at once; the host's word follows
+    this.toHost({ t: 'pickup', id });
+  }
+
+  onPickedUp(m) {
+    if (!m.pile) { this.ctx.onPickedUp?.(null); return; }
+    const res = takeLoot(this.ctx.state, m.pile);
+    if (res.left.length) this.drop(m.pile.q, m.pile.r, { items: res.left });
+    this.ctx.onPickedUp?.(res);
   }
 
   /** Competitive: somebody reached the end of the journey first. */
