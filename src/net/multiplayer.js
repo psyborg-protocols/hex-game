@@ -210,7 +210,9 @@ export class Multiplayer {
     }
     this.personal = personal || {};
     const me = { playerId: this.myId(), name, color };
-    this.session = new HostSession({ peer, mode, me, snapshot: (id, rejoin) => this.snapshotFor(id, rejoin) });
+    // Friends from a saved game are offered their old colour back.
+    const known = Object.fromEntries(Object.entries(this.personal).map(([id, p]) => [id, p.state?.playerColor]).filter(([, c]) => c));
+    this.session = new HostSession({ peer, mode, me, known, snapshot: (id, rejoin) => this.snapshotFor(id, rejoin) });
     state.room = { playerId: me.playerId, mode, host: true, code: this.code };
     state.clock = state.turn || 0;
     state.playerColor = color;

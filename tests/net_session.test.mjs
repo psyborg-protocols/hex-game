@@ -133,4 +133,12 @@ test('changing colour mid-game is refereed too', async () => {
   ok(host.setMyColor('amber'), 'the host can take the colour Ana just let go');
 });
 
+test('a friend from a saved game is offered their old colour back', async () => {
+  const hub = new LoopbackHub();
+  new HostSession({ peer: hub.peer('room-2'), mode: 'coop', me: { playerId: 'p-host', name: 'Asher', color: 'crimson' },
+    snapshot: async () => ({}), known: { 'p-mira': 'ocean' } });
+  const mira = new GuestSession({ peer: hub.peer(), hostId: 'room-2', me: { playerId: 'p-mira', name: 'Mira' } });
+  eq((await mira.connect()).previous, 'ocean');
+});
+
 run('net_session');

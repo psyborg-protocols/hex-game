@@ -42,7 +42,7 @@ export class HostSession extends Emitter {
    * @param o.me        { playerId, name, color } — the host is player one
    * @param o.snapshot  async (playerId) => the world a joiner boots from
    */
-  constructor({ peer, mode, me, snapshot, maxPlayers = MAX_PLAYERS }) {
+  constructor({ peer, mode, me, snapshot, maxPlayers = MAX_PLAYERS, known = {} }) {
     super();
     this.role = 'host';
     this.peer = peer;
@@ -52,6 +52,7 @@ export class HostSession extends Emitter {
     this.meId = me.playerId;
     this.players = new Map([[me.playerId, { id: me.playerId, name: me.name, color: me.color, connected: true, host: true, conn: null }]]);
     this.pending = new Map(); // conn -> { playerId, name }
+    this.known = known;       // playerId -> colour, from a saved game: offered back on rejoining
     peer.on('connection', conn => this.accept(conn));
   }
 
@@ -92,7 +93,7 @@ export class HostSession extends Emitter {
       if (back?.connected) { conn.send({ t: 'refused-join', duplicate: true, reason: 'You are already in this game in another tab.' }); return; }
       if (!back && this.roster.length >= this.maxPlayers) { conn.send({ t: 'full', max: this.maxPlayers }); conn.close(); return; }
       this.pending.set(conn, { playerId: id, name: String(m.name || 'Wanderer').slice(0, 20) });
-      conn.send({ t: 'colors', taken: this.taken(id), mode: this.mode, roster: this.roster, previous: back?.color || null });
+      conn.send({ t: 'colors', taken: this.taken(id), mode: this.mode, roster: this.roster, previous: back?.color || this.known[id] || null });
       return;
     }
     if (m.t === 'claim') {
