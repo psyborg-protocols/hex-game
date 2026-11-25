@@ -2,7 +2,7 @@
 // What is in the stash is safe from death, but not from raiders who burn the hut.
 
 import { ITEMS } from '../../game/state.js';
-import { addItem, removeItem, countItem, capacity, usedSlots } from '../../game/inventory.js';
+import { addItem, removeItem, countItem, capacity, usedSlots, lentCount, lentBy } from '../../game/inventory.js';
 import { icon, escapeHtml } from '../ui.js';
 
 function grid(slots, side) {
@@ -45,7 +45,10 @@ export const stashPanel = {
       b.addEventListener('click', () => {
         const slot = s.inventory[+b.dataset.pack];
         if (!slot) return;
-        const moved = stashAdd(s, slot.id, slot.qty);
+        // A master's lent tool goes back to the master, not into your stash.
+        const qty = Math.min(slot.qty, countItem(s, slot.id) - lentCount(s, slot.id));
+        if (qty <= 0) { game.ui.notify(`That was lent to you by ${lentBy(s, slot.id)}. It doesn't go in your stash.`, 3600, 'bad'); return; }
+        const moved = stashAdd(s, slot.id, qty);
         if (moved) removeItem(s, slot.id, Math.min(moved, countItem(s, slot.id)));
         game.syncPlayerGear?.();
         game.ui.refreshPanel();

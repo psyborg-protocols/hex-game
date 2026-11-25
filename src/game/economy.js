@@ -13,14 +13,18 @@ import { Rng } from '../core/rng.js';
 import { ITEM_BASE_PRICES, ITEMS, VILLAGE_KINDS } from '../../data/game_data.js';
 import { isBuilding, itemName, isFree } from './state.js';
 import { worldClock } from './shared.js';
-import { addItem, removeItem, hasItem, hasRoomFor, countItem } from './inventory.js';
+import { addItem, removeItem, hasItem, hasRoomFor, countItem, canPart, lentBy } from './inventory.js';
+import { staffPrice } from './jobs.js';
 
 export const villageKey = (q, r) => `${q},${r}`;
 
 export const kindOf = feature => VILLAGE_KINDS[feature?.kind] || VILLAGE_KINDS.farmers;
 
-/** Gold a village pays for its favour. */
-export const FAVOUR_REWARD = 20;
+/**
+ * Gold a village pays for its favour: none. Its trust is the reward (its market,
+ * its station, its map); early gold comes from selling and from work (jobs.js).
+ */
+export const FAVOUR_REWARD = 0;
 
 /**
  * Fill in a village's prices and favour the first time it is visited. Prices are
@@ -86,8 +90,8 @@ export function giveFavour(state, col) {
   }
   if (!isFree(state)) removeItem(state, item, qty);
   t.done = true;
-  state.gold += FAVOUR_REWARD;
-  return { ok: true, message: `${col.feature.name} trusts you now. They pay you ${FAVOUR_REWARD} gold.` };
+  if (FAVOUR_REWARD) state.gold += FAVOUR_REWARD;
+  return { ok: true, message: `${col.feature.name} trusts you now. Their market and their ${itemName(kindOf(col.feature).station).toLowerCase()} are open to you.` };
 }
 
 export const stockOf = (state, q, r) => state.prices[villageKey(q, r)] || {};
@@ -103,8 +107,10 @@ export function buy(state, col, itemId) {
   const { q, r } = col;
   if (!isTrusted(state, q, r)) return { ok: false, message: 'They will not trade with a stranger.' };
   if (isRaided(state, q, r)) return { ok: false, message: 'The stalls are wrecked. Come back tomorrow.' };
-  const price = stockOf(state, q, r)[itemId];
-  if (price == null) return { ok: false, message: 'They do not sell that.' };
+  const listed = stockOf(state, q, r)[itemId];
+  if (listed == null) return { ok: false, message: 'They do not sell that.' };
+  // A Journeyman pays what the family pays for the village's own goods (jobs.js).
+  const price = staffPrice(state, col, itemId, listed);
   const free = isFree(state);
   if (!free && state.gold < price) return { ok: false, message: 'Not enough gold.' };
   if (!hasRoomFor(state, itemId, 1)) return { ok: false, message: 'No room to carry it.' };
@@ -119,6 +125,7 @@ export function sell(state, col, itemId) {
   if (isRaided(state, q, r)) return { ok: false, message: 'The stalls are wrecked. Come back tomorrow.' };
   if (!hasItem(state, itemId, 1)) return { ok: false, message: `You have no ${itemName(itemId)}.` };
   if (isBuilding(itemId) || !ITEMS[itemId]) return { ok: false, message: 'That is not yours to sell.' };
+  if (!canPart(state, itemId, 1)) return { ok: false, message: `That ${itemName(itemId)} was lent to you by ${lentBy(state, itemId) || 'a master'}. It is not yours to sell.` };
   const price = sellPrice(col.feature, itemId);
   removeItem(state, itemId, 1);
   state.gold += price;

@@ -238,3 +238,76 @@ export const VILLAGE_KINDS = {
   smiths:     { name: 'Smiths',     sells: ['ore', 'ingot', 'wood_tongs', 'pickaxe'], station: 'forge',
                 favours: [{ item: 'log', qty: 4 }, { item: 'stone', qty: 8 }] },
 };
+
+/**
+ * Work in the villages (src/game/jobs.js). One job per village kind; herbalists
+ * do not hire. A shift is half a day. Rank is earned by time served, not XP:
+ * shifts worked and errands done at that village. See JOB_RANKS.
+ *
+ *   skill     what the work teaches (3 XP a shift, up to JOB_XP_CAP), or null
+ *   errandSkill  whose level picks the errand (defaults to skill)
+ *   pay       gold for a shift as a Hand; +1 Apprentice, +1 Journeyman
+ *   goods     what else a full shift pays in kind
+ *   bed       a free bed in the village the night after the shift
+ *   gift      the trade's tool, given once when you make Journeyman
+ *   shift     'day' (6 daylight turns) or 'evening' (supper into the night, then bed)
+ *   errands   by level: { bring: {item: qty}, lend: [id | [any-of ids]], needs?: 'skill:mind:3' }
+ *   thanks    food added when an errand is handed in
+ */
+export const JOB_XP_CAP = 3;
+export const JOB_SHIFT_TURNS = 6;
+export const JOB_XP_PER_SHIFT = 3;
+export const JOB_RANKS = {
+  apprentice: { shifts: 3 },
+  journeyman: { shifts: 6, errands: 1 },
+};
+
+export const VILLAGE_JOBS = {
+  farmers: {
+    id: 'bakery', name: 'Bakery', master: 'baker', skill: null, errandSkill: 'homesteading',
+    pay: 3, goods: { bread: 2 }, gift: null, shift: 'day',
+    errands: {
+      1: { bring: { berries: 6 } },
+      2: { bring: { grain: 6 } },
+      3: { bring: { bread: 4 } },
+    },
+    thanks: { bread: 2 },
+  },
+  fishers: {
+    id: 'inn', name: 'Inn', master: 'innkeeper', skill: 'homesteading',
+    pay: 2, bed: true, gift: 'pot', shift: 'evening',
+    errands: {
+      1: { bring: { fish: 3 }, lend: ['fishing_rod'] },
+      2: { bring: { meat: 2 }, lend: ['bow'] },
+      3: { bring: { meal: 2 } },
+    },
+    thanks: { meal: 1 },
+  },
+  woodcutters: {
+    id: 'carpenter', name: "Carpenter's Shop", master: 'carpenter', skill: 'woodworking',
+    pay: 3, gift: 'stone_axe', shift: 'day',
+    errands: {
+      1: { bring: { log: 4 }, lend: [['stone_axe', 'iron_axe']] },
+      2: { bring: { plank: 4 }, lend: [['stone_axe', 'iron_axe'], 'stone_knife'] },
+      3: { bring: { bow: 1 }, lend: ['stone_knife'] },
+    },
+  },
+  masons: {
+    id: 'mason', name: "Mason's Yard", master: 'mason', skill: 'stoneworking',
+    pay: 3, gift: 'stone_hammer', shift: 'day',
+    errands: {
+      1: { bring: { stone: 6 } },
+      2: { bring: { block: 3 }, lend: [['stone_hammer', 'pickaxe']] },
+      3: { bring: { block: 6 }, lend: [['stone_hammer', 'pickaxe']] },
+    },
+  },
+  smiths: {
+    id: 'smithy', name: 'Smithy', master: 'smith', skill: 'metalworking',
+    pay: 3, gift: 'wood_tongs', shift: 'day',
+    errands: {
+      1: { bring: { log: 4 }, lend: ['iron_axe'] },
+      2: { bring: { stone: 8 }, lend: ['pickaxe'] },
+      3: { bring: { ore: 2 }, lend: ['pickaxe'], needs: 'skill:mind:3' },
+    },
+  },
+};

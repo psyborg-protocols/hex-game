@@ -27,6 +27,7 @@ import { foodValue, maxEnergy, restedMaxEnergy, capacity, usedSlots } from '../g
 import { attackDice, defenseDice, maxHp } from '../game/gear.js';
 import { maxMoveDistance, ensureTurnState } from '../game/turns.js';
 import { STAGES, currentStage } from '../game/journey.js';
+import { bringText, errandShort } from '../game/jobs.js';
 import { chime } from './chime.js';
 
 /** How long a goal goes unmet before its hint surfaces by itself, in seconds. */
@@ -264,6 +265,7 @@ export class UI {
         <div class="moon" style="--omens:${MOON_MARKS.omens}%; --dusk:${MOON_MARKS.dusk}%"><i style="left:${(moon.progress * 100).toFixed(1)}%"></i></div>
       </div>
       ${this.alert.text ? `<div class="omen ${this.alert.tone}">${escapeHtml(this.alert.text)}</div>` : ''}
+      ${errandLine(s)}
       ${this.game.mp?.hudRoster(escapeHtml) || ''}`;
 
     this.hudMore.innerHTML = `
@@ -422,7 +424,7 @@ export class UI {
     const el = document.createElement('div');
     el.className = 'ctx-menu';
     el.setAttribute('role', 'menu');
-    el.innerHTML = items.map((it, i) => `<button type="button" role="menuitem" class="${it.bad ? 'bad' : ''}" data-i="${i}">${escapeHtml(it.label)}</button>`).join('');
+    el.innerHTML = items.map((it, i) => `<button type="button" role="menuitem" class="${it.bad ? 'bad' : ''}" data-i="${i}" ${it.disabled ? 'disabled' : ''}>${escapeHtml(it.label)}</button>`).join('');
     document.body.appendChild(el);
     const w = el.offsetWidth, h = el.offsetHeight;
     el.style.left = `${Math.min(x, innerWidth - w - 8)}px`;
@@ -430,9 +432,9 @@ export class UI {
     const close = () => { el.remove(); removeEventListener('pointerdown', away, true); removeEventListener('keydown', esc, true); };
     const away = e => { if (!el.contains(e.target)) close(); };
     const esc = e => { if (e.key === 'Escape') close(); };
-    for (const b of el.querySelectorAll('button')) b.addEventListener('click', () => { close(); items[+b.dataset.i].run(); });
+    for (const b of el.querySelectorAll('button')) b.addEventListener('click', () => { close(); items[+b.dataset.i].run?.(); });
     setTimeout(() => { addEventListener('pointerdown', away, true); addEventListener('keydown', esc, true); });
-    el.querySelector('button')?.focus();
+    el.querySelector('button:not([disabled])')?.focus();
   }
 
   // -------------------------------------------------------------- panels
@@ -504,6 +506,15 @@ const TASKS = [
 ];
 
 const PHASE_NAMES = { fair: 'fair days', omens: 'omens', raid: 'raid night' };
+
+/** The errand a master sent you on, and how long you have left. */
+function errandLine(s) {
+  const e = s.jobs?.errand;
+  if (!e) return '';
+  const left = Math.max(0, e.due - Math.floor(s.turn || 0));
+  const ready = !errandShort(s).length;
+  return `<div class="omen errand${left <= 6 ? ' late' : ''}">Errand for ${escapeHtml(e.name)}: ${escapeHtml(bringText(e.bring))}${ready ? ' &check;' : ''} &middot; ${left} turn${left === 1 ? '' : 's'} left</div>`;
+}
 
 /** Where on the moon dial the omens and the last dusk fall, as percentages. */
 const MOON_MARKS = {

@@ -7,7 +7,7 @@
 import { ITEMS, RECIPES, WORN_SLOTS, isBuilding } from '../../game/state.js';
 import {
   foodValue, capacity, usedSlots, maxEnergy, ensureWorn, isWorn,
-  equipFromPack, unequipSlot, donFromPack,
+  equipFromPack, unequipSlot, donFromPack, FOOD_SLOTS, lentBy,
 } from '../../game/inventory.js';
 import { attackDice, defenseDice, reach, bestWeapon, maxHp } from '../../game/gear.js';
 import { maxMoveDistance, ensureTurnState } from '../../game/turns.js';
@@ -74,6 +74,51 @@ function donCloak(game, idx) {
   game.ui.refreshPanel();
 }
 
+/** The menu for a pack slot: drop on the ground, or toss for good. */
+function packMenu(game, idx, x, y) {
+  const slot = game.state.inventory[idx];
+  if (!slot) return;
+  const item = ITEMS[slot.id];
+  const name = item?.name || slot.id;
+  const lender = lentBy(game.state, slot.id);
+  if (lender) {
+    game.ui.showMenu(x, y, [{ label: `Lent by ${lender}: return it`, disabled: true }]);
+    return;
+  }
+  const many = slot.qty > 1;
+  const precious = ['tool', 'gear'].includes(item?.kind);
+  const toss = qty => (precious
+    ? () => game.ui.showMenu(x, y, [
+      { label: `Toss the ${name} for good`, bad: true, run: () => game.doTossFromPack(idx, qty) },
+      { label: 'Keep it' },
+    ])
+    : () => game.doTossFromPack(idx, qty));
+  game.ui.showMenu(x, y, [
+    { label: many ? `Drop one ${name}` : `Drop ${name}`, run: () => game.doDropFromPack(idx, 1) },
+    ...(many ? [{ label: `Drop all ${slot.qty}`, run: () => game.doDropFromPack(idx, slot.qty) }] : []),
+    { label: many ? 'Toss one' : `Toss ${name}`, bad: true, run: toss(1) },
+    ...(many ? [{ label: `Toss all ${slot.qty}`, bad: true, run: toss(slot.qty) }] : []),
+  ]);
+}
+
+/** The menu for worn gear: take it off, or drop it. */
+function wornMenu(game, slotKey, x, y) {
+  const id = ensureWorn(game.state)[slotKey];
+  if (!id) return;
+  const lender = lentBy(game.state, id);
+  game.ui.showMenu(x, y, [
+    { label: 'Unequip', run: () => {
+      const res = unequipSlot(game.state, slotKey);
+      if (!res.ok) return game.ui.notify(res.reason, 3200, 'bad');
+      game.syncPlayerGear?.();
+      game.ui.refreshPanel();
+    } },
+    lender
+      ? { label: `Lent by ${lender}: return it`, disabled: true }
+      : { label: `Drop ${ITEMS[id]?.name || id}`, run: () => game.doDropWorn(slotKey) },
+  ]);
+}
+
 export const inventoryPanel = {
   title: () => 'Pack',
 
@@ -96,18 +141,29 @@ export const inventoryPanel = {
       </button>`;
     }).join('');
 
-    const slots = state.inventory.slice(0, Math.max(cap, usedSlots(state))).map((slot, i) => {
-      if (!slot) return `<div class="slot empty"></div>`;
+    const slotHtml = (slot, i) => {
+      if (!slot) return `<div class="slot empty${i < FOOD_SLOTS ? ' food' : ''}"></div>`;
       const item = ITEMS[slot.id];
       const sel = props.selected === slot.id ? ' selected' : '';
-      const tip = item?.slot
+      const lender = lentBy(state, slot.id);
+      const tip = (item?.slot
         ? `${item.name} — click to equip (${SLOT_LABELS[item.slot] || item.slot})`
         : item?.don ? `${item.name} — click to put on for good`
-          : (item?.name || slot.id);
-      return `<button type="button" class="slot${sel}" data-pack-index="${i}" data-item="${slot.id}" title="${escapeHtml(tip)}">
-        ${icon(item, 28)}${slot.qty > 1 ? `<span class="qty">${slot.qty}</span>` : ''}
+          : (item?.name || slot.id)) + (lender ? ` · lent by ${lender}` : '') + ' · right-click to drop or toss';
+      return `<button type="button" class="slot${sel}${lender ? ' lent' : ''}${i >= cap ? ' over' : ''}" data-pack-index="${i}" data-item="${slot.id}" title="${escapeHtml(tip)}">
+        ${icon(item, 28)}${slot.qty > 1 ? `<span class="qty">${slot.qty}</span>` : ''}${lender ? '<span class="lent-tag">lent</span>' : ''}
       </button>`;
-    }).join('');
+    };
+    // Four slots for food on the left; everything else on the right.
+    const lastUsed = state.inventory.reduce((n, s, i) => (s ? i + 1 : n), 0);
+    const foodSlots = state.inventory.slice(0, FOOD_SLOTS).map((s, i) => slotHtml(s, i)).join('');
+    const mainSlots = state.inventory.slice(FOOD_SLOTS, Math.max(cap, lastUsed)).map((s, i) => slotHtml(s, i + FOOD_SLOTS)).join('');
+    const mainUsed = state.inventory.slice(FOOD_SLOTS).filter(Boolean).length;
+    const foodUsed = state.inventory.slice(0, FOOD_SLOTS).filter(Boolean).length;
+    const slots = `<div class="pack-split">
+        <div class="food-slots"><h4>Food <span class="dim">${foodUsed}/${FOOD_SLOTS}</span></h4><div class="slots">${foodSlots}</div></div>
+        <div class="main-slots"><h4>Pack <span class="dim">${mainUsed}/${cap - FOOD_SLOTS}</span></h4><div class="slots">${mainSlots}</div></div>
+      </div>`;
 
     const w = bestWeapon(state);
     const inPackIdx = props.selected ? state.inventory.findIndex(s => s?.id === props.selected) : -1;
@@ -125,10 +181,10 @@ export const inventoryPanel = {
       </div>
       <div class="worn-bar" role="toolbar" focusgroup="toolbar wrap" aria-label="Worn gear">${wornBar}</div>
       ${state.cloak ? '<p class="dim">You wear your hooded cloak: the night chill can&rsquo;t reach you. Change its colour under Game.</p>' : ''}
-      <div class="slots">${slots}</div>
+      ${slots}
       ${selected
         ? itemDetail(selected, { worn: isSelWorn, packIndex: inPackIdx })
-        : '<p class="dim">Click worn gear above to equip or remove it; click pack items to inspect or equip. Food is eaten on its own as you work.</p>'}`;
+        : '<p class="dim">Click worn gear above to equip or remove it; click pack items to inspect or equip; right-click (or hold) to drop or toss. Food goes in the four food slots and is eaten on its own as you work.</p>'}`;
   },
 
   bind(game, body) {
@@ -174,6 +230,26 @@ export const inventoryPanel = {
         game.ui.currentPanel.props = { selected: res.unequipped };
         game.ui.refreshPanel();
       });
+    }
+
+    // Right-click (or hold, on touch) a slot: drop it on the ground, or toss it.
+    const onMenu = (el, open) => {
+      el.addEventListener('contextmenu', e => { e.preventDefault(); open(e.clientX, e.clientY); });
+      let hold = null;
+      el.addEventListener('pointerdown', e => {
+        if (e.pointerType !== 'touch') return;
+        hold = setTimeout(() => { hold = 'fired'; open(e.clientX, e.clientY); }, 520);
+      });
+      const cancel = () => { if (hold && hold !== 'fired') clearTimeout(hold); };
+      el.addEventListener('pointerup', cancel);
+      el.addEventListener('pointerleave', cancel);
+      el.addEventListener('click', e => { if (hold === 'fired') { e.stopImmediatePropagation(); e.preventDefault(); } hold = null; }, true);
+    };
+    for (const btn of body.querySelectorAll('[data-pack-index]')) {
+      onMenu(btn, (x, y) => packMenu(game, Number(btn.dataset.packIndex), x, y));
+    }
+    for (const btn of body.querySelectorAll('[data-worn-slot][data-item]')) {
+      onMenu(btn, (x, y) => wornMenu(game, btn.dataset.wornSlot, x, y));
     }
 
     for (const btn of body.querySelectorAll('[data-pack-index]')) {

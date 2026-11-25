@@ -127,7 +127,7 @@ test('in a room: a guest\'s drop lands in the host\'s world, and the first to as
 test('in a room: a guest picks up a pile, and what does not fit goes back down', async () => {
   const { guest, hostState, guestState, picked } = await room();
   guestState.inventory = guestState.inventory.map(() => ({ id: 'stone', qty: 99 }));
-  guestState.inventory[0] = null;
+  guestState.inventory[4] = null; // the first slot of the main pack (0-3 are for food)
   const pile = addDrop(hostState, 1, 4, { gold: 3, items: [{ id: 'log', qty: 1 }, { id: 'hide', qty: 1 }] });
   guestState.drops = structuredClone(hostState.drops);
   const gold = guestState.gold;

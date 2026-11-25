@@ -935,3 +935,71 @@ button.big:hover { border-color: var(--accent); }
 .trade-status { margin: 10px 0 0; font-style: italic; color: var(--ink-dim); }
 .trade-status.them { color: #a6f08a; }
 @media (pointer: coarse) { .stepper button { inline-size: 36px; block-size: 36px; } }
+
+/* ---------------------------------------------------------- village work */
+
+/* A shift under way: what you are doing, and a way to stop. */
+#work-shift {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: min(560px, calc(100% - 32px));
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 8px 7px 16px;
+  font-size: 14px;
+  font-style: italic;
+  color: #f3e3bd;
+  background: rgba(36, 26, 14, 0.88);
+  border: 1px solid #6b5836;
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+#work-shift button {
+  font: 13px Georgia, serif;
+  font-style: normal;
+  padding: 4px 12px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid #6b5836;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+/* The village panel: the job, and an errand you are on. */
+.job, .errand {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  background: rgba(217, 180, 91, 0.06);
+}
+.job h3, .errand h3 { margin: 0 0 4px; }
+.job .trade-row button, .errand > button { margin-inline-start: auto; }
+.errand { background: rgba(120, 160, 220, 0.07); }
+.omen.errand { color: #b8d0f0; }
+.omen.errand.late { color: #ffb38a; }
+.trade-row s { opacity: 0.6; }
+
+/* The pack: four slots for food on the left, everything else on the right. */
+.pack-split { display: grid; grid-template-columns: auto 1fr; gap: 16px; margin: 10px 0; }
+.pack-split h4 { margin: 0; font-size: 12px; font-weight: normal; letter-spacing: 0.04em; }
+.pack-split .slots { margin: 6px 0 0; }
+.food-slots .slots { grid-template-columns: repeat(2, 48px); }
+.main-slots .slots { grid-template-columns: repeat(auto-fill, 48px); }
+.slot.empty.food { border-style: dashed; border-color: #5b6b3a; }
+.food-slots h4 { color: #b7cf8a; }
+.slot.lent { border-color: #6b8bbf; }
+.slot .lent-tag {
+  position: absolute; left: 2px; top: 1px; font-size: 9px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: #b8d0f0;
+}
+.slot.over { opacity: 0.6; border-style: dotted; }
+.ctx-menu button[disabled] { color: var(--ink); opacity: 0.55; cursor: default; }
+@media (max-width: 480px) {
+  .pack-split { grid-template-columns: 1fr; }
+}

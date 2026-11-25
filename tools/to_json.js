@@ -13,6 +13,8 @@ const out = {
   SKILL_INFO: mod.SKILL_INFO,
   STRUCTURE_HP: mod.STRUCTURE_HP,
   VILLAGE_KINDS: mod.VILLAGE_KINDS,
+  VILLAGE_JOBS: mod.VILLAGE_JOBS,
+  JOB_RANKS: mod.JOB_RANKS,
 };
 writeFileSync(path.join(__dirname, '..', 'data', 'game_data.json'), JSON.stringify(out, null, 2));
 console.log('wrote data/game_data.json');

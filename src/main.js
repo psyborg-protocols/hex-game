@@ -17,7 +17,11 @@ import { Player } from './game/player.js';
 import { pickHex, pointInHex, tileCenter, traceTopFace, distance, neighbors, columnBaseY, GEOM } from './world/hexgrid.js';
 
 import { createState, itemName, RECIPES, ITEMS, dayOf, moonOf, isNight, hasBuilt } from './game/state.js';
-import { walkOneStep, recomputeEnergy, countItem, addItem, removeItem, foodValue, usedSlots, capacity, isWorn } from './game/inventory.js';
+import { walkOneStep, recomputeEnergy, countItem, addItem, removeItem, foodValue, usedSlots, capacity, isWorn, ensurePackLayout, takeFromPack, takeFromWorn } from './game/inventory.js';
+import {
+  ensureJobs, startShift, endShift, handIn, checkErrandDeadline, confiscate, milestoneLine, masterLine, jobOf,
+  teaches, RANK_NAMES,
+} from './game/jobs.js';
 import { craft, checkRecipe, recipeKnown } from './game/crafting.js';
 import { ensureVillage, buy, sell, giveFavour, villageContext, isTrusted, isRaided } from './game/economy.js';
 import { villageNear } from './game/context.js';
@@ -126,6 +130,8 @@ async function boot() {
   state.goals ||= {};
   state.thoughts ||= {};
   state.stash ||= new Array(16).fill(null);
+  ensurePackLayout(state);   // a save from before the food slots
+  ensureJobs(state);
   if (state.hp == null) state.hp = maxHp(state);
   ensureRaidState(state);
   if (!restored) garrisonCamps(map, state);
@@ -278,8 +284,58 @@ async function boot() {
 
     doTrade(villageCol) {
       ensureVillage(state, villageCol.feature, villageCol.q, villageCol.r, seed);
+      // You kept a master's tool past the deadline: it is taken back at the door.
+      const taken = confiscate(state, villageCol);
+      if (taken.length) {
+        const job = jobOf(villageCol.feature);
+        game.ui.murmur(`${villageCol.feature.name} takes back what it lent. ${job ? milestoneLine(job, 'taken', { items: taken }) : ''}`, { tone: 'bad', ms: 7000 });
+        syncPlayerGear();
+      }
       game.ui.openPanel('trade', { village: villageCol });
     },
+
+    /** Work a shift at this village (jobs.js): the turns pass with the master beside you. */
+    doWork(col) { startWork(col); },
+
+    /** Hand in the errand at its village. */
+    doHandIn(col) {
+      const res = handIn(state, col);
+      if (!res.ok) return game.ui.notify(res.reason, 3600, 'bad');
+      const job = jobOf(col.feature);
+      chime('gold');
+      const got = [`${res.gold}g`, ...(res.xp ? [`${res.xp} ${job.skill} xp`] : []), ...res.thanks.map(t => `${t.qty} ${itemName(t.id)}`)];
+      game.ui.murmur(`${milestoneLine(job, 'handed')} (+ ${got.join(', ')})${res.returned.length ? ` You hand back the ${res.returned.map(id => itemName(id).toLowerCase()).join(' and ')}.` : ''}`, { tone: 'good', ms: 6400 });
+      if (res.levels?.length) announceLevels(job.skill, res.levels);
+      jobRank(job, res);
+      game.ui.refreshPanel();
+      afterChange();
+    },
+
+    /** The pack's right-click menu: drop on the ground, or toss for good. */
+    doDropFromPack(index, qty = null) {
+      const res = takeFromPack(state, index, qty);
+      if (!res.ok) return game.ui.notify(res.reason, 3600, 'bad');
+      game.mp.drop(player.q, player.r, { items: [{ id: res.id, qty: res.qty }] });
+      game.ui.notify(`You drop ${res.qty} ${itemName(res.id)}. Click the sack to pick it up again.`, 3000);
+      afterChange();
+      game.ui.refreshPanel();
+    },
+    doTossFromPack(index, qty = null) {
+      const res = takeFromPack(state, index, qty);
+      if (!res.ok) return game.ui.notify(res.reason, 3600, 'bad');
+      game.ui.notify(`You toss ${res.qty} ${itemName(res.id)}. It's gone.`, 3000);
+      afterChange();
+      game.ui.refreshPanel();
+    },
+    doDropWorn(slotKey) {
+      const res = takeFromWorn(state, slotKey);
+      if (!res.ok) return game.ui.notify(res.reason, 3600, 'bad');
+      game.mp.drop(player.q, player.r, { items: [{ id: res.id, qty: 1 }] });
+      game.ui.notify(`You drop the ${itemName(res.id)}.`, 3000);
+      afterChange();
+      game.ui.refreshPanel();
+    },
+    isWorking: () => !!working,
 
     doFavour(col) {
       const result = giveFavour(state, col);
@@ -677,6 +733,7 @@ async function boot() {
     const ev = [];
     if (!game.mp?.isGuest) tickSchedule(world, state, ev, game.mp.raidClock());
     handleEvents(ev);
+    checkJobs();
     // In a room your night ends at dawn; the new day starts when everyone's has.
     // (Woken in the dark by a wild dog, it is still night: carry on.)
     if (game.mp?.active && !res.wokenByDog) game.mp.beginWait();
@@ -721,9 +778,133 @@ async function boot() {
       const [text, tone] = BEDTIME[res.warn];
       game.ui.murmur(text, { tone, ms: 5200 });
     }
+    checkJobs();
     if (state.hp <= 0 && !dead) { die(); return; }
     if (res.passOut) { collapse(); return; }
     afterChange();
+  }
+
+  /** An errand past its deadline: the job is lost, and the tool is owed. */
+  function checkJobs() {
+    const lapsed = checkErrandDeadline(state);
+    if (!lapsed) return;
+    const job = jobOf({ type: 'village', kind: lapsed.kind });
+    game.ui.murmur(`You let ${lapsed.name} down: the errand is overdue. ${job ? milestoneLine(job, 'fired') : ''}`, { tone: 'bad', ms: 7000 });
+  }
+
+  // ------------------------------------------------------------ village work
+
+  /** The shift under way, if any: { shift, col, timer }. Your hands are busy. */
+  let working = null;
+  /** How long each turn of a shift takes to pass on screen. */
+  const SHIFT_TURN_MS = 900;
+  const WORK_ANIM = { bakery: 'forage', inn: 'forage', carpenter: 'chop', mason: 'mine', smithy: 'build' };
+
+  function workBanner(text) {
+    if (typeof document === 'undefined') return;
+    let el = document.getElementById('work-shift');
+    if (!text) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'work-shift';
+      el.setAttribute('role', 'status');
+      el.innerHTML = '<span></span><button type="button">Stop</button>';
+      el.querySelector('button').addEventListener('click', () => stopWork('You down tools early.'));
+      document.getElementById('stage')?.appendChild(el);
+    }
+    const span = el.querySelector('span');
+    if (span.textContent !== text) span.textContent = text;
+  }
+
+  function startWork(col) {
+    if (working || dead) return;
+    const first = !(state.jobs?.places?.[`${col.q},${col.r}`]?.shifts);
+    const start = startShift(state, col);
+    if (!start.ok) { game.ui.notify(start.reason, 3800, 'bad'); return; }
+    game.ui.closePanel();
+    player.stop();
+    player.seated = false;
+    follow = true;
+    working = { shift: start.shift, col };
+    const { job } = start.shift;
+    game.ui.murmur(first ? milestoneLine(job, 'first') : `You report to the ${job.master} at the ${job.name.toLowerCase()}.`, { ms: 5200 });
+    workTurn();
+  }
+
+  function workTurn() {
+    const w = working;
+    if (!w) return;
+    const { shift, col } = w;
+    workBanner(`Working at the ${shift.job.name} in ${shift.name} \u00b7 turn ${shift.done + 1} of ${shift.turns}`);
+    player.triggerAction(WORK_ANIM[shift.job.id] || 'build', 0.6);
+    w.timer = setTimeout(() => {
+      if (working !== w) return;
+      const res = advanceTurn(world, state, player, { rng: () => rng.next(), resetProgress: true });
+      shift.done += 1;
+      onTurnAdvanced(res);
+      if (working !== w) return;
+      if (dead || res.passOut) { stopWork(null); return; }
+      if (state.hp < shift.hp) { stopWork('You are hurt. The shift is over.'); return; }
+      if (isRaided(state, col.q, col.r)) { stopWork('Raiders! Everyone runs for the walls.'); return; }
+      if (shift.done >= shift.turns) { finishWork(); return; }
+      if (shift.done % 2 === 0) game.ui.murmur(`The ${shift.job.master}: \u201c${masterLine(shift.job, shift.done, () => rng.next())}\u201d`, { ms: 4200 });
+      workTurn();
+    }, SHIFT_TURN_MS);
+  }
+
+  /** Down tools before the end: paid for the turns you put in, nothing more. */
+  function stopWork(reason) {
+    const w = working;
+    if (!w) return;
+    clearTimeout(w.timer);
+    working = null;
+    workBanner(null);
+    const res = endShift(state, w.col, w.shift, () => rng.next());
+    if (reason) game.ui.notify(`${reason}${res.gold ? ` You are paid ${res.gold}g for the turns you put in.` : ''}`, 4200, 'bad');
+    afterChange();
+  }
+
+  function finishWork() {
+    const w = working;
+    working = null;
+    workBanner(null);
+    const { job } = w.shift;
+    const res = endShift(state, w.col, w.shift, () => rng.next());
+    chime('gold', 0.05);
+    const got = [`${res.gold}g`, ...res.goods.map(g => `${g.qty} ${itemName(g.id)}`), ...(res.xp ? [`${res.xp} ${job.skill} xp`] : [])];
+    game.ui.floatText(playerPos, `+ ${got.join(', ')}`, 'gain');
+    game.ui.murmur(`The shift is done. The ${job.master} pays you ${got.join(', ')}.`, { tone: 'good', ms: 5200 });
+    if (res.levels?.length) announceLevels(job.skill, res.levels);
+    if (job.skill && !teaches(state, job) && !state.thoughts[`jobcap:${job.id}`]) {
+      state.thoughts[`jobcap:${job.id}`] = 1;
+      game.ui.murmur(milestoneLine(job, 'capped'), { ms: 6000 });
+    }
+    if (res.trusted) {
+      game.ui.ping({ kind: 'victory', title: `${w.col.feature.name} trusts you`, sub: milestoneLine(job, 'trusted') });
+      const r = onTrade(world, state, w.col);
+      const now = performance.now();
+      for (const c of r.revealed || []) fx.found.set(`${c.q},${c.r}`, now);
+      fx.version++;
+      announceMind(r);
+    }
+    jobRank(job, res);
+    if (res.errand) {
+      game.ui.murmur(`An errand for ${w.col.feature.name}. ${milestoneLine(job, 'errand', res.errand)}`, { ms: 9000 });
+    }
+    afterChange();
+    // The inn's evening ends in one of its beds, on the house.
+    if (res.bed) game.doSleep();
+  }
+
+  /** Say so when time served earns a rank (and the gift with it). */
+  function jobRank(job, res) {
+    if (res.promoted === 'apprentice') {
+      game.ui.ping({ kind: 'victory', title: `${RANK_NAMES.apprentice} ${job.master}`, sub: milestoneLine(job, 'apprentice') });
+    } else if (res.promoted === 'journeyman') {
+      game.ui.ping({ kind: 'victory', title: `${RANK_NAMES.journeyman} ${job.master}`, sub: milestoneLine(job, 'journeyman', { gift: res.gift }) });
+      if (res.gift) checkItemThoughts([res.gift]);
+    }
+    if (res.giftWaiting) game.ui.notify(`The ${job.master} has a ${itemName(res.giftWaiting).toLowerCase()} for you. Make room in your pack and work another shift.`, 5200);
   }
 
   function takeAction(cost = 1) {
@@ -1885,6 +2066,7 @@ async function boot() {
     if (wasDrag || dead) return;
     if (e.button === 2) return; // a right-click opens the player menu, nothing more
     if (game.mp?.waiting) { game.ui.notify('Your day is done. The new one starts when everyone has finished theirs.'); return; }
+    if (working) { game.ui.notify('You are at work. Press Stop to down tools.'); return; }
 
     const chosen = placing ? spotAt(e) : null;
     let target = chosen || hexAt(e);
@@ -2111,8 +2293,8 @@ async function boot() {
     if (k === 'c') game.ui.togglePanel('crafting');
     if (k === 'b') game.ui.togglePanel('build');
     if (k === 'k') game.ui.togglePanel('skills');
-    if (k === 'z' && !game.ui.openPanelName && !game.mp?.waiting) game.doSleep();
-    if (e.key === '.' && !game.ui.openPanelName && !game.mp?.waiting) game.doWaitTurn();
+    if (k === 'z' && !game.ui.openPanelName && !game.mp?.waiting && !working) game.doSleep();
+    if (e.key === '.' && !game.ui.openPanelName && !game.mp?.waiting && !working) game.doWaitTurn();
     if (/^[1-9]$/.test(e.key) && !game.ui.openPanelName) game.ui.pickContext(Number(e.key) - 1);
   });
 

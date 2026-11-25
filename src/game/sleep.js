@@ -12,30 +12,37 @@ import { TURNS_PER_DAY, dayOf, isNight, moonOf, builtNear, isFree } from './stat
 import { maxEnergy, countItem } from './inventory.js';
 import { maxHp, defenseDice } from './gear.js';
 import { villageNear } from './context.js';
-import { isRaided } from './economy.js';
+import { isRaided, villageKey } from './economy.js';
+import { freeBedTonight } from './jobs.js';
 import { abroad } from './raiders.js';
 import { clash } from './combat.js';
 import { spawnAmbushWildDog } from './wild_dogs.js';
 import { advanceTurn } from './turns.js';
 
-export const VILLAGE_SLEEP_COST = 3;
+export const VILLAGE_SLEEP_COST = 5;
 export const COLD_CHANCE_PER_TURN = 0.08;
 export const DOG_AMBUSH_CHANCE_PER_TURN = 0.06;
 
 /** Describe shelter, warmth, coin cost, and raid status for sleeping at `at`. */
 export function sleepContext(map, state, at) {
-  const village = villageNear(map, at);
+  // Worked an inn's evening shift tonight: if that inn is within reach, its bed is
+  // on the house, whatever other village is next door.
+  const bedAt = freeBedTonight(state) && state.jobs?.bedAt;
+  const inn = bedAt ? map.get(...bedAt.split(',').map(Number)) : null;
+  const innHere = inn && distance(inn.q, inn.r, at.q, at.r) <= 1 && !isRaided(state, inn.q, inn.r);
+  const village = innHere ? inn : villageNear(map, at);
   const inVillage = !!village && !isRaided(state, village.q, village.r);
   const nearFire = builtNear(state, 'hearth', at, 1, distance);
   const inHut = builtNear(state, 'hut', at, 1, distance);
   const cloaked = !!state.cloak;
   const warm = nearFire || inVillage || cloaked;
   const safeFromDogs = inVillage || inHut;
-  const cost = inVillage ? VILLAGE_SLEEP_COST : 0;
+  const freeBed = !!innHere && inVillage && freeBedTonight(state, villageKey(village.q, village.r));
+  const cost = inVillage && !freeBed ? VILLAGE_SLEEP_COST : 0;
   const canAfford = isFree(state) || (state.gold || 0) >= cost;
   const m = moonOf(state);
   const raidActive = m.phase === 'raid' && (state.raid?.stage !== 'done' || abroad(state).length > 0);
-  return { village, inVillage, nearFire, inHut, cloaked, warm, safeFromDogs, cost, canAfford, raidActive };
+  return { village, inVillage, freeBed, nearFire, inHut, cloaked, warm, safeFromDogs, cost, canAfford, raidActive };
 }
 
 /** Whether the player can start sleeping right now at `at`. */

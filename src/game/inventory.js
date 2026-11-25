@@ -12,6 +12,103 @@ import { isFree, BASE_SLOTS, BASE_MAX_ENERGY, WORN_SLOTS, createWorn, hasBuilt, 
 
 export const MAX_BITES_PER_TURN = 1;
 
+// ------------------------------------------------------------------ layout
+//
+// The first FOOD_SLOTS slots of the pack are for food alone: anything you eat,
+// and salve. Food goes there first and spills into the main pack when they are
+// full; nothing else ever goes in them. capacity() counts both parts.
+
+export const FOOD_SLOTS = 4;
+
+/** Food, for the food slots: anything with energy in it, and salve. */
+export const isFood = id => !!(ITEMS[id]?.food || ITEMS[id]?.heal);
+
+/** The pack slots `id` may go in, in the order to try them, below `limit`. */
+function slotOrder(state, id, limit) {
+  const out = [];
+  if (isFood(id)) for (let i = 0; i < Math.min(FOOD_SLOTS, limit); i++) out.push(i);
+  for (let i = FOOD_SLOTS; i < limit; i++) out.push(i);
+  return out;
+}
+
+/** The first empty slot `id` may go in (below `limit`, capacity by default), or -1. */
+export function freeSlotFor(state, id, limit = capacity(state)) {
+  for (const i of slotOrder(state, id, limit)) if (!state.inventory[i]) return i;
+  return -1;
+}
+
+/**
+ * Sort a pack from before the food slots into them. Food stays where it is unless
+ * it has to move; anything else in a food slot moves into the main pack (past the
+ * end of it, if a full old pack has more than the main pack now holds).
+ */
+export function ensurePackLayout(state) {
+  const inv = state.inventory;
+  if (!inv || !inv.slice(0, FOOD_SLOTS).some(s => s && !isFood(s.id))) return false;
+  const items = inv.filter(Boolean);
+  inv.fill(null);
+  const cap = capacity(state);
+  for (const s of items) {
+    let i = freeSlotFor(state, s.id, cap);
+    if (i < 0) i = inv.findIndex((x, j) => j >= Math.max(cap, FOOD_SLOTS) && !x);
+    if (i >= 0) inv[i] = s;
+  }
+  return true;
+}
+
+// ------------------------------------------------------------- lent tools
+//
+// A tool a village master lent you for an errand (jobs.js) is yours to use, not
+// to sell, trade, drop, toss or stash: the errand, or the debt if you were let go,
+// names it. While it does, that many of the tool are held back.
+
+export function lentCount(state, id) {
+  const j = state.jobs;
+  if (!j) return 0;
+  let n = (j.errand?.lent || []).filter(x => x === id).length;
+  for (const o of j.owed || []) n += (o.items || []).filter(x => x === id).length;
+  return n;
+}
+
+/** Can you part with `qty` of `id` and still have what you were lent? */
+export const canPart = (state, id, qty = 1) => countItem(state, id) - qty >= lentCount(state, id);
+
+/** Who lent you `id`, if you have no copy of your own to spare. */
+export function lentBy(state, id) {
+  const j = state.jobs;
+  if (!j || canPart(state, id, 1)) return null;
+  if (j.errand?.lent?.includes(id)) return j.errand.name;
+  return (j.owed || []).find(o => o.items?.includes(id))?.name || null;
+}
+
+/**
+ * Take `qty` (all of it if omitted) from pack slot `index`, to drop or toss.
+ * Refused for what you were lent. Returns { ok, id, qty } or { ok: false, reason }.
+ */
+export function takeFromPack(state, index, qty = null) {
+  const slot = state.inventory[index];
+  if (!slot) return { ok: false, reason: 'Nothing there.' };
+  const n = Math.max(1, Math.min(slot.qty, qty ?? slot.qty));
+  if (!canPart(state, slot.id, n)) {
+    return { ok: false, reason: `That ${ITEMS[slot.id]?.name || slot.id} was lent to you by ${lentBy(state, slot.id) || 'a master'}. Return it.` };
+  }
+  slot.qty -= n;
+  if (slot.qty <= 0) state.inventory[index] = null;
+  return { ok: true, id: slot.id, qty: n };
+}
+
+/** Take off what is worn in `slotKey` without putting it in the pack (to drop it). */
+export function takeFromWorn(state, slotKey) {
+  const worn = ensureWorn(state);
+  const id = worn[slotKey];
+  if (!id) return { ok: false, reason: 'Nothing worn there.' };
+  if (!canPart(state, id, 1)) return { ok: false, reason: `That was lent to you by ${lentBy(state, id) || 'a master'}. Return it.` };
+  if (slotKey === 'pack' && usedSlots(state) > BASE_SLOTS) return { ok: false, reason: 'Make room in your pack before taking that off.' };
+  worn[slotKey] = null;
+  if (slotKey === 'pack') compactBelow(state, BASE_SLOTS);
+  return { ok: true, id, qty: 1 };
+}
+
 // ------------------------------------------------------------------ worn
 
 export function ensureWorn(state) {
@@ -90,7 +187,8 @@ export function addItem(state, id, qty = 1) {
     left -= add;
   }
 
-  for (let i = 0; i < cap && left > 0; i++) {
+  for (const i of slotOrder(state, id, cap)) {
+    if (left <= 0) break;
     if (state.inventory[i]) continue;
     const add = Math.min(stack, left);
     state.inventory[i] = { id, qty: add };
@@ -136,7 +234,7 @@ export function removeItem(state, id, qty = 1) {
 function compactBelow(state, limit) {
   for (let i = limit; i < state.inventory.length; i++) {
     if (!state.inventory[i]) continue;
-    const dst = state.inventory.findIndex((s, j) => j < limit && !s);
+    const dst = freeSlotFor(state, state.inventory[i].id, limit);
     if (dst < 0) return false;
     state.inventory[dst] = state.inventory[i];
     state.inventory[i] = null;
@@ -200,15 +298,14 @@ export function unequipSlot(state, slotKey) {
       return { ok: false, reason: 'Make room in your pack before taking that off.' };
     }
     compactBelow(state, BASE_SLOTS);
-    const dst = state.inventory.findIndex((s, i) => i < BASE_SLOTS && !s);
+    const dst = freeSlotFor(state, id, BASE_SLOTS);
     if (dst < 0) return { ok: false, reason: 'Your pack is full.' };
     worn[slotKey] = null;
     state.inventory[dst] = { id, qty: 1 };
     return { ok: true, unequipped: id };
   }
 
-  const cap = capacity(state);
-  const dst = state.inventory.findIndex((s, i) => i < cap && !s);
+  const dst = freeSlotFor(state, id);
   if (dst < 0) return { ok: false, reason: 'Your pack is full.' };
   worn[slotKey] = null;
   state.inventory[dst] = { id, qty: 1 };
@@ -220,11 +317,11 @@ export function hasRoomFor(state, id, qty = 1) {
   const item = ITEMS[id];
   if (!item) return false;
   const stack = item.stack || 1;
-  const cap = capacity(state);
+  const allowed = new Set(slotOrder(state, id, capacity(state)));
   let room = 0;
   for (let i = 0; i < state.inventory.length; i++) {
     const slot = state.inventory[i];
-    if (!slot) { if (i < cap) room += stack; }
+    if (!slot) { if (allowed.has(i)) room += stack; }
     else if (slot.id === id) room += stack - slot.qty;
     if (room >= qty) return true;
   }

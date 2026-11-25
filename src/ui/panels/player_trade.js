@@ -5,7 +5,7 @@
 // change takes both acceptances back. See src/net/trade.js.
 
 import { ITEMS, itemName } from '../../game/state.js';
-import { countInPack } from '../../game/inventory.js';
+import { countInPack, lentCount } from '../../game/inventory.js';
 import { icon, escapeHtml } from '../ui.js';
 
 function offerList(items, gold) {
@@ -40,7 +40,9 @@ export const playerTradePanel = {
 
     // What's in your pack, a row per item, with how many of it you're offering.
     const stock = {};
-    for (const s of state.inventory) if (s) stock[s.id] = countInPack(state, s.id);
+    // What is lent to you by a village master is not yours to trade away.
+    for (const s of state.inventory) if (s) stock[s.id] = Math.max(0, countInPack(state, s.id) - lentCount(state, s.id));
+    for (const id of Object.keys(stock)) if (!stock[id]) delete stock[id];
     const mine = Object.entries(stock).map(([id, have]) => {
       const n = tr.mine.items[id] || 0;
       return `<div class="trade-row${n ? ' offered' : ''}">

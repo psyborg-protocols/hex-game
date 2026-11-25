@@ -46,7 +46,7 @@ METALWORKING            MIND (from exploring, not crafting)
 1. **Explore** — stand still on hexes; berries, flint, clay and fish show up.
 2. **Reeds → cord**, **stone + branch + cord → axe and hammer**, flint → knife.
 3. **Fell trees → logs**, **stone + logs → hearth**. Hunt with a cord snare, cook.
-4. **Visit a village**, do its favour, and it trades and lends its station.
+4. **Visit a village**, do its favour (or work one shift there), and it trades and lends its station. Favours pay no gold: trust is the reward.
 5. **Planks → workbench → bow, shield, boat**. **Hut** for the stash and energy.
 6. **Explore for Mind 3** (Lore) → read the rock → ore. Or buy it from smiths.
 7. **Blocks + clay + logs → forge**. **Tongs → smelt → iron tongs** (tongs make tongs).
@@ -90,3 +90,26 @@ part of a moon belongs to one way of playing:
 - **Walls** are hacked through or walked round. **Watchtowers** shoot (2 dice, range 3).
 - **Combat** is dice: attack dice hit on 4+, defence dice block on 5+.
 - Burning every camp wins the game.
+
+## Work in the villages
+
+A second way in, for players who would rather earn than scavenge at first. See `src/game/jobs.js`
+and `VILLAGE_JOBS` in `data/game_data.js`.
+
+| Village | Job | A shift pays | Journeyman gift |
+|---|---|---|---|
+| Farmers | Bakery | 3g + 2 bread | (staff prices) |
+| Fishers | Inn (evening) | 2g + 3 homesteading xp + a free bed | Clay Pot |
+| Woodcutters | Carpenter | 3g + 3 woodworking xp | Stone Axe |
+| Masons | Mason's Yard | 3g + 3 stoneworking xp | Stone Hammer |
+| Smiths | Smithy | 3g + 3 metalworking xp | Green-wood Tongs |
+
+- **Half a day, one shift a day.** Rank is time served, not XP: Apprentice at 3 shifts (errands begin, +1g),
+  Journeyman at 6 shifts and an errand done (the gift, 25% staff price at that market, +1g).
+  At one shift a day nobody is a Journeyman before day 6, about the second moon.
+- **Errands** are sized to your level in the trade, lend the tools you lack, and are due in two days.
+  They pay what the goods would sell for there plus 3g. Miss the deadline and the job is lost for three days,
+  and the lent tool is taken back on your next visit.
+- **The job teaches up to level 3.** Solo crafting levels far faster; the wage, food, bed, trust and loaned
+  iron are what a job is for.
+- **The village bed costs 5g**, about a shift's pay; the inn worker sleeps free.

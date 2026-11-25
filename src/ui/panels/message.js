@@ -32,16 +32,17 @@ export const HOW_TO_PLAY = `
       Every day is 12 turns and every night is 12 turns; 9 hexes walked, 3 actions, or any combination advances a turn quietly in the background. Press <kbd>.</kbd> to wait 1 turn.</span></div>
     <div><b>Sleep &amp; Night</b><span>Sleep (<kbd>Z</kbd>) by midnight (night turn 7). Still awake then and you are tired all the next day, with less energy;
       three turns later, exhausted, with half. Stay up until the turn before dawn and you pass out where you stand.
-      Sleep by a hearth or in a village for warmth, and in a hut or village to keep wild dogs away (villages charge 3 gold).</span></div>
+      Sleep by a hearth or in a village for warmth, and in a hut or village to keep wild dogs away (villages charge 5 gold; free if you worked the inn's evening shift there).</span></div>
     <div><b>Explore</b><span>Stand still on a hex to explore it. Scenic places take longer and raise your <i>Mind</i>.
       Berries, herbs, flint, clay and fish only show on hexes you have explored.</span></div>
-    <div><b>Work</b><span>Click resources, campfires, huts, benches, villages, or cliff faces directly to gather, craft, trade, or mine.</span></div>
+    <div><b>Gather &amp; make</b><span>Click resources, campfires, huts, benches, villages, or cliff faces directly to gather, craft, trade, or mine.</span></div>
     <div><b>Food is energy</b><span>Work and walking burn energy; food in your pack refills it automatically (1 bite per turn).
       Cooked food packs more into a slot.</span></div>
-    <div><b>Worn Gear</b><span>Open Pack (<kbd>I</kbd>) to equip weapons, armour, boots, walking stick, and packs in the gear bar above your slots.</span></div>
+    <div><b>Worn Gear</b><span>Open Pack (<kbd>I</kbd>) to equip weapons, armour, boots, walking stick, and packs in the gear bar above your slots. Four slots on the left are for food. Right-click (or hold) an item to drop or toss it.</span></div>
     <div><b>Wild Dogs</b><span>Rare wild dogs lurk in the far-bank woods and sometimes emerge on this side by day. With Mind 2, feed them meat or a meal for a chance to tame one.</span></div>
     <div><b>Make &amp; build</b><span><kbd>C</kbd> Craft, <kbd>B</kbd> Build, <kbd>I</kbd> Pack (click an item to see what it is for).</span></div>
     <div><b>Villages</b><span>Each asks one small favour; do it and they trade, lend their workshop, and show you the land.</span></div>
+    <div><b>Work</b><span>Most villages hire a pair of hands: half a day at the baker, inn, carpenter, mason or smith for a little gold and a perk (bread, a free bed, the trade’s know-how). One shift a day. A finished shift earns their trust too. Keep at it and you are sent on errands with a borrowed tool (bring it back in time, or lose the job and the tool), and a Journeyman gets the trade’s own tool and staff prices.</span></div>
     <div><b>The moon</b><span>A moon is three days (72 turns). For two days and the third morning nothing comes;
       on the third afternoon the omens show who is coming tonight and the way they will take.</span></div>
     <div><b>Raiders</b><span>They cross the river at their rafts, after dusk, in waves, to burn what you built. They stay out a night’s length, so a band that sets out late is still at it in the morning.
