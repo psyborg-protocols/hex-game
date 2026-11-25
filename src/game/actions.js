@@ -161,8 +161,8 @@ export function prospect(world, state, at) {
   if (!found.length) return { ok: true, found, levels, message: 'No ore in this ground.' };
   return {
     ok: true, found, levels,
-    message: found.length === 1 ? 'You read the rock and find a vein of ore!'
-      : `You read the rock and find ${found.length} veins of ore!`,
+    message: found.length === 1 ? 'You read the rock, and find a vein of ore.'
+      : 'You read the rock, and find veins of ore.',
   };
 }
 
@@ -284,14 +284,14 @@ export function build(world, state, at, recipeId, target, ctx = {}) {
       foot.feature = { type: 'structure', item, name: itemName(item), to: { q: col.q, r: col.r } };
     }
     recordBuilt(state, item, foot.q, foot.r);
-    return { ok: true, message: `You lean a ladder against the ${col.h - foot.h}-level face.`, column: foot, levels: result.levelsGained };
+    return { ok: true, message: 'You lean a ladder against the cliff.', column: foot, levels: result.levelsGained };
   }
 
   if (item === 'bridge') {
     const tiles = spot.span.tiles.map(t => ({ q: t.q, r: t.r }));
     map.addStructure({ type: 'bridge', edge: spot.span.edge, h: spot.span.h, tiles });
     recordBuilt(state, item, tiles[0].q, tiles[0].r);
-    return { ok: true, message: `You lay a ${tiles.length}-hex bridge across the water.`, column: col, levels: result.levelsGained };
+    return { ok: true, message: 'You lay a bridge across the water.', column: col, levels: result.levelsGained };
   }
 
   if (item === 'field') {
@@ -424,7 +424,7 @@ export function relightCampfire(world, state, at) {
   state.stats.crafted = (state.stats.crafted || 0) + 1;
   return {
     ok: true,
-    message: 'Sparks catch in the dry kindling — the campfire blazes back to life!',
+    message: 'Sparks catch in the dry kindling, and the campfire comes back to life.',
     column: spawn,
     levels,
   };

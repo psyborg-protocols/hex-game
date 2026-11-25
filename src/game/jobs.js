@@ -94,21 +94,20 @@ export function canWork(state, col) {
   const p = j.places[key];
   const turn = Math.floor(state.turn || 0);
   if (p && p.firedUntil > turn) {
-    const days = Math.ceil((p.firedUntil - turn) / TURNS_PER_DAY);
-    return { ok: false, reason: `The ${job.master} won't have you back yet: ${days} more day${days === 1 ? '' : 's'}.` };
+    return { ok: false, reason: `The ${job.master} turns away from you. You will not be taken on here again for some days yet.` };
   }
   if (isRaided(state, col.q, col.r)) return { ok: false, reason: 'The raiders have been through. Nobody is working today.' };
   const { day, turnInDay } = dayOf(state);
-  if (j.lastShiftDay === day) return { ok: false, reason: 'You have done your shift today. The other half of the day is yours.' };
+  if (j.lastShiftDay === day) return { ok: false, reason: 'You have worked your half-day. The rest of it is your own.' };
   if (job.shift === 'evening') {
     const m = moonOf(state);
-    if (m.phase !== 'fair') return { ok: false, reason: 'Not tonight: the whole village is barring its doors against the raid.' };
-    if (turnInDay < INN_FROM) return { ok: false, reason: `The supper rush starts late in the afternoon. Come back in ${INN_FROM - turnInDay} turn${INN_FROM - turnInDay === 1 ? '' : 's'}.` };
-    if (turnInDay > INN_TO) return { ok: false, reason: 'Too late for the supper rush. Come back tomorrow afternoon.' };
+    if (m.phase !== 'fair') return { ok: false, reason: 'Not tonight. The whole village is barring its doors against the raid.' };
+    if (turnInDay < INN_FROM) return { ok: false, reason: 'The supper trade starts late in the afternoon. Come back then.' };
+    if (turnInDay > INN_TO) return { ok: false, reason: 'The supper trade is already under way. Come back tomorrow afternoon.' };
   } else if (turnInDay > DAY_START_BY) {
     return { ok: false, reason: turnInDay >= DAY_TURNS
       ? 'The workshop is shut for the night. Come back in the morning.'
-      : 'Not enough daylight left for a shift. Come back in the morning.' };
+      : 'Too little daylight left for a half-day\'s work. Come back in the morning.' };
   }
   return { ok: true, job, key };
 }
@@ -225,6 +224,53 @@ export function giveErrand(state, col, job) {
 /** "4 Log, 2 Ore". */
 export const bringText = bring => Object.entries(bring).map(([id, n]) => `${n} ${itemName(id)}`).join(', ');
 
+// ----------------------------------------------------------- how people say it
+
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+/** Goods as a person would ask for them: [singular, plural]. */
+const SPOKEN = {
+  log: ['log', 'logs'], plank: ['plank', 'planks'], block: ['dressed stone', 'dressed stones'],
+  stone: ['stone', 'stones'], ore: ['lump of ore', 'lumps of ore'], berries: ['handful of berries', 'handfuls of berries'],
+  grain: ['sheaf of grain', 'sheaves of grain'], bread: ['loaf', 'loaves'], fish: ['fish', 'fish'],
+  meat: ['cut of meat', 'cuts of meat'], meal: ['hot meal', 'hot meals'], bow: ['bow', 'bows'],
+};
+
+/** "four logs", "a loaf", "two cuts of meat". */
+export function spokenGoods(bring) {
+  const parts = Object.entries(bring).map(([id, n]) => {
+    const [one, many] = SPOKEN[id] || [itemName(id).toLowerCase(), `${itemName(id).toLowerCase()}s`];
+    if (n === 1) return `${/^[aeiou]/.test(one) ? 'an' : 'a'} ${one}`;
+    return `${NUMBER_WORDS[n] || n} ${many}`;
+  });
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0] || '';
+}
+
+/** A turn, said as a time of day: "first light", "midday", "nightfall"... */
+function partOfDay(turnInDay) {
+  if (turnInDay < 2) return 'first light';
+  if (turnInDay < 5) return 'mid-morning';
+  if (turnInDay < 8) return 'midday';
+  if (turnInDay < DAY_TURNS) return 'late afternoon';
+  if (turnInDay < DAY_TURNS + 2) return 'nightfall';
+  if (turnInDay < DAY_TURNS + 7) return 'the dead of night';
+  return 'the small hours';
+}
+
+/** When something is due, as a person would say it: "the day after tomorrow, around midday". */
+export function dueText(state, due) {
+  const now = Math.floor(state.turn || 0);
+  if (due <= now) return 'now';
+  const today = dayOf(state).day;
+  const then = dayOf({ turn: due });
+  const days = then.day - today;
+  const when = partOfDay(then.turnInDay);
+  const at = when === 'first light' || when === 'nightfall' ? `at ${when}` : `around ${when}`;
+  if (days <= 0) return `today, ${at}`;
+  if (days === 1) return `tomorrow, ${at}`;
+  if (days === 2) return `the day after tomorrow, ${at}`;
+  return `in ${NUMBER_WORDS[days] || days} days`;
+}
+
 /** What you still need for the errand: [{ id, need, have }]. */
 export function errandShort(state) {
   const e = ensureJobs(state).errand;
@@ -246,7 +292,7 @@ export function handIn(state, col) {
   const key = villageKey(col.q, col.r);
   if (!e || e.village !== key) return { ok: false, reason: 'You have no errand for this village.' };
   const short = errandShort(state);
-  if (short.length) return { ok: false, reason: `You still need ${short.map(s => `${s.need - s.have} more ${itemName(s.id)}`).join(', ')}.` };
+  if (short.length) return { ok: false, reason: `You are still short: ${spokenGoods(Object.fromEntries(short.map(s => [s.id, s.need - s.have])))}.` };
   const job = VILLAGE_JOBS[e.kind] || jobOf(col.feature);
   let worth = 0;
   for (const [id, n] of Object.entries(e.bring)) {
@@ -381,15 +427,19 @@ export function masterLine(job, i, rng = Math.random) {
 export function milestoneLine(job, what, extra = {}) {
   const m = job.master;
   switch (what) {
-    case 'first': return `The ${m} sizes you up: "We don't trade with strangers, but we'll take a pair of hands. Let's see what yours can do."`;
-    case 'trusted': return `"You'll do. Come and go as you like: our market's open to you now."`;
-    case 'apprentice': return `"You keep turning up, and you keep getting better. Call yourself my apprentice."`;
-    case 'journeyman': return `"Journeyman. You've earned the word.${extra.gift ? ` Take this ${itemName(extra.gift).toLowerCase()}. It's yours. Make good things with it."` : ' And you pay what the family pays at our stalls, from now on."'}`;
-    case 'capped': return `"I've taught you what I can at the bench. The rest, you learn by making."`;
-    case 'errand': return `"Run an errand for me: bring back ${bringText(extra.bring)} within two days.${extra.lent?.length ? ` Take my ${extra.lent.map(id => itemName(id).toLowerCase()).join(' and ')}, and bring ${extra.lent.length > 1 ? 'them' : 'it'} back."` : '"'}`;
-    case 'handed': return `"Just what I needed. Here's your due."`;
-    case 'fired': return `"Two days, I said. Don't come asking for work for a while."`;
-    case 'taken': return `"You kept my ${extra.items.map(id => itemName(id).toLowerCase()).join(' and ')}. I'll have ${extra.items.length > 1 ? 'those' : 'that'} back, thank you."`;
+    case 'first': return `The ${m} looks you over. "I don't know you, but I can use another pair of hands. Show me what yours can do."`;
+    case 'trusted': return `"You'll do. Our stalls are open to you now, and so is our door."`;
+    case 'apprentice': return `"You keep coming back, and you keep getting better. From today, you are my apprentice."`;
+    case 'journeyman': return `"You have earned the name of journeyman.${extra.gift ? ` This ${itemName(extra.gift).toLowerCase()} is yours now. Make good things with it."` : ' From now on you pay at our stalls what our own people pay."'}`;
+    case 'capped': return `"There is little more I can teach you at this bench. The rest comes from your own hands."`;
+    case 'errand': {
+      const tools = (extra.lent || []).map(id => itemName(id).toLowerCase()).join(' and ');
+      const one = Object.values(extra.bring || {}).reduce((a, b) => a + b, 0) === 1;
+      return `"Bring me ${spokenGoods(extra.bring)}. I need ${one ? 'it' : 'them'} here ${extra.when ? `by ${extra.when}` : 'soon'}.${tools ? ` Take my ${tools}, and see that ${extra.lent.length > 1 ? 'they come' : 'it comes'} back to me."` : '"'}`;
+    }
+    case 'handed': return `"Just what I needed. Here, this is yours."`;
+    case 'fired': return `"I asked for them in good time, and you never came. Find your work elsewhere for a while."`;
+    case 'taken': return `"You kept my ${extra.items.map(id => itemName(id).toLowerCase()).join(' and ')}. I will have ${extra.items.length > 1 ? 'those' : 'that'} back."`;
     default: return '';
   }
 }

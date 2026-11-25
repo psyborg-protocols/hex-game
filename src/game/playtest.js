@@ -137,7 +137,7 @@ export function placePiece(map, pieces, id, q, r) {
 /** When the play test starts. */
 export const START_TIMES = {
   morning: { name: 'Morning', turn: () => 0 },
-  dusk: { name: 'Dusk', turn: () => TURNS_PER_DAY / 2 },
+  dusk: { name: 'Nightfall', turn: () => TURNS_PER_DAY / 2 },
   omens: { name: 'Raid day, omens', turn: () => moonOf({ turn: 0 }).omensAt },
   raid: { name: 'Raid night', turn: () => moonOf({ turn: 0 }).duskAt },
 };

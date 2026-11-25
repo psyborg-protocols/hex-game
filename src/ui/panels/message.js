@@ -45,7 +45,7 @@ export const HOW_TO_PLAY = `
     <div><b>Work</b><span>Most villages hire a pair of hands: half a day at the baker, inn, carpenter, mason or smith for a little gold and a perk (bread, a free bed, the trade’s know-how). One shift a day. A finished shift earns their trust too. Keep at it and you are sent on errands with a borrowed tool (bring it back in time, or lose the job and the tool), and a Journeyman gets the trade’s own tool and staff prices.</span></div>
     <div><b>The moon</b><span>A moon is three days (72 turns). For two days and the third morning nothing comes;
       on the third afternoon the omens show who is coming tonight and the way they will take.</span></div>
-    <div><b>Raiders</b><span>They cross the river at their rafts, after dusk, in waves, to burn what you built. They stay out a night’s length, so a band that sets out late is still at it in the morning.
+    <div><b>Raiders</b><span>They cross the river at their rafts, after nightfall, in waves, to burn what you built. They stay out a night’s length, so a band that sets out late is still at it in the morning.
       Walls slow them, watchtowers shoot, shrines protect. Stand next to a raider to fight: attack dice hit on 4+, defence dice block on 5+.
       Anything that hits you, you hit back. A fallen raider drops its loot on the ground, and so do you when you fall: click the sack to pick it up.</span></div>
     <div><b>Space</b><span>The eye: everything you know of the land.</span></div>

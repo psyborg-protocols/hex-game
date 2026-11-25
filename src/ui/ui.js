@@ -27,7 +27,7 @@ import { foodValue, maxEnergy, restedMaxEnergy, capacity, usedSlots } from '../g
 import { attackDice, defenseDice, maxHp } from '../game/gear.js';
 import { maxMoveDistance, ensureTurnState } from '../game/turns.js';
 import { STAGES, currentStage } from '../game/journey.js';
-import { bringText, errandShort } from '../game/jobs.js';
+import { bringText, errandShort, dueText } from '../game/jobs.js';
 import { chime } from './chime.js';
 
 /** How long a goal goes unmet before its hint surfaces by itself, in seconds. */
@@ -272,7 +272,7 @@ export class UI {
       <div><b>${Math.max(0, s.hp)}</b>/${hpMax} health &middot; <b>${Math.floor(s.energy)}</b>/${eMax} energy</div>
       <div>${food ? `food for <b>${food}</b> more (1 bite/turn)` : 'no food in your pack'}</div>
       <div><b>${moveMax}</b> hexes/turn &middot; <b>${ACTIONS_PER_TURN}</b> actions/turn &middot; turn <b>${s.turn || 0}</b></div>
-      ${tired ? `<div><b>${fatigue.name}</b> from staying up &mdash; max energy <b>${eMax}</b> of ${eFull} until dusk</div>` : ''}
+      ${tired ? `<div><b>${fatigue.name}</b> from staying up &mdash; max energy <b>${eMax}</b> of ${eFull} until nightfall</div>` : ''}
       <div><b>${s.gold}</b> gold &middot; ${usedSlots(s)}/${capacity(s)} slots &middot; ${attackDice(s)} attack, ${defenseDice(s)} defence</div>
       <div>moon <b>${moon.moon}</b>, day <b>${moon.day}</b> of ${MOON_DAYS}${phase ? ` &middot; ${phase}` : ' &middot; fair days'}</div>
       <div class="skills">${SKILLS.map(skill => {
@@ -513,7 +513,7 @@ function errandLine(s) {
   if (!e) return '';
   const left = Math.max(0, e.due - Math.floor(s.turn || 0));
   const ready = !errandShort(s).length;
-  return `<div class="omen errand${left <= 6 ? ' late' : ''}">Errand for ${escapeHtml(e.name)}: ${escapeHtml(bringText(e.bring))}${ready ? ' &check;' : ''} &middot; ${left} turn${left === 1 ? '' : 's'} left</div>`;
+  return `<div class="omen errand${left <= 6 ? ' late' : ''}">Errand for ${escapeHtml(e.name)}: ${escapeHtml(bringText(e.bring))}${ready ? ' &check;' : ''} &middot; due ${escapeHtml(dueText(s, e.due))}</div>`;
 }
 
 /** Where on the moon dial the omens and the last dusk fall, as percentages. */

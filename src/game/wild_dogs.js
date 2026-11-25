@@ -283,7 +283,7 @@ export function tryTameWildDog(map, state, player, wildDog, rng = Math.random) {
       ok: true,
       tamed: true,
       foodUsed,
-      message: 'The wild dog takes the food gently and stays at your heel!',
+      message: 'The wild dog takes the food gently, and stays at your heel.',
     };
   }
 

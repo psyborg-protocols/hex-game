@@ -20,7 +20,7 @@ import { createState, itemName, RECIPES, ITEMS, dayOf, moonOf, isNight, hasBuilt
 import { walkOneStep, recomputeEnergy, countItem, addItem, removeItem, foodValue, usedSlots, capacity, isWorn, ensurePackLayout, takeFromPack, takeFromWorn } from './game/inventory.js';
 import {
   ensureJobs, startShift, endShift, handIn, checkErrandDeadline, confiscate, milestoneLine, masterLine, jobOf,
-  teaches, RANK_NAMES,
+  teaches, RANK_NAMES, dueText,
 } from './game/jobs.js';
 import { craft, checkRecipe, recipeKnown } from './game/crafting.js';
 import { ensureVillage, buy, sell, giveFavour, villageContext, isTrusted, isRaided } from './game/economy.js';
@@ -66,26 +66,26 @@ import { applyShared } from './game/shared.js';
 import { WorldMap } from './world/mapformat.js';
 
 const ITEM_THOUGHTS = {
-  branch: 'A dry branch! With a piece of flint I can relight the cold campfire — or bind two stones and reed cord into a stone axe.',
-  stone: 'Solid stones. With a branch and reed cord, I can lash together a stone axe or a stone hammer.',
-  reed: 'Supple reeds! I can twist these into cord for tools, snares, and ladders, or weave a basket for more pack room.',
-  cord: 'Twisted cord! Now I can bind a stone axe to fell trees, or set a snare where rabbits hop.',
-  berries: 'Sweet wild berries. Carrying food keeps my energy up — and villages often ask for berries as a first favour.',
-  grain: 'Wild grain! Once my Homesteading grows, I can sow a field that reaps fourfold.',
-  log: 'Heavy timber. I can ring stones with logs for a hearth — and once I have a flint knife, whittle logs into planks for a ladder.',
-  stone_axe: "A stone axe! Now I can fell whole trees for logs — though I'll need a flint knife to dress them into planks.",
-  stone_hammer: "A stone hammer! I can dress stone blocks, quarry stone and flint from cliff faces, and chip away ore.",
-  stone_knife: 'A sharp flint knife! Now I can whittle logs into planks to build ladders, and skin hides when I hunt.',
-  plank: 'Smooth wooden planks! With reed cord and Woodworking 3, I can lean a ladder against the high cliffs — or build a workbench.',
-  meat: 'Raw meat will feed me in a pinch, but cooking it at a hearth doubles the energy it gives.',
-  fish: 'Fresh fish will keep me going, and cooking it over a hearth doubles the energy.',
-  hide: 'Tough hide — with my knife I can stitch warm hide armour, a leather pack, or slice extra cord.',
-  clay: 'Wet riverbank clay. Fired at a hearth it makes a pot for stew and healing salve — and later, a forge.',
-  herb: 'Wild medicinal herbs. With clay and a pot, I can mix healing salve or cook rich stew.',
-  herb_seed: 'Rare herb seeds from the tall grass! With two of these and Homesteading 2, I can sow an herb patch of my own.',
-  flint: 'Sharp flint! With a dry branch I can strike a spark to relight the campfire — or knap a flint knife.',
-  ore: "Heavy iron ore! I'll need a stone forge and green-wood tongs to smelt this into ingots.",
-  ingot: 'Fresh iron ingot! At the forge I can smith an iron axe, a pickaxe, or an iron saw.',
+  branch: 'A dry branch. Struck with flint, it could wake the cold campfire. Bound to a stone, it could be an axe.',
+  stone: 'Good heavy stones. Lashed to a branch with cord, one would make an axe, or a hammer.',
+  reed: 'Reeds, long and supple. Twisted, they make cord; woven, a basket.',
+  cord: 'Cord. A stone can be bound to a handle now, or a snare set where the rabbits run.',
+  berries: 'Wild berries. Enough to keep me on my feet a while, and the villages are glad of them.',
+  grain: 'Wild grain. Sown in turned earth it would come back many times over, once I learn to keep a field.',
+  log: 'A log, heavy and green. Ringed with stones, it would make a hearth. With a knife, it could be split into planks.',
+  stone_axe: 'An axe at last. The trees are mine to fell, though planks will want a knife as well.',
+  stone_hammer: 'A hammer. Stone can be dressed into blocks now, and the cliff faces quarried.',
+  stone_knife: 'A keen flint edge. Logs can be whittled into planks, and game skinned for its hide.',
+  plank: 'Planks, smooth and straight. With cord they could make a ladder, or a workbench, once my hands are surer.',
+  meat: 'Raw meat. It will do in a pinch, but cooked over a fire it would go much further.',
+  fish: 'A fresh fish. Better cooked than raw, if I can find a fire.',
+  hide: 'A tough hide. With a knife it could become armour, a pack, or a length of cord.',
+  clay: 'River clay. Fired in a hearth it makes a pot, for stew and salve. A forge would want it too.',
+  herb: 'A healing herb. Mixed with clay in a pot, it makes salve. In a stew, it makes the stew.',
+  herb_seed: 'Herb seeds. With a patch of my own, I would not have to go searching for herbs again.',
+  flint: 'Flint, sharp as glass. Against a dry branch it throws sparks; knapped, it makes a knife.',
+  ore: 'Iron ore, heavy in the hand. A forge and a pair of tongs would turn it into iron.',
+  ingot: 'An iron ingot. At a forge it could become an axe, a pickaxe, a saw.',
 };
 
 /** Seconds between your swings. */
@@ -303,8 +303,9 @@ async function boot() {
       if (!res.ok) return game.ui.notify(res.reason, 3600, 'bad');
       const job = jobOf(col.feature);
       chime('gold');
-      const got = [`${res.gold}g`, ...(res.xp ? [`${res.xp} ${job.skill} xp`] : []), ...res.thanks.map(t => `${t.qty} ${itemName(t.id)}`)];
-      game.ui.murmur(`${milestoneLine(job, 'handed')} (+ ${got.join(', ')})${res.returned.length ? ` You hand back the ${res.returned.map(id => itemName(id).toLowerCase()).join(' and ')}.` : ''}`, { tone: 'good', ms: 6400 });
+      const got = [`${res.gold} gold`, ...(res.xp ? [`${job.skill}`] : []), ...res.thanks.map(t => `${t.qty} ${itemName(t.id)}`)];
+      game.ui.floatText(playerPos, `+ ${got.join(', ')}`, 'gain');
+      game.ui.murmur(`${milestoneLine(job, 'handed')}${res.returned.length ? ` You hand back the ${res.returned.map(id => itemName(id).toLowerCase()).join(' and ')}.` : ''}`, { tone: 'good', ms: 6400 });
       if (res.levels?.length) announceLevels(job.skill, res.levels);
       jobRank(job, res);
       game.ui.refreshPanel();
@@ -686,30 +687,30 @@ async function boot() {
       }
     }
     if (!spoke && usedSlots(state) >= capacity(state) - 1 && !countItem(state, 'basket')) {
-      thinkOnce('pack_full', 'My pack is nearly full. Four reeds and two branches would weave a basket for four more slots.');
+      thinkOnce('pack_full', 'My pack is nearly full. A basket of woven reeds and branches would carry more.');
     }
     if (map.spawn && !map.get(map.spawn.q, map.spawn.r)?.feature
       && countItem(state, 'branch') >= 1 && countItem(state, 'flint') >= 1) {
-      thinkOnce('ready_to_relight', 'I have both a branch and flint! I can return to the cold campfire and relight it.', 6000);
+      thinkOnce('ready_to_relight', 'A branch and a piece of flint. The cold campfire could burn again.', 6000);
     }
   }
 
   function unreachableHint(col) {
     if (col && isWater(col.terrain)) {
       return countItem(state, 'plank') >= 6
-        ? 'Too deep to wade. I can lay a bridge across narrow water from the Build menu.'
-        : 'The water is too deep to wade. If only I had a boat, or enough planks for a bridge...';
+        ? 'Too deep to wade. With these planks I could lay a bridge where the water narrows.'
+        : 'Too deep to wade. A boat would carry me over, or enough planks for a bridge.';
     }
     if (countItem(state, 'plank') >= 3 && countItem(state, 'cord') >= 2) {
       if (!state.free && levelOf(state, 'woodworking') < 3) {
-        return 'I have planks and cord for a ladder, but I need Woodworking 3 to lash one together.';
+        return 'I have planks and cord enough for a ladder, but not yet the skill to make one that would hold me.';
       }
-      return "Too high to scramble up — I can build a ladder from the Build menu while standing at the cliff's foot.";
+      return 'Too high to climb. Standing at its foot, I could raise a ladder against it.';
     }
     if (countItem(state, 'stone_knife') > 0) {
-      return 'If only I had a ladder... With my knife and an axe, I can whittle logs into planks and lash them with cord.';
+      return 'Too high to climb. A ladder would do it: planks split with an axe and my knife, lashed with cord.';
     }
-    return "If only I had a ladder... I'll need planks (cut with an axe and knife) and reed cord to build one.";
+    return 'Too high to climb. A ladder would do it, but ladders want planks, and planks want an axe and a knife.';
   }
 
   /** Show how a night's sleep (chosen or not) went, and carry on from dawn. */
@@ -729,6 +730,7 @@ async function boot() {
       const rough = res.coldDamage > 0 || res.passedOut;
       game.ui.murmur(res.message, { tone: rough ? 'bad' : 'good', ms: res.passedOut ? 6400 : 5200 });
       if (res.coldDamage > 0) game.ui.floatText(playerPos, `-${res.coldDamage} cold`, 'bad');
+      if (res.goldSpent > 0) game.ui.floatText(playerPos, `-${res.goldSpent} gold`, 'bad');
     }
     const ev = [];
     if (!game.mp?.isGuest) tickSchedule(world, state, ev, game.mp.raidClock());
@@ -766,14 +768,14 @@ async function boot() {
     handleEvents(events);
     if (res.cropsChanged?.length) rebuildFeatures();
     if (res.becameNight) {
-      game.ui.murmur('Dusk falls — 12 turns until dawn. Find shelter and warmth to sleep.', { ms: 4600 });
+      game.ui.murmur('Night falls over the valley. Find somewhere warm and safe to sleep.', { ms: 4600 });
     } else if (res.becameDawn) {
       game.ui.murmur('Dawn breaks across the valley.', { tone: 'good', ms: 4200 });
     }
     if (res.fatigued === 1) {
-      game.ui.murmur('Midnight passes. You will be tired all tomorrow, with less energy until dusk.', { tone: 'bad', ms: 5600 });
+      game.ui.murmur('Midnight passes, and you are still awake. Tomorrow you will feel it.', { tone: 'bad', ms: 5600 });
     } else if (res.fatigued === 2) {
-      game.ui.murmur('The small hours. You will be exhausted all tomorrow, with half your energy until dusk.', { tone: 'bad', ms: 5600 });
+      game.ui.murmur('The small hours. Tomorrow you will be worn to the bone.', { tone: 'bad', ms: 5600 });
     } else if (res.warn && BEDTIME[res.warn]) {
       const [text, tone] = BEDTIME[res.warn];
       game.ui.murmur(text, { tone, ms: 5200 });
@@ -860,7 +862,8 @@ async function boot() {
     working = null;
     workBanner(null);
     const res = endShift(state, w.col, w.shift, () => rng.next());
-    if (reason) game.ui.notify(`${reason}${res.gold ? ` You are paid ${res.gold}g for the turns you put in.` : ''}`, 4200, 'bad');
+    if (res.gold) game.ui.floatText(playerPos, `+${res.gold} gold`, 'gain');
+    if (reason) game.ui.notify(`${reason}${res.gold ? ' You are paid for the time you put in.' : ''}`, 4200, 'bad');
     afterChange();
   }
 
@@ -871,9 +874,9 @@ async function boot() {
     const { job } = w.shift;
     const res = endShift(state, w.col, w.shift, () => rng.next());
     chime('gold', 0.05);
-    const got = [`${res.gold}g`, ...res.goods.map(g => `${g.qty} ${itemName(g.id)}`), ...(res.xp ? [`${res.xp} ${job.skill} xp`] : [])];
+    const got = [`${res.gold} gold`, ...res.goods.map(g => `${g.qty} ${itemName(g.id)}`), ...(res.xp ? [job.skill] : [])];
     game.ui.floatText(playerPos, `+ ${got.join(', ')}`, 'gain');
-    game.ui.murmur(`The shift is done. The ${job.master} pays you ${got.join(', ')}.`, { tone: 'good', ms: 5200 });
+    game.ui.murmur(`The work is done, and the ${job.master} pays you${res.goods.length ? ', with something from the oven besides' : ''}.`, { tone: 'good', ms: 5200 });
     if (res.levels?.length) announceLevels(job.skill, res.levels);
     if (job.skill && !teaches(state, job) && !state.thoughts[`jobcap:${job.id}`]) {
       state.thoughts[`jobcap:${job.id}`] = 1;
@@ -889,7 +892,7 @@ async function boot() {
     }
     jobRank(job, res);
     if (res.errand) {
-      game.ui.murmur(`An errand for ${w.col.feature.name}. ${milestoneLine(job, 'errand', res.errand)}`, { ms: 9000 });
+      game.ui.murmur(`An errand for ${w.col.feature.name}. ${milestoneLine(job, 'errand', { ...res.errand, when: dueText(state, res.errand.due) })}`, { ms: 9000 });
     }
     afterChange();
     // The inn's evening ends in one of its beds, on the house.
@@ -904,7 +907,7 @@ async function boot() {
       game.ui.ping({ kind: 'victory', title: `${RANK_NAMES.journeyman} ${job.master}`, sub: milestoneLine(job, 'journeyman', { gift: res.gift }) });
       if (res.gift) checkItemThoughts([res.gift]);
     }
-    if (res.giftWaiting) game.ui.notify(`The ${job.master} has a ${itemName(res.giftWaiting).toLowerCase()} for you. Make room in your pack and work another shift.`, 5200);
+    if (res.giftWaiting) game.ui.notify(`The ${job.master} has a ${itemName(res.giftWaiting).toLowerCase()} for you, if you can make room to carry it.`, 5200);
   }
 
   function takeAction(cost = 1) {
@@ -969,16 +972,16 @@ async function boot() {
       state.thoughts.vista_reached = 1;
       thinkOnce(`vista:${done.q},${done.r}`, 'From this height, the land below opens up before you.');
     } else if (revealedCount >= 1 && !state.thoughts?.vista_reached) {
-      thinkOnce('hill_vantage', 'Standing three steps above the ground below lets me see over the edge — climbing a real peak would reveal much more.');
+      thinkOnce('hill_vantage', 'From up here I can see over the edge. From a real peak I could see half the valley.');
     }
     if (result.found.tier > 0) {
-      const tip = thinkOnce('scenic_meditate', 'This looks like a beautiful place to sit down — click yourself to meditate.');
+      const tip = thinkOnce('scenic_meditate', 'A beautiful place. I could sit here a while and let my thoughts settle. (Click yourself to sit.)');
       if (!tip) game.ui.murmur('This looks like a beautiful place to sit down.', { ms: 4600 });
     } else if (revealedCount === 0 && !state.thoughts?.vista_reached && Object.keys(state.mind?.explored || {}).length >= 8) {
-      thinkOnce('seek_high_ground', 'If only I could get higher up, I could see all around...');
+      thinkOnce('seek_high_ground', 'If I could get higher, I could see all around.');
     }
     if (map.spawn && done.q === map.spawn.q && done.r === map.spawn.r && !map.get(done.q, done.r)?.feature) {
-      thinkOnce('cold_campfire', 'The campfire here is cold. If I find a dry branch and a piece of flint, I can strike a spark and relight it.', 5800);
+      thinkOnce('cold_campfire', 'The campfire here is cold. A dry branch and a piece of flint would bring it back to life.', 5800);
     }
     announceMind(result);
     afterChange();
@@ -1319,15 +1322,15 @@ async function boot() {
     }
     announceMind(mindRes);
     if (mindRes.moments.some(m => m.kind === 'village')) {
-      thinkOnce('first_village', 'A village! Doing their favour earns gold and opens their market — a good place to buy a flint knife.');
+      thinkOnce('first_village', 'A village. If they come to trust me, I could trade there, or find work.');
     }
     if (col && scenicOf(map, col).tier > 0 && isExplored(state, col.q, col.r) && !isMeditated(state, col.q, col.r)) {
-      const tip = thinkOnce('scenic_meditate', 'This looks like a beautiful place to sit down — click yourself to meditate.');
+      const tip = thinkOnce('scenic_meditate', 'A beautiful place. I could sit here a while and let my thoughts settle. (Click yourself to sit.)');
       if (!tip) game.ui.murmur('This looks like a beautiful place to sit down.', { ms: 4600 });
     }
     maybeRally();
     if (map.spawn && !map.get(map.spawn.q, map.spawn.r)?.feature) {
-      thinkOnce('cold_campfire', 'The campfire here is cold. If I find a dry branch and a piece of flint, I can strike a spark and relight it.', 5800);
+      thinkOnce('cold_campfire', 'The campfire here is cold. A dry branch and a piece of flint would bring it back to life.', 5800);
     }
     const turnStep = spendMoveStep(world, state, player, {
       inCombat: (state.turn || 0) < combatUntilTurn,
@@ -1619,7 +1622,7 @@ async function boot() {
       const ends = home > moonOf({ turn: raid.startedAt }).dawnAt ? 'home in' : 'dawn in';
       game.ui.setAlert(`${out} abroad${more} · ${ends} ${turnsTxt(home - turn)}`, 'raid');
     } else if (raid?.stage === 'omen') {
-      game.ui.setAlert(`${raidSize(raid.waves)} at dusk · ${turnsTxt(m.duskAt - turn)}`, 'omens');
+      game.ui.setAlert(`${raidSize(raid.waves)} at nightfall · ${turnsTxt(m.duskAt - turn)}`, 'omens');
     } else if (out) {
       game.ui.setAlert(`${out} still abroad`, 'omens');
     } else game.ui.setAlert('');
@@ -1934,7 +1937,7 @@ async function boot() {
       chime('tick', 0.05);
       state.hp = Math.max(0, state.hp - 1);
       game.ui.floatText(playerPos, '-1 bee sting!', 'bad');
-      game.ui.murmur('Ouch! The meadow bee stung you and buzzed off.', { ms: 4200 });
+      game.ui.murmur('A bee stings you and drifts off over the meadow.', { ms: 4200 });
       if (state.hp <= 0) { die(); return; }
       afterChange();
       return;

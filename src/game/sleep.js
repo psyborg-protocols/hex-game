@@ -49,7 +49,7 @@ export function sleepContext(map, state, at) {
 export function canSleep(map, state, at) {
   const ctx = sleepContext(map, state, at);
   if (!isNight(state)) return { ok: false, reason: 'You can only sleep at night.', ctx };
-  if (ctx.raidActive) return { ok: false, reason: 'You cannot sleep while raiders are abroad!', ctx };
+  if (ctx.raidActive) return { ok: false, reason: 'You cannot sleep with raiders abroad.', ctx };
   if (ctx.inVillage && !ctx.canAfford) {
     return { ok: false, reason: `Sleeping in ${ctx.village.feature.name} costs ${ctx.cost} gold.`, ctx };
   }
@@ -150,7 +150,7 @@ function restUntilDawn(world, state, player, ctx, rng, goldSpent) {
       goldSpent,
       ctx,
       cropsChanged,
-      message: `A wild dog ambushed you for ${ambushDamage} damage and woke you up!`,
+      message: 'A wild dog sprang at you out of the dark!',
     };
   }
 
@@ -169,13 +169,14 @@ function restUntilDawn(world, state, player, ctx, rng, goldSpent) {
   state.turnProgress = 0;
 
   const parts = [];
-  if (ctx.inVillage && goldSpent) parts.push(`You slept warmly at ${ctx.village.feature.name} (-${goldSpent}g).`);
+  if (ctx.inVillage && goldSpent) parts.push(`You paid for a bed at ${ctx.village.feature.name}, and slept warm.`);
+  else if (ctx.freeBed) parts.push(`You slept in a bed at ${ctx.village.feature.name}, on the house.`);
   else if (ctx.inVillage) parts.push(`You slept at ${ctx.village.feature.name}.`);
   else if (ctx.inHut && ctx.nearFire) parts.push('You slept soundly in your hut by the hearth.');
   else if (ctx.inHut) parts.push('You slept safely in your hut.');
   else if (ctx.nearFire) parts.push('You slept by the fire.');
   else parts.push('Dawn breaks after a rough night outdoors.');
-  if (coldDamage > 0) parts.push(`The night chill cost ${coldDamage} HP.`);
+  if (coldDamage > 0) parts.push('The cold got into your bones.');
 
   return {
     ok: true,
