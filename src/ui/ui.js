@@ -42,6 +42,7 @@ export class UI {
     this.hud = document.getElementById('hud');
     this.hudStats = document.getElementById('hud-stats');
     this.hudMore = document.getElementById('hud-more');
+    this.hudAlerts = document.getElementById('hud-alerts');
     this.journey = document.getElementById('journey');
     this.worldspace = document.getElementById('worldspace');
     this.murmurs = document.getElementById('murmurs');
@@ -307,7 +308,10 @@ export class UI {
           <div class="bar-row" title="Energy">${hudIcon('energy')}<div class="vital en${hungry ? ' low' : ''}${tired ? ' tired' : ''}"><i style="width:${pct(s.energy, eFull)}%"></i>${lostPct ? `<b class="lost" style="width:${lostPct}%"></b>` : ''}</div></div>
           ${moonPips(moon, s)}
         </div>
-      </div>
+      </div>`;
+    // What is coming, an errand, who is in the room: beside the bars, not under
+    // them, so the corner never grows down onto the menus.
+    this.hudAlerts.innerHTML = `
       ${this.alert.text ? `<div class="omen ${this.alert.tone}">${escapeHtml(this.alert.text)}</div>` : ''}
       ${errandLine(s)}
       ${this.game.mp?.hudRoster(escapeHtml) || ''}`;

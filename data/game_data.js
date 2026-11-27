@@ -87,7 +87,7 @@ export const ITEMS = {
   dog:           I('dog', 'Dog', 'gear', { stack: 1, desc: 'Tamed from a rare wild dog. Follows you, +1 attack die, and an extra catch when you hunt or forage.' }),
 
   // ----------------------------------------------------------- structures
-  hearth:     I('hearth', 'Hearth', 'structure', { hp: 8, desc: 'A warm hearth. Somewhere to cook, and to rest.' }),
+  hearth:     I('hearth', 'Hearth', 'structure', { hp: 8, iconId: 'stone_oven', desc: 'A warm hearth. Somewhere to cook, and to rest.' }),
   hut:        I('hut', 'Hut', 'structure', { hp: 14, iconId: 'cabin', desc: 'Home. +6 max energy, a 16-slot stash, full heal when you rest, respawn point.' }),
   workbench:  I('workbench', 'Workbench', 'structure', { hp: 8, desc: 'Bows, boats, shields and carts are made here.' }),
   field:      I('field', 'Field', 'structure', { hp: 4, desc: 'Sow grain or rare herb seeds; reap a rich harvest a day later.' }),

@@ -447,8 +447,9 @@
       "name": "Hearth",
       "kind": "structure",
       "stack": 30,
-      "icon": "icons/hearth.svg",
+      "icon": "icons/stone_oven.svg",
       "hp": 8,
+      "iconId": "stone_oven",
       "desc": "A warm hearth. Somewhere to cook, and to rest."
     },
     "hut": {

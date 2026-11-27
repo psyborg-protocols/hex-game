@@ -21,8 +21,11 @@
     <div id="chrome">
       <!-- Top-left: two bars and the moon. Point at it for the numbers. -->
       <div id="hud">
-        <div id="hud-stats"></div>
-        <div id="hud-terrain"></div>
+        <div class="hud-row">
+          <div id="hud-stats"></div>
+          <!-- Beside the bars, so however many lines there are, the corner never grows down. -->
+          <div class="hud-notes"><div id="hud-alerts"></div><div id="hud-terrain"></div></div>
+        </div>
         <div id="hud-more"></div>
       </div>
 

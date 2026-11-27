@@ -237,32 +237,53 @@ function drawCottage(ctx, x, y, t = 0, opts = {}) {
 }
 
 const DRAW = {
+  /**
+   * A small stone oven: a sloped dome of fieldstone with an arched mouth, a
+   * flue at the back, and a stack of logs beside it. The fire glows in the
+   * mouth and smoke leaves the flue; cold, the mouth is dark and the flue still.
+   */
   hearth(ctx, x, y, t = 0, cold = false) {
-    shadow(ctx, x, y + 1, 8, 3);
-    // Fieldstone fire ring
-    const stones = [
-      [-6, 0], [-5, 2], [-2, 3], [1, 3], [4, 2], [6, 0],
-      [4, -2], [1, -3], [-2, -3], [-5, -2],
-    ];
-    for (const [dx, dy] of stones) {
-      px(ctx, INK, x + dx - 1, y + dy - 1, 3, 3);
-      px(ctx, PAL.stone.mid, x + dx, y + dy, 2, 1);
-      px(ctx, PAL.stone.lit, x + dx, y + dy, 1, 1);
+    shadow(ctx, x, y + 1, 10, 3);
+    // Logs stacked against the left side, cut ends out: two below, one on top.
+    stamp(ctx, x - 13, y - 5, [
+      '..KKK...',
+      '.KtTtK..',
+      'KKtTtKK.',
+      'KtTtKtTK',
+      'KtTtKtTK',
+      '.KKK.KK.',
+    ], { K: INK, t: PAL.timber.mid, T: '#d9b07a' });
+
+    const f = Math.floor(t * 8) % 3;
+    const fire = cold
+      ? { f: '#2b2226', g: '#3a3434', w: '#6d6a66' }
+      : [{ f: '#9e2b1c', g: '#e05328', w: '#f7a53b' },
+        { f: '#e05328', g: '#f7a53b', w: '#fff3b0' },
+        { f: '#b8421b', g: '#eb7b24', w: '#f2b644' }][f];
+    stamp(ctx, x - 8, y - 12, [
+      '...........KKK...',
+      '...........KSK...',
+      '......KKKKKKSKK..',
+      '....KKLLLMMMMSSK.',
+      '...KLLLMMMMMMSSSK',
+      '..KLLMDMMMMDMMSSK',
+      '.KLLMMMMDMMMMMSSK',
+      '.KLMMDMMKKKMMDSSK',
+      '.KLMMMMKAAAKMMSSK',
+      'KLLMMDMKAgAKMDSSK',
+      'KLMMMMKfgwgfKMSSK',
+      'KLMMDMKfwwwfKMSSK',
+      'KDDDDDKKKKKKKDDDK',
+      '.KKKKKKKKKKKKKKK.',
+    ], {
+      K: INK, L: PAL.stone.lit, M: PAL.stone.mid, S: PAL.stone.shade, D: PAL.stone.dark,
+      A: cold ? '#1f1a1d' : '#3a1712', f: fire.f, g: fire.g, w: fire.w,
+    });
+    if (!cold) {
+      // Warm light spilling from the mouth onto the ground in front.
+      px(ctx, 'rgba(247, 165, 59, 0.28)', x - 2, y + 2, 5, 1);
+      smoke(ctx, x + 4, y - 13, t);
     }
-    // Glowing coal bed & crossed firewood (grey ash, once it has gone cold)
-    px(ctx, cold ? '#3a3838' : '#5e1b18', x - 3, y - 1, 6, 3);
-    px(ctx, cold ? '#6d6a66' : '#c43e22', x - 2, y, 4, 1);
-    px(ctx, PAL.timber.dark, x - 3, y + 1, 6, 1);
-    px(ctx, PAL.timber.mid, x - 2, y, 4, 1);
-    // Rustic wooden cooking tripod + iron pot
-    linePx(ctx, INK, x - 5, y + 1, x, y - 10);
-    linePx(ctx, INK, x + 5, y + 1, x, y - 10);
-    linePx(ctx, PAL.timber.lit, x - 4, y, x, y - 9);
-    px(ctx, INK, x - 2, y - 7, 4, 3);
-    px(ctx, '#4f5566', x - 1, y - 6, 2, 2);
-    px(ctx, '#8892a8', x - 1, y - 6, 1, 1);
-    // Dancing flames
-    if (!cold) flame(ctx, x, y + 1, t, 2);
   },
 
   hut(ctx, x, y, t = 0) {

@@ -79,7 +79,7 @@ html, body {
  * (an omen, an errand, who is in the room) and the rail must not move when it
  * does. It sits over the corner's opened details, so reaching for a button closes them.
  */
-#rail { position: absolute; left: 0; top: var(--rail-top, 184px); z-index: 3; pointer-events: auto; }
+#rail { position: absolute; left: 0; top: var(--rail-top, 78px); z-index: 3; pointer-events: auto; }
 #hud { position: relative; z-index: 2; }
 
 /* A corner: bare until pointed at (or tapped), then backed and opened. */
@@ -94,7 +94,8 @@ html, body {
 
 /* ---------------------------------------------------------------- HUD */
 
-#hud { width: max-content; max-width: 100%; }
+/* The notes beside the bars may run past the corner's own cell rather than wrap tight. */
+#hud { width: max-content; max-width: min(calc(100vw - 20px), 640px); }
 
 .vital {
   width: 132px;
@@ -164,14 +165,25 @@ img.px { image-rendering: pixelated; width: 18px; height: 18px; display: block; 
 .message ul.opening { margin: 14px 0 0; padding-left: 18px; line-height: 1.7; }
 
 /* What is coming, in a line under the moon. */
-.omen { margin-top: 5px; font-style: italic; font-size: 12px; color: #f0cf7a; }
+/*
+ * The corner is one row: the clock and bars, then a column of notes beside
+ * them (an omen, an errand, who is in the room, what the pointer is on). The
+ * notes grow down and to the right, never pushing anything below the clock.
+ */
+.hud-row { display: flex; align-items: flex-start; gap: 14px; }
+.hud-notes { width: max-content; max-width: min(320px, 46vw); padding-top: 2px; }
+.hud-notes:empty, #hud-alerts:empty { display: none; }
+.omen { margin-top: 3px; font-style: italic; font-size: 12px; line-height: 1.3; color: #f0cf7a; }
+#hud-alerts > .omen:first-child { margin-top: 0; }
 .omen.raid { color: #ff9aa5; }
 
 #hud-terrain { min-height: 0; font-size: 12px; font-style: italic; color: var(--ink-dim); }
-#hud-terrain:not(:empty) { margin-top: 4px; }
+#hud-terrain:not(:empty) { margin-top: 3px; }
 
 #hud-more {
   display: none;
+  /* Clear of the menus, which sit over this side of it. */
+  margin-left: 48px;
   margin-top: 8px;
   padding-top: 7px;
   border-top: 1px solid rgba(107, 88, 54, 0.6);
@@ -398,7 +410,6 @@ img.px { image-rendering: pixelated; width: 18px; height: 18px; display: block; 
 @media (max-width: 620px), (pointer: coarse) and (max-width: 1000px) {
   #rail button:not(.eye) { display: none; }
   #rail.open button:not(.eye) { display: flex; animation: rail-drop 160ms ease-out both; }
-  #rail { --rail-top: 176px; }
   #rail button { width: 42px; height: 42px; opacity: 1; }
   #rail button img.px { width: 22px; height: 22px; }
   /* No pointer to rest on a phone: open, every button says its name. */
@@ -838,12 +849,13 @@ button.big:hover { border-color: var(--accent); }
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "hud     journey"
+      "hud     hud"
       "card    card"
       "murmurs murmurs"
       "dock    dock";
   }
-  #journey { max-width: 100%; }
+  #journey { display: none; }   /* always empty now; its corner is the notes' room */
+  .bar-row .vital { width: 84px; }   /* a little more room for the notes beside them */
   .card b { font-size: 20px; }
   /* Room for two lines of news, not four: the rest of the screen is the game. */
   .murmur:nth-last-child(n+3) { display: none; }
