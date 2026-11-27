@@ -74,6 +74,13 @@ html, body {
 #journey { grid-area: journey; align-self: start; justify-self: end; }
 #murmurs { grid-area: murmurs; }
 #dock { grid-area: dock; }
+/*
+ * The menus are pinned below the corner, not stacked under it: the corner grows
+ * (an omen, an errand, who is in the room) and the rail must not move when it
+ * does. It sits over the corner's opened details, so reaching for a button closes them.
+ */
+#rail { position: absolute; left: 0; top: var(--rail-top, 184px); z-index: 3; pointer-events: auto; }
+#hud { position: relative; z-index: 2; }
 
 /* A corner: bare until pointed at (or tapped), then backed and opened. */
 #hud, #journey {
@@ -270,58 +277,134 @@ img.px { image-rendering: pixelated; width: 18px; height: 18px; display: block; 
 
 #dock { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; }
 
-/* What the hex you stand on offers: words, in a row. */
-#actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; max-width: 100%; }
-#actions:empty { display: none; }
-
-.context-button {
-  padding: 4px 12px 5px;
-  background: rgba(14, 12, 9, 0.5);
-  border: 1px solid transparent;
-  border-radius: 14px;
+/*
+ * The buttons are framed like the art: a hard dark edge, lit on the top left,
+ * shaded on the bottom right, square corners. Pixel icons at whole sizes.
+ */
+.px-frame, #rail button, .context-button {
+  background: rgba(41, 48, 63, 0.88);
+  border: none;
+  border-radius: 0;
+  box-shadow: 0 0 0 2px #1a1c2c, inset 2px 2px 0 #566c86, inset -2px -2px 0 #333c57;
   color: var(--ink);
-  font: 13px Georgia, serif;
-  text-shadow: inherit;
-  white-space: nowrap;
+  text-shadow: 0 1px 0 #1a1c2c;
   cursor: pointer;
   pointer-events: auto;
-  transition: background 140ms, border-color 140ms, color 140ms;
 }
-.context-button kbd {
-  min-width: 0; padding: 0; margin: 0 6px 0 0; border: none; background: none;
-  font: 10px Georgia, serif; color: var(--ink-dim); opacity: 0.75; vertical-align: 1px;
+#rail button:hover, .context-button:hover {
+  box-shadow: 0 0 0 2px #1a1c2c, inset 2px 2px 0 #94b0c2, inset -2px -2px 0 #333c57;
 }
-.context-button:hover { background: rgba(14, 12, 9, 0.85); border-color: rgba(217, 180, 91, 0.7); color: #ffe7a8; }
-.context-button.important { color: #ffe7a8; border-color: rgba(217, 180, 91, 0.4); }
 
-/* The menu: a glyph each, faint until you reach for them. */
-#taskbar { display: flex; flex-wrap: wrap; max-width: 100%; justify-content: center; gap: 6px; pointer-events: auto; opacity: 0.6; transition: opacity 200ms; }
-#taskbar:hover, #taskbar:focus-within { opacity: 1; }
-#taskbar button {
+/* What you can do here: a wheel of actions, the middle one picked. */
+#actions {
+  position: relative;
+  width: min(100%, 620px);
+  height: 52px;
+  overflow: hidden;
+  pointer-events: auto;
+  touch-action: pan-y;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+#actions:empty { display: none; }
+#actions.single { -webkit-mask-image: none; mask-image: none; }
+#actions .track {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0 7px;
-  background: rgba(14, 12, 9, 0.55);
-  border: 1px solid transparent;
-  border-radius: 16px;
-  color: var(--ink);
-  font: italic 12px Georgia, serif;
-  text-shadow: inherit;
-  cursor: pointer;
-  transition: border-color 140ms, color 140ms, background 140ms;
+  gap: 12px;
+  padding: 0 4px;
+  transition: transform 200ms ease-out;
+  will-change: transform;
 }
-#taskbar button:hover { border-color: rgba(217, 180, 91, 0.7); color: #ffe7a8; background: rgba(14, 12, 9, 0.85); }
-#taskbar button svg { display: block; flex: none; }
-/* A button says its name until you have opened it once. */
-#taskbar .lbl { display: none; padding-right: 4px; }
-#taskbar button.new .lbl { display: inline; }
+.context-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px 0 8px;
+  font: 13px Georgia, serif;
+  white-space: nowrap;
+  transition: transform 180ms ease-out, opacity 180ms, box-shadow 140ms;
+}
+.context-button img.px { width: 18px; height: 18px; object-fit: contain; }
+.context-button.important { color: #ffe7a8; }
+/* The middle one: lit, a size up, and says it is the Space key's. */
+.context-button.sel {
+  transform: scale(1.16);
+  color: #ffe7a8;
+  box-shadow: 0 0 0 2px #1a1c2c, inset 2px 2px 0 #ffcd75, inset -2px -2px 0 #ef7d57, 0 0 12px rgba(255, 205, 117, 0.35);
+}
+.context-button.sel::after {
+  content: 'Space';
+  margin-left: 2px;
+  padding: 0 4px;
+  font: 9px/13px Georgia, serif;
+  color: #ffcd75;
+  box-shadow: inset 0 0 0 1px rgba(255, 205, 117, 0.5);
+}
+@media (pointer: coarse) {
+  .context-button.sel::after { content: none; }
+  #actions { height: 58px; }
+  .context-button { height: 38px; }
+}
+
+/* The menus, down the left under the corner. */
+#rail { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 2px 0 0 2px; }
+#rail button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font: italic 12px Georgia, serif;
+  opacity: 0.82;
+  transition: opacity 160ms, box-shadow 140ms;
+}
+#rail button:hover, #rail button:focus-visible { opacity: 1; }
+#rail button img.px { width: 18px; height: 18px; object-fit: contain; }
+/* The name, as a tag to the right, only while pointed at: it never moves the button. */
+#rail .lbl {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 3px 8px;
+  white-space: nowrap;
+  background: rgba(26, 28, 44, 0.92);
+  box-shadow: 0 0 0 2px #1a1c2c, inset 1px 1px 0 #566c86;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+#rail button:hover .lbl, #rail button:focus-visible .lbl { opacity: 1; }
 /* Something new behind this one. */
-#taskbar button.nudge { color: #ffe7a8; animation: nudge 2.6s ease-in-out infinite; }
-@keyframes nudge { 50% { box-shadow: 0 0 12px 1px rgba(217, 180, 91, 0.6); border-color: rgba(217, 180, 91, 0.7); } }
-#taskbar button.eye.on { color: #f6cc52; border-color: rgba(246, 204, 82, 0.6); }
+#rail button.nudge { color: #ffe7a8; opacity: 1; animation: nudge 2.6s ease-in-out infinite; }
+@keyframes nudge { 50% { box-shadow: 0 0 0 2px #1a1c2c, inset 2px 2px 0 #ffcd75, inset -2px -2px 0 #333c57, 0 0 12px rgba(255, 205, 117, 0.6); } }
+#rail button.eye.on {
+  opacity: 1;
+  box-shadow: 0 0 0 2px #1a1c2c, inset 2px 2px 0 #ffcd75, inset -2px -2px 0 #ef7d57, 0 0 10px rgba(246, 204, 82, 0.45);
+}
+
+/*
+ * A small screen: the eye alone. Tapping it opens the mind view and drops the
+ * other buttons out beneath it; a tap anywhere else puts both away.
+ */
+@media (max-width: 620px), (pointer: coarse) and (max-width: 1000px) {
+  #rail button:not(.eye) { display: none; }
+  #rail.open button:not(.eye) { display: flex; animation: rail-drop 160ms ease-out both; }
+  #rail { --rail-top: 176px; }
+  #rail button { width: 42px; height: 42px; opacity: 1; }
+  #rail button img.px { width: 22px; height: 22px; }
+  /* No pointer to rest on a phone: open, every button says its name. */
+  #rail.open button .lbl { opacity: 1; }
+}
+@keyframes rail-drop { from { opacity: 0; transform: translateY(-6px); } }
 
 kbd {
   display: inline-block; min-width: 14px; padding: 0 3px; margin: 0 4px 0 0;

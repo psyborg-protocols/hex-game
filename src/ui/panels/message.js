@@ -50,6 +50,7 @@ export const HOW_TO_PLAY = `
     <div><b>Raiders</b><span>They cross the river at their rafts, after nightfall, in waves, to burn what you built. They stay out a night’s length, so a band that sets out late is still at it in the morning.
       Walls slow them, watchtowers shoot, shrines protect. Stand next to a raider to fight: attack dice hit on 4+, defence dice block on 5+.
       Anything that hits you, you hit back. A fallen raider drops its loot on the ground, and so do you when you fall: click the sack to pick it up.</span></div>
-    <div><b>Space</b><span>The eye: everything you know of the land.</span></div>
+    <div><b>The eye</b><span><kbd>E</kbd> or the eye on the left: everything you know of the land.</span></div>
+    <div><b>Actions</b><span>What you can do where you stand runs along the bottom. Turn it with the mouse wheel, the arrow keys or a swipe; <kbd>Space</kbd> does the one in the middle. <kbd>+</kbd> and <kbd>-</kbd> (or Ctrl and the wheel) zoom.</span></div>
     <div><b>The corners</b><span>Top left: the sun (or moon) with a bead for every turn of the day or night, health and energy, and the moon's three days, the last red when raiders come. Point at it for the numbers.</span></div>
   </div>`;

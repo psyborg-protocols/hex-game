@@ -47,7 +47,7 @@ export class UI {
     this.murmurs = document.getElementById('murmurs');
     this.card = document.getElementById('card');
     this.modalRoot = document.getElementById('modal-root');
-    this.taskbar = document.getElementById('taskbar');
+    this.taskbar = document.getElementById('rail');
     this.actions = document.getElementById('actions');
     this.offers = [];
 
@@ -60,6 +60,7 @@ export class UI {
     this.busy = null;
 
     this.buildTaskbar();
+    this.wireCarousel();
     // The corners open on a pointer; on a touch screen there is no pointer to
     // rest on them, so a tap holds them open and a tap elsewhere lets go.
     for (const el of [this.hud, this.journey]) {
@@ -95,23 +96,59 @@ export class UI {
 
     this.eyeButton = document.createElement('button');
     this.eyeButton.className = 'eye';
-    this.eyeButton.title = 'What you know of the land (Space)';
+    this.eyeButton.title = 'What you know of the land (E)';
     this.eyeButton.setAttribute('aria-label', 'What you know of the land');
     this.eyeButton.setAttribute('aria-pressed', 'false');
-    this.eyeButton.innerHTML = GLYPHS.eye;
-    this.eyeButton.addEventListener('click', () => { this.eyeButton.blur(); this.game.toggleEye(); });
+    this.eyeButton.innerHTML = RAIL_ICONS.eye;
+    this.eyeButton.addEventListener('click', () => {
+      this.eyeButton.blur();
+      // On a small screen the eye is all there is: it opens the mind view and
+      // the rest of the buttons together, and a tap anywhere else closes both.
+      if (this.compact()) this.setRailOpen(!this.taskbar.classList.contains('open'));
+      else this.game.toggleEye();
+    });
     this.taskbar.appendChild(this.eyeButton);
 
     for (const [name, label, key] of TASKS) {
       const b = document.createElement('button');
-      b.innerHTML = `${GLYPHS[name]}<span class="lbl">${label}</span>`;
+      b.innerHTML = `${RAIL_ICONS[name]}<span class="lbl">${label}</span>`;
       b.title = `${label} (${key})`;
       b.setAttribute('aria-label', label);
       b.dataset.panel = name;
       b.classList.toggle('new', !opened[name]);
-      b.addEventListener('click', () => { b.blur(); this.togglePanel(name); });
+      b.addEventListener('click', () => {
+        b.blur();
+        if (this.compact()) this.setRailOpen(false);
+        this.togglePanel(name);
+      });
       this.taskbar.appendChild(b);
     }
+
+    // A tap on the world closes the rail on a small screen, and is spent doing it.
+    document.getElementById('view').addEventListener('pointerdown', () => {
+      if (this.compact() && this.taskbar.classList.contains('open')) {
+        this.setRailOpen(false);
+        this.swallowTap = true;
+      }
+    });
+  }
+
+  /** A phone, or anything without room for the whole rail. */
+  compact() {
+    return matchMedia('(max-width: 620px), (pointer: coarse) and (max-width: 1000px)').matches;
+  }
+
+  /** Small screens only: the eye opens the mind view and the buttons together. */
+  setRailOpen(open) {
+    this.taskbar.classList.toggle('open', open);
+    this.game.setEye(open);
+  }
+
+  /** True once, if the last tap on the world only closed the rail. */
+  takeSwallowedTap() {
+    const was = !!this.swallowTap;
+    this.swallowTap = false;
+    return was;
   }
 
   /** Which panels you have opened, kept with the game so a reload remembers. */
@@ -373,26 +410,121 @@ export class UI {
   setContext(offers, at, onPick) {
     this.clearContext();
     if (this.busy || this.openPanelName) return;
-    this.offers = offers.slice(0, 9);
+    this.offers = offers.slice(0, 12);
     this.contextPick = onPick;
+    // Keep what you had chosen if it is still on offer; otherwise the first
+    // thing that matters, otherwise the first thing.
+    const kept = this.offers.findIndex(o => o.id === this.selectedId);
+    const important = this.offers.findIndex(o => o.important);
+    this.selected = kept >= 0 ? kept : Math.max(0, important);
+
+    const track = document.createElement('div');
+    track.className = 'track';
     this.offers.forEach((offer, i) => {
       const b = document.createElement('button');
       b.className = `context-button${offer.important ? ' important' : ''}`;
-      b.innerHTML = `<kbd>${i + 1}</kbd>${escapeHtml(offer.label)}`;
-      b.addEventListener('click', e => { e.stopPropagation(); b.blur(); onPick(offer); });
-      this.actions.appendChild(b);
+      b.innerHTML = `${offer.icon ? `<img class="px" src="${offer.icon}" alt="">` : ''}<span>${escapeHtml(offer.label)}</span>`;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        b.blur();
+        if (this.spun) return;          // the end of a swipe, not a tap
+        this.select(i);
+        onPick(offer);
+      });
+      track.appendChild(b);
     });
+    this.actions.appendChild(track);
+    this.actions.classList.toggle('single', this.offers.length === 1);
+    this.select(this.selected, false);
   }
 
-  /** Number keys pick the action buttons. */
-  pickContext(n) {
-    const offer = this.offers[n];
-    if (offer && this.contextPick) this.contextPick(offer);
+  /** Bring offer `i` to the middle of the bar. */
+  select(i, animate = true) {
+    const n = this.offers.length;
+    if (!n) return;
+    this.selected = ((i % n) + n) % n;
+    this.selectedId = this.offers[this.selected].id;
+    const track = this.actions.querySelector('.track');
+    if (!track) return;
+    const buttons = [...track.children];
+    buttons.forEach((b, k) => {
+      const d = Math.abs(k - this.selected);
+      b.classList.toggle('sel', d === 0);
+      b.style.opacity = d === 0 ? '' : String(Math.max(0.35, 0.9 - d * 0.22));
+      b.tabIndex = d === 0 ? 0 : -1;
+    });
+    const el = buttons[this.selected];
+    track.style.transition = animate ? '' : 'none';
+    track.style.transform = `translateX(${this.actions.clientWidth / 2 - (el.offsetLeft + el.offsetWidth / 2)}px)`;
+  }
+
+  /** Spin the bar by `step` places. False when there is nothing to spin. */
+  spin(step) {
+    if (this.offers.length < 2) return false;
+    this.select(this.selected + step);
+    chime('tick', 0.02);
+    return true;
+  }
+
+  /** Space: do whatever is in the middle. */
+  actSelected() {
+    const offer = this.offers[this.selected];
+    if (!offer || !this.contextPick) return false;
+    this.contextPick(offer);
+    return true;
   }
 
   clearContext() {
     this.actions.innerHTML = '';
     this.offers = [];
+  }
+
+  /**
+   * The bar spins under a mouse wheel and a sideways swipe. Wired once: the
+   * bar's buttons come and go, the bar itself stays.
+   */
+  wireCarousel() {
+    let wheel = 0;
+    let wheelAt = 0;
+    this.spinWheel = e => {
+      const now = performance.now();
+      if (now - wheelAt > 250) wheel = 0;
+      wheelAt = now;
+      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      // A notch of a mouse wheel is one step, however big its delta; a
+      // trackpad's trickle adds up to one.
+      const NOTCH = 40;
+      wheel = Math.abs(delta) >= NOTCH ? delta : wheel + delta;
+      if (Math.abs(wheel) < NOTCH) return false;
+      const step = Math.sign(wheel);
+      wheel = 0;
+      return this.spin(step);
+    };
+    this.actions.addEventListener('wheel', e => {
+      e.preventDefault();
+      if (!e.ctrlKey) this.spinWheel(e);
+    }, { passive: false });
+
+    let drag = null;
+    this.actions.addEventListener('pointerdown', e => {
+      drag = { x: e.clientX, step: 0 };
+      this.spun = false;
+    });
+    this.actions.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const STEP = 44;
+      const step = Math.trunc((drag.x - e.clientX) / STEP);
+      if (step !== drag.step) {
+        this.spin(step - drag.step);
+        drag.step = step;
+        this.spun = true;
+      }
+    });
+    const end = () => { drag = null; setTimeout(() => { this.spun = false; }, 0); };
+    this.actions.addEventListener('pointerup', end);
+    this.actions.addEventListener('pointercancel', end);
+    this.actions.addEventListener('pointerleave', () => { drag = null; });
+    window.addEventListener('resize', () => this.select(this.selected, false));
   }
 
   /**
@@ -581,16 +713,15 @@ function errandLine(s) {
 }
 
 
-const svg = body => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
-
-/** One glyph a button: an eye, a pack, a hammer, a roof, a star, a cog. */
-const GLYPHS = {
-  eye: svg('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>'),
-  inventory: svg('<path d="M6 9h12l1.2 10.5H4.8z"/><path d="M9 9V7a3 3 0 0 1 6 0v2"/><path d="M9.5 13h5"/>'),
-  crafting: svg('<path d="M14 4l6 6-3 3-6-6z"/><path d="M12.5 8.5L4 17l3 3 8.5-8.5"/>'),
-  build: svg('<path d="M3 11.5L12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-5.5h4V20"/>'),
-  skills: svg('<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/>'),
-  menu: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1"/>'),
+/** The rail's buttons, in the game's own pixel art: the pack, the hammer, the cabin. */
+const railIcon = src => `<img class="px" src="${src}" alt="">`;
+const RAIL_ICONS = {
+  eye: railIcon('icons/hud/eye.svg'),
+  inventory: railIcon('icons/leather_pack.svg'),
+  crafting: railIcon('icons/hammer.svg'),
+  build: railIcon('icons/cabin.svg'),
+  skills: railIcon('icons/journal.svg'),
+  menu: railIcon('icons/hud/cog.svg'),
 };
 
 export const icon = (item, size = 24) =>

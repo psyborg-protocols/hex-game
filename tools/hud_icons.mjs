@@ -122,6 +122,69 @@ function moon(n = 11) {
 }
 ICONS.moon = moon();
 
+// The buttons down the left and the actions along the bottom.
+ICONS.eye = [
+  '....kkkkk....',
+  '..kkwwwwwkk..',
+  '.kwwwyyywwwk.',
+  'kwwwyykyywwwk',
+  '.kwwwyyywwwk.',
+  '..kkwwwwwkk..',
+  '....kkkkk....',
+];
+ICONS.hourglass = [
+  'kkkkkkkkk',
+  'koooooook',
+  'kkkkkkkkk',
+  '.kyyyyyk.',
+  '..kyyyk..',
+  '...kyk...',
+  '...kwk...',
+  '..kwwwk..',
+  '.kwwywwk.',
+  '.kyyyyyk.',
+  'kkkkkkkkk',
+  'koooooook',
+  'kkkkkkkkk',
+];
+ICONS.flame = [
+  '....k....',
+  '...kok...',
+  '...kok...',
+  '..koook..',
+  '.kooyook.',
+  '.koyyyok.',
+  'kooyyyook',
+  'kooywyook',
+  'koyywyyok',
+  '.koyyyok.',
+  '..kkkkk..',
+];
+
+// A cog: a disc with eight teeth and a hole, outlined, lit from the top left.
+function cog(n = 13) {
+  const c = (n - 1) / 2;
+  const filled = (x, y) => {
+    const d = Math.hypot(x - c, y - c);
+    if (d < 1.7) return false;
+    if (d <= 3.9) return true;
+    const a = ((Math.atan2(y - c, x - c) * 180) / Math.PI + 360) % 45;
+    return d <= 5.9 && (a < 12 || a > 33);
+  };
+  const rows = [];
+  for (let y = 0; y < n; y++) {
+    let row = '';
+    for (let x = 0; x < n; x++) {
+      if (!filled(x, y)) { row += '.'; continue; }
+      const edge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !filled(x + dx, y + dy));
+      row += edge ? 'k' : x + y < n - 1 ? 'w' : 's';
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+ICONS.cog = cog();
+
 for (const [name, rows] of Object.entries(ICONS)) {
   writeFileSync(join(out, `${name}.svg`), toSvg(rows));
 }

@@ -168,7 +168,7 @@ hidden, and only on some of the ground that could hold them. Stand still on a
 hex for a couple of seconds to explore it. A ticker runs round its edge, and a
 scenic hex keeps going through copper, silver and gold circuits, so better places
 take longer (`src/game/discovery.js`, `src/game/explorer.js`). A first trade at
-a village reveals the land around it. Space (or the eye button) dims everything
+a village reveals the land around it. E (or the eye button) dims everything
 you have not explored and shows what you have found.
 
 **The river.** It divides the board and is meant to. The far bank, where the

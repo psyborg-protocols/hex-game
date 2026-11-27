@@ -26,10 +26,10 @@ import {
 } from './game/jobs.js';
 import { craft, checkRecipe, recipeKnown } from './game/crafting.js';
 import { ensureVillage, buy, sell, giveFavour, villageContext, isTrusted, isRaided } from './game/economy.js';
-import { villageNear } from './game/context.js';
+import { villageNear, determineContext } from './game/context.js';
 import { harvest, shakeTree, prospect, build, relightCampfire, placementSpots, growCrops, refreshArt, penaltyOnDeath, destroyStructure, feedHearth, fuelLeft } from './game/actions.js';
 import { clash } from './game/combat.js';
-import { harvestSpec, regrowText } from './game/harvests.js';
+import { harvestSpec, regrowText, HARVESTS } from './game/harvests.js';
 import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile, saveRoom, loadRoom } from './game/save.js';
 import { myName } from './net/multiplayer.js';
 import { ensureMind, isKnown, isExplored, isMeditated, scenicOf, harvestsHere, HIDDEN } from './game/discovery.js';
@@ -475,6 +475,7 @@ async function boot() {
     },
 
     toggleEye() { eye = !eye; game.ui.setEye(eye); },
+    setEye(on) { eye = !!on; game.ui.setEye(eye); },
 
     doSetColor(id) {
       if (!game.mp.requestColor(id)) {
@@ -1067,7 +1068,7 @@ async function boot() {
 
   function explored(done, now) {
     const result = onExplored(world, state, done);
-    if (!result.found) return;
+    if (!result.found) { refreshContext(); return; }
     fx.found.set(`${done.q},${done.r}`, now);
     for (const c of result.found.revealed || []) fx.found.set(`${c.q},${c.r}`, now);
     fx.version++;
@@ -1388,7 +1389,36 @@ async function boot() {
       game.ui.clearContext();
       return;
     }
+    if (working) { game.ui.clearContext(); return; }
     const offers = [];
+    const here = determineContext(world, state, player, { guardsLeft: c => guardsAt(state, c) });
+
+    // The places first: a village, a camp to burn, your stash, the campfire.
+    for (const o of here.offers) {
+      if (o.kind === 'trade') offers.push({ id: 'trade', label: o.label, icon: 'icons/market_stall.svg', important: o.important, run: () => game.doTrade(o.village) });
+      else if (o.kind === 'burn') offers.push({ id: 'burn', label: o.label, icon: 'icons/hud/flame.svg', important: true, run: () => game.doBurn(o.camp) });
+      else if (o.kind === 'stash') offers.push({ id: 'stash', label: 'Stash', icon: 'icons/chest.svg', run: () => game.ui.openPanel('stash') });
+      else if (o.kind === 'relight') offers.push({ id: 'relight', label: o.label, icon: 'icons/hearth.svg', important: true, run: () => game.doRelight() });
+    }
+    const hearth = game.hearthNear();
+    if (hearth && (state.free || countItem(state, 'log') >= (hearth.feature.cold ? 5 : 1))) {
+      offers.push({
+        id: 'feed', label: hearth.feature.cold ? 'Light the Hearth' : 'Add Wood', icon: 'icons/log.svg',
+        important: !!hearth.feature.cold, run: () => game.doFeedHearth(hearth),
+      });
+    }
+    // Then what the ground gives, each with what it gives: once you have stood
+    // and looked, so a rock does not turn up a moment before the berries do.
+    const looked = isExplored(state, player.q, player.r);
+    for (const o of looked ? here.offers : []) {
+      if (o.kind === 'harvest') {
+        const gives = Object.keys(HARVESTS[o.id]?.yields || {})[0];
+        offers.push({ id: o.id, label: o.label, icon: ITEMS[gives]?.icon, run: () => game.doHarvest(o.id) });
+      } else if (o.kind === 'prospect') {
+        offers.push({ id: 'prospect', label: o.label, icon: 'icons/ore.svg', run: () => game.doProspect() });
+      }
+    }
+    // And the night.
     if (isNight(state)) {
       const sc = sleepContext(map, state, player);
       if (!sc.raidActive) {
@@ -1398,20 +1428,17 @@ async function boot() {
             : sc.inHut ? (sc.cloaked ? 'Sleep in Hut' : 'Sleep in Hut (cold)')
               : sc.nearFire ? 'Sleep by Fire (exposed)'
                 : sc.cloaked ? 'Sleep Outdoors (exposed)' : 'Sleep Outdoors (cold & exposed)';
-        offers.push({ id: 'sleep', label, important: true });
+        offers.push({ id: 'sleep', label, icon: 'icons/hud/tired.svg', important: true, run: () => game.doSleep() });
       }
-      offers.push({ id: 'wait', label: 'Wait 1 Turn' });
-    } else if (abroad(state).length > 0 || state.raid?.stage === 'night') {
-      offers.push({ id: 'wait', label: 'Wait 1 Turn' });
+    }
+    if (isNight(state) || abroad(state).length > 0 || state.raid?.stage === 'night') {
+      offers.push({ id: 'wait', label: 'Wait a Turn', icon: 'icons/hud/hourglass.svg', run: () => game.doWaitTurn() });
     }
     if (!offers.length) {
       game.ui.clearContext();
       return;
     }
-    game.ui.setContext(offers, player, offer => {
-      if (offer.id === 'sleep') game.doSleep();
-      else if (offer.id === 'wait') game.doWaitTurn();
-    });
+    game.ui.setContext(offers, player, offer => offer.run());
   }
 
   player.speedAt = (from, to) => {
@@ -2185,6 +2212,8 @@ async function boot() {
     canvas.releasePointerCapture(e.pointerId);
     const wasDrag = drag.moved > 4;
     drag.active = false;
+    // On a small screen, a tap that only put the menus away does nothing else.
+    if (game.ui.takeSwallowedTap()) return;
     if (wasDrag || dead) return;
     if (e.button === 2) return; // a right-click opens the player menu, nothing more
     if (game.mp?.waiting) { game.ui.notify('Your day is done. The new one starts when everyone has finished theirs.'); return; }
@@ -2392,14 +2421,27 @@ async function boot() {
     player.follow(route, refreshContext);
   });
 
+  // The wheel turns the action bar while there is more than one thing to do;
+  // otherwise, or with Ctrl held, it zooms. + and - always zoom.
+  let zoomWheel = 0;
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
+    if (!e.ctrlKey && game.ui.offers.length > 1 && !game.ui.openPanelName) {
+      game.ui.spinWheel(e);
+      return;
+    }
+    // A pinch on a trackpad arrives as a Ctrl+wheel trickle: add it up first.
+    zoomWheel += e.deltaY;
+    if (Math.abs(zoomWheel) < 30) return;
     const rect = canvas.getBoundingClientRect();
     const d = pixelScale();
-    if (camera.zoom(e.deltaY > 0 ? -1 : 1, (e.clientX - rect.left) * d, (e.clientY - rect.top) * d, canvas.width, canvas.height)) {
-      renderer.resize(camera);
-    }
+    zoomBy(zoomWheel > 0 ? -1 : 1, (e.clientX - rect.left) * d, (e.clientY - rect.top) * d);
+    zoomWheel = 0;
   }, { passive: false });
+
+  function zoomBy(dir, x = canvas.width / 2, y = canvas.height / 2) {
+    if (camera.zoom(dir, x, y, canvas.width, canvas.height)) renderer.resize(camera);
+  }
 
   window.addEventListener('resize', () => renderer.resize(camera));
   window.addEventListener('keyup', e => { if (e.code === 'Space' && !typing(e)) e.preventDefault(); });
@@ -2413,8 +2455,15 @@ async function boot() {
       return;
     }
     if (game.ui.sticky) return;
-    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) game.toggleEye(); }
+    const free = !game.ui.openPanelName && !game.mp?.waiting && !working;
+    // Space does whatever is in the middle of the bar; the arrows turn the bar.
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && free) game.ui.actSelected(); }
+    if (e.key === 'ArrowLeft' && free) { e.preventDefault(); game.ui.spin(-1); }
+    if (e.key === 'ArrowRight' && free) { e.preventDefault(); game.ui.spin(1); }
+    if (e.key === '+' || e.key === '=') zoomBy(1);
+    if (e.key === '-' || e.key === '_') zoomBy(-1);
     const k = e.key.toLowerCase();
+    if (k === 'e' && !e.repeat) game.toggleEye();
     if (k === 'f') follow = true;
     if (k === 'i') game.ui.togglePanel('inventory');
     if (k === 'c') game.ui.togglePanel('crafting');
@@ -2422,7 +2471,6 @@ async function boot() {
     if (k === 'k') game.ui.togglePanel('skills');
     if (k === 'z' && !game.ui.openPanelName && !game.mp?.waiting && !working) game.doSleep();
     if (e.key === '.' && !game.ui.openPanelName && !game.mp?.waiting && !working) game.doWaitTurn();
-    if (/^[1-9]$/.test(e.key) && !game.ui.openPanelName) game.ui.pickContext(Number(e.key) - 1);
   });
 
   // ------------------------------------------------------------ frame loop
