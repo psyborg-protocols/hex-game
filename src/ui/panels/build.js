@@ -18,10 +18,7 @@ export const buildPanel = {
       .map(({ r, check }) => recipeRow(game, r, check, { action: 'site' })).join('');
 
     const empty = '<p class="dim">Gather stone, wood, or grain to discover what you can build.</p>';
-    return `<p class="dim">Built on your hex or the one beside it, on level ground. A ladder
-      leans on the cliff beside you; a bridge starts at the water's edge. Raiders go for
-      what you build, so think about where.</p>
-      <div class="recipes">${rows || empty}</div>`;
+    return `<div class="recipes">${rows || empty}</div>`;
   },
 
   bind(game, body) {

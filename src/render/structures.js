@@ -237,7 +237,7 @@ function drawCottage(ctx, x, y, t = 0, opts = {}) {
 }
 
 const DRAW = {
-  hearth(ctx, x, y, t = 0) {
+  hearth(ctx, x, y, t = 0, cold = false) {
     shadow(ctx, x, y + 1, 8, 3);
     // Fieldstone fire ring
     const stones = [
@@ -249,9 +249,9 @@ const DRAW = {
       px(ctx, PAL.stone.mid, x + dx, y + dy, 2, 1);
       px(ctx, PAL.stone.lit, x + dx, y + dy, 1, 1);
     }
-    // Glowing coal bed & crossed firewood
-    px(ctx, '#5e1b18', x - 3, y - 1, 6, 3);
-    px(ctx, '#c43e22', x - 2, y, 4, 1);
+    // Glowing coal bed & crossed firewood (grey ash, once it has gone cold)
+    px(ctx, cold ? '#3a3838' : '#5e1b18', x - 3, y - 1, 6, 3);
+    px(ctx, cold ? '#6d6a66' : '#c43e22', x - 2, y, 4, 1);
     px(ctx, PAL.timber.dark, x - 3, y + 1, 6, 1);
     px(ctx, PAL.timber.mid, x - 2, y, 4, 1);
     // Rustic wooden cooking tripod + iron pot
@@ -262,7 +262,7 @@ const DRAW = {
     px(ctx, '#4f5566', x - 1, y - 6, 2, 2);
     px(ctx, '#8892a8', x - 1, y - 6, 1, 1);
     // Dancing flames
-    flame(ctx, x, y + 1, t, 2);
+    if (!cold) flame(ctx, x, y + 1, t, 2);
   },
 
   hut(ctx, x, y, t = 0) {
@@ -694,7 +694,7 @@ export function drawBridgeDeck(ctx, img, frame, deck, drop = 0, t = 0) {
 
 /** Draw a structure standing on the top face centred at (x, y). */
 export function drawStructure(ctx, x, y, item, t = 0, feature = null) {
-  (DRAW[item] || DRAW.hearth)(ctx, x, y, t);
+  (DRAW[item] || DRAW.hearth)(ctx, x, y, t, !!feature?.cold);
   if (feature && feature.maxHp && feature.hp < feature.maxHp) {
     hpBar(ctx, x, y - 24, feature.hp / feature.maxHp, '#d9b45b');
   }

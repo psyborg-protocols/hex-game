@@ -17,7 +17,7 @@ const anyOf = (s, ids) => ids.some(id => has(s, id));
 export const STAGES = [
   {
     id: 'stranded', name: 'Stranded',
-    blurb: 'You have a handful of berries and the clothes you stand in.',
+    blurb: 'A cold campfire, and the whole day ahead of you.',
     goals: [
       { id: 'explore5', text: 'Explore 5 places', hint: 'Stand still on a hex for a moment to explore it.', test: s => Object.keys(s.mind?.explored || {}).length >= 5 },
       { id: 'cord', text: 'Twist some cord', hint: 'Reeds grow where a shore is low: a lake, or a stream. Then Craft → Woodworking.', test: s => has(s, 'cord') || has(s, 'stone_axe') || has(s, 'stone_hammer') },

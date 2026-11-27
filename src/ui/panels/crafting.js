@@ -7,6 +7,7 @@ import { checkRecipe, recipesBySkill, recipeKnown } from '../../game/crafting.js
 import { skillIcon, levelOf } from '../../game/skills.js';
 import { countItem } from '../../game/inventory.js';
 import { icon, escapeHtml } from '../ui.js';
+import { itemWords } from '../../game/item_words.js';
 
 export function recipeRow(game, recipe, check, { action = 'craft' } = {}) {
   const out = Object.entries(recipe.output)[0];
@@ -31,7 +32,7 @@ export function recipeRow(game, recipe, check, { action = 'craft' } = {}) {
       ${icon(item, 30)}
       <div>
         <b>${escapeHtml(recipe.name)}${out[1] > 1 ? ` <span class="dim">&times;${out[1]}</span>` : ''}</b>
-        <span class="desc">${escapeHtml(item?.desc || '')}</span>
+        <span class="desc">${escapeHtml(item ? itemWords(game.state, item.id) : '')}</span>
       </div>
       <button data-${action}="${recipe.id}" ${check.ok ? '' : 'disabled'}>${build ? 'Build' : 'Make'}</button>
     </div>
@@ -71,14 +72,23 @@ export const craftingPanel = {
     const rows = sortRows(list).map(({ r, check }) => recipeRow(game, r, check)).join('');
 
     const where = ctx.village
-      ? `<p class="where">At ${escapeHtml(ctx.village.name)}. ${ctx.village.trusted
-        ? `You may work at their ${escapeHtml(ITEMS[ctx.village.station]?.name || ctx.village.station)}.`
-        : 'Earn their trust and you may use their workshop.'}</p>` : '';
+      ? `<p class="where">${ctx.village.trusted
+        ? `${escapeHtml(ctx.village.name)}'s ${escapeHtml((ITEMS[ctx.village.station]?.name || ctx.village.station).toLowerCase())} is yours to use.`
+        : `${escapeHtml(ctx.village.name)} keeps its workshop for those it trusts.`}</p>` : '';
 
     const empty = tab === 'ready'
       ? '<p class="dim">Nothing you can make right now. Look under a skill to see what each recipe is waiting on.</p>'
       : '<p class="dim">Gather from the land to discover what can be made.</p>';
-    return `<div class="tabs">${tabs}</div>${where}<div class="recipes">${rows || empty}</div>`;
+    // Your own hearth beside you: how long it will burn, and wood to put on.
+    const hearth = game.hearthNear?.();
+    let fire = '';
+    if (hearth) {
+      const cold = !!hearth.feature.cold;
+      const can = game.state.free || countItem(game.state, 'log') >= (cold ? 5 : 1);
+      fire = `<p class="where fire">${cold ? 'The hearth is cold.' : escapeHtml(game.fireWords(hearth))}
+        <button data-feed ${can ? '' : 'disabled'} title="${cold ? 'Five logs to light it' : 'Each log is a day of fire'}">${cold ? 'Light it' : 'Add wood'}</button></p>`;
+    }
+    return `<div class="tabs">${tabs}</div>${where}${fire}<div class="recipes">${rows || empty}</div>`;
   },
 
   bind(game, body, props = {}) {
@@ -91,5 +101,9 @@ export const craftingPanel = {
     for (const btn of body.querySelectorAll('[data-craft]')) {
       btn.addEventListener('click', () => game.doCraft(btn.dataset.craft));
     }
+    body.querySelector('[data-feed]')?.addEventListener('click', () => {
+      const h = game.hearthNear?.();
+      if (h) game.doFeedHearth(h);
+    });
   },
 };

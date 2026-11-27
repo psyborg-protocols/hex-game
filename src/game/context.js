@@ -11,6 +11,7 @@ import { levelOf } from './skills.js';
 import { isTrusted } from './economy.js';
 import { countItem } from './inventory.js';
 import { isFree } from './state.js';
+import { campfireWants } from './actions.js';
 
 /** The first column on this hex or the next one over that passes `test`. */
 function nearby(map, at, test) {
@@ -64,17 +65,14 @@ export function determineContext(world, state, at, extra = {}) {
   if (campfire) {
     const canRelight = isFree(state) || (countItem(state, 'branch') >= 1 && countItem(state, 'flint') >= 1);
     if (canRelight) {
-      offers.unshift({ kind: 'relight', id: 'relight_campfire', label: 'Relight Campfire', verb: 'Lighting', skill: 'homesteading', important: true, campfire });
+      offers.unshift({ kind: 'relight', id: 'relight_campfire', label: 'Light Campfire', verb: 'Lighting', skill: 'homesteading', important: true, campfire });
     } else {
-      const reasons = [];
-      if (countItem(state, 'branch') < 1) reasons.push('Needs 1 more Branch.');
-      if (countItem(state, 'flint') < 1) reasons.push('Needs 1 more Flint.');
-      blocked.unshift({ id: 'relight_campfire', label: 'Relight Campfire', reasons });
+      blocked.unshift({ id: 'relight_campfire', label: 'Light Campfire', reasons: [campfireWants(state)] });
     }
   }
 
   if (['stony', 'steppes'].includes(col.terrain) && levelOf(state, 'mind') >= 3) {
-    offers.push({ kind: 'prospect', id: 'prospect', label: 'Read the Rock', verb: 'Prospecting', skill: 'metalworking' });
+    offers.push({ kind: 'prospect', id: 'prospect', label: 'Prospect', verb: 'Prospecting', skill: 'metalworking' });
   }
 
   if (village) {

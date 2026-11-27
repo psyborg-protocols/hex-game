@@ -27,7 +27,7 @@ export function joinScreen(code) {
 
     const frame = (body) => {
       root.innerHTML = `<div class="join-card">
-        <h1>Hex Quest</h1>
+        <h1>Across the River</h1>
         ${body}
         <button type="button" class="link-btn join-alone">Play on my own instead</button>
       </div>`;

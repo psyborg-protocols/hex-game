@@ -115,36 +115,46 @@ html, body {
 .vital.low { opacity: 1; animation: vital-low 1.7s ease-in-out infinite; }
 @keyframes vital-low { 50% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 9px 1px rgba(232, 104, 118, 0.95); } }
 
-/*
- * The moon dial: the whole moon left to right, quiet until the omens, amber
- * through them, red for the night the raid comes. The mark is now.
- */
-.sky { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: #e9d9a6; }
-.sky.night { color: #a9b8ff; }
-.sky .orb { font-size: 11px; line-height: 1; width: 12px; text-align: center; opacity: 0.9; }
-.sky .turn-clock { font-size: 11px; opacity: 0.85; white-space: nowrap; }
-.moon {
-  position: relative;
-  width: 114px;
-  height: 3px;
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
-  background: linear-gradient(90deg,
-    rgba(96, 122, 70, 0.9) 0, rgba(96, 122, 70, 0.9) var(--omens),
-    #b08a30 var(--omens), #b08a30 var(--dusk),
-    #b2404f var(--dusk), #b2404f 100%);
-}
-.moon i {
+/* The corner, drawn. The day's clock on the left, the two bars beside it. */
+.hud-top { display: flex; align-items: center; gap: 10px; }
+.hud-bars { display: grid; gap: 5px; }
+.bar-row { display: flex; align-items: center; gap: 6px; }
+.bar-row .vital { margin-bottom: 0; width: 118px; height: 5px; }
+img.px { image-rendering: pixelated; width: 18px; height: 18px; display: block; }
+.bar-row img.px { width: 14px; height: 14px; object-fit: contain; }
+
+.dial { position: relative; width: 58px; height: 58px; flex: none; }
+.dial > img.px { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); }
+.dial .bead {
   position: absolute;
-  top: -3px;
-  width: 2px;
-  height: 9px;
-  margin-left: -1px;
-  border-radius: 1px;
-  background: #fff6dc;
-  box-shadow: 0 0 4px rgba(255, 246, 220, 0.9);
-  transition: left 240ms linear;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent);
 }
+.dial .bead.past { background: var(--c); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
+.dial .bead.now { background: var(--c); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 5px 1px var(--c); animation: bead-now 2.4s ease-in-out infinite; }
+@keyframes bead-now { 50% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 2px 0 var(--c); } }
+
+.moon-pips { display: flex; gap: 6px; padding-left: 20px; margin-top: 2px; }
+.moon-pips i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(233, 225, 200, 0.5); }
+.moon-pips i.past { background: rgba(233, 225, 200, 0.75); box-shadow: none; }
+.moon-pips i.now { background: #f4f0e2; box-shadow: 0 0 4px rgba(244, 240, 226, 0.8); }
+.moon-pips i.last { box-shadow: inset 0 0 0 1px rgba(214, 120, 120, 0.7); }
+.moon-pips i.last.omens { background: #d8a040; box-shadow: 0 0 5px rgba(240, 190, 90, 0.8); }
+.moon-pips i.last.raid { background: #c8404f; box-shadow: 0 0 6px rgba(240, 90, 100, 0.9); }
+
+#hud-more .stats { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 14px; justify-content: start; font-size: 13px; }
+#hud-more .stat img.px { width: 15px; height: 15px; object-fit: contain; }
+#hud-more .stat { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+
+/* A saying, when you have sat a while: set apart from the running talk. */
+.murmur.saying { color: #e8dcc0; letter-spacing: 0.01em; }
+
+/* The opening's three lines. */
+.message ul.opening { margin: 14px 0 0; padding-left: 18px; line-height: 1.7; }
 
 /* What is coming, in a line under the moon. */
 .omen { margin-top: 5px; font-style: italic; font-size: 12px; color: #f0cf7a; }
@@ -623,7 +633,7 @@ kbd {
 .ingredient { display: inline-flex; align-items: center; gap: 3px; }
 .ingredient.short { color: var(--bad); }
 
-.why { margin: 6px 0 0; padding-left: 16px; font-size: 11px; color: var(--ink-dim); }
+.why { margin: 6px 0 0; padding-left: 16px; font-size: 11px; color: var(--bad); }
 
 /* ---------------------------------------------------------------- skills */
 

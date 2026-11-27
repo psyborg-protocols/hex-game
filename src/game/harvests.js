@@ -52,7 +52,7 @@ export const HARVESTS = {
     verb: 'Foraging',
   },
   gather_grain: {
-    id: 'gather_grain', name: 'Gather Tall Grass', skill: 'homesteading', level: 1, xp: 1, energy: 0.5, regrows: 8,
+    id: 'gather_grain', name: 'Forage', skill: 'homesteading', level: 1, xp: 1, energy: 0.5, regrows: 8,
     where: on('meadow', 'grass'),
     yields: { grain: [1, 2] },
     bonusYields: { herb: [1, 1], herb_seed: [1, 1] },
@@ -138,7 +138,7 @@ export const HARVESTS = {
     verb: 'Reaping',
   },
   mine_cliff: {
-    id: 'mine_cliff', name: 'Mine the Face', skill: 'stoneworking', level: 1, xp: 3, energy: 1.5,
+    id: 'mine_cliff', name: 'Mine', skill: 'stoneworking', level: 1, xp: 3, energy: 1.5,
     tool: ['pickaxe', 'stone_hammer'],
     // Quarry stone and flint from an exposed cliff wall without bringing the hex down.
     where: (col, map) => beside(o => o.h - col.h >= 2)(col, map),
@@ -186,9 +186,26 @@ export function cliffTarget(map, col) {
  * you move on.
  */
 const REGROW_TEXT = {
-  forage: 'Picked clean', gather_grain: 'Stripped of seed', find_herb: 'Picked clean', hunt: 'The game has fled', fish: 'The fish have gone quiet',
-  gather_branch: 'Nothing left lying here', cut_reeds: 'Cut to the stubble', dig_clay: 'Dug out', gather_flint: 'Picked over',
+  forage: ['The bush has been picked clean.', 'Picked clean. It will grow back eventually...'],
+  gather_grain: ['The grass has been stripped of seed.', 'Stripped of seed. It will grow back eventually...'],
+  find_herb: ['The herbs here have been picked clean.', 'Picked clean. They will grow back eventually...'],
+  hunt: ['The game has fled.', 'The game has fled. It will come back eventually...'],
+  fish: ['The fish have gone quiet.', 'The fish have gone quiet. They will come back eventually...'],
+  gather_branch: ['Nothing is left lying here.', 'Nothing left. More will fall eventually...'],
+  cut_reeds: ['The reeds are cut to the stubble.', 'Cut to the stubble. They will grow back eventually...'],
+  dig_clay: ['The bank has been dug out.', 'Dug out. The bank will fill in again eventually...'],
+  gather_flint: ['The ground has been picked over.', 'Picked over. More will wash up eventually...'],
 };
+
+/** What a spent hex says: plainly the first time, and that it comes back once you try again. */
+export const regrowText = (id, again = false) => (REGROW_TEXT[id] || ['Nothing is left here.', 'Nothing left. It will come back eventually...'])[again ? 1 : 0];
+
+/** A tool named the way you would say it. */
+const TOOL_WORDS = {
+  stone_axe: 'an axe', iron_axe: 'an axe', stone_hammer: 'a hammer', pickaxe: 'a pickaxe',
+  fishing_rod: 'a fishing rod', bow: 'a bow', cord: 'some cord', stone_knife: 'a knife',
+};
+export const toolWords = tools => TOOL_WORDS[tools[0]] || `a ${tools[0].replace(/_/g, ' ')}`;
 const pickKey = (col, id) => `${col.q},${col.r}:${id}`;
 export const regrowsAt = (state, col, id) => state.picked?.[pickKey(col, id)] ?? -1;
 export function markPicked(state, col, id) {
@@ -218,18 +235,16 @@ export function availableHarvests(map, state, at) {
     if (isFree(state)) { out.push({ spec, ok: true, reasons, col }); continue; }
 
     if (levelOf(state, spec.skill) < spec.level) {
-      reasons.push(`Needs ${spec.skill} level ${spec.level}.`);
+      reasons.push("You don't know how to do that yet.");
     }
     if (spec.tool && !spec.tool.some(t => countItem(state, t) > 0)) {
-      reasons.push(`Needs ${spec.tool.map(t => t.replace(/_/g, ' ')).join(' or ')}.`);
+      reasons.push(id === 'hunt' ? 'You need cord to set a snare.' : `You'd need ${toolWords(spec.tool)} for that.`);
     }
     const back = regrowsAt(state, col, id);
     const turn = worldClock(state);
-    if (back > turn) {
-      const left = Math.ceil(back - turn);
-      reasons.push(`${REGROW_TEXT[id] || 'Spent'} — back in ${left} ${left === 1 ? 'turn' : 'turns'}.`);
-    }
-    out.push({ spec, ok: reasons.length === 0, reasons, col });
+    const spent = back > turn;
+    if (spent) reasons.push(regrowText(id));
+    out.push({ spec, ok: reasons.length === 0, reasons, col, ...(spent ? { regrowing: true } : {}) });
   }
   return out;
 }

@@ -13,6 +13,7 @@ import { attackDice, defenseDice, reach, bestWeapon, maxHp } from '../../game/ge
 import { maxMoveDistance, ensureTurnState } from '../../game/turns.js';
 import { HARVESTS } from '../../game/harvests.js';
 import { icon, escapeHtml } from '../ui.js';
+import { itemWords } from '../../game/item_words.js';
 
 const SLOT_LABELS = Object.fromEntries(WORN_SLOTS.map(s => [s.id, s.label]));
 
@@ -33,7 +34,7 @@ export function usesOf(id) {
   return { makes: [...new Set(makes)], toolFor: [...new Set(toolFor)], atFor: [...new Set(atFor)] };
 }
 
-export function itemDetail(id, { worn = false, packIndex = -1 } = {}) {
+export function itemDetail(id, { worn = false, packIndex = -1, state = null } = {}) {
   const item = ITEMS[id];
   if (!item) return '';
   const stats = [];
@@ -56,7 +57,7 @@ export function itemDetail(id, { worn = false, packIndex = -1 } = {}) {
   return `<div class="detail">
     <div class="detail-head">${icon(item, 36)}<div><b>${escapeHtml(item.name)}</b>
       <span class="dim kind">${item.kind}${stats.length ? ' &middot; ' + stats.join(' &middot; ') : ''}</span></div>${actionBtn}</div>
-    <p>${escapeHtml(item.desc || '')}</p>
+    <p>${escapeHtml(itemWords(state, item.id))}</p>
     ${list('Goes into:', u.makes)}${list('Tool for:', u.toolFor)}${list('Work here to make:', u.atFor)}
   </div>`;
 }
@@ -183,7 +184,7 @@ export const inventoryPanel = {
       ${state.cloak ? '<p class="dim">You wear your hooded cloak: the night chill can&rsquo;t reach you. Change its colour under Game.</p>' : ''}
       ${slots}
       ${selected
-        ? itemDetail(selected, { worn: isSelWorn, packIndex: inPackIdx })
+        ? itemDetail(selected, { worn: isSelWorn, packIndex: inPackIdx, state: game.state })
         : '<p class="dim">Click worn gear above to equip or remove it; click pack items to inspect or equip; right-click (or hold) to drop or toss. Food goes in the four food slots and is eaten on its own as you work.</p>'}`;
   },
 

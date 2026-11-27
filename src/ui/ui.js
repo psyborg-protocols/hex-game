@@ -153,15 +153,21 @@ export class UI {
         chime('village');
         break;
       case 'goal':
+        // Goals stay unseen: quiet milestones.
         chime('achievement', 0.03);
         break;
       case 'trade':
         break;
       case 'achievement':
+        this.floatText(you, m.title, 'place', 3200);
+        chime('achievement', 0.04);
+        break;
       case 'level':
+        this.murmur(LEVEL_LINES[m.skill] || `You have grown more skilled at ${m.skill}.`, { tone: 'level', ms: 4200 });
         chime('achievement', 0.04);
         break;
       case 'stage':
+        this.showCard(m.title, m.sub);
         chime('gold');
         break;
       case 'raid':
@@ -257,24 +263,33 @@ export class UI {
     const moveMax = maxMoveDistance(s);
 
     this.hudStats.innerHTML = `
-      <div class="vital hp${hurt ? ' low' : ''}"><i style="width:${pct(s.hp, hpMax)}%"></i></div>
-      <div class="vital en${hungry ? ' low' : ''}${tired ? ' tired' : ''}"><i style="width:${pct(s.energy, eFull)}%"></i>${lostPct ? `<b class="lost" style="width:${lostPct}%"></b>` : ''}</div>
-      <div class="sky ${night ? 'night' : ''}">
-        <span class="orb">${night ? '&#9790;' : '&#9728;'}</span>
-        <span class="turn-clock">${phaseLabel}</span>
-        <div class="moon" style="--omens:${MOON_MARKS.omens}%; --dusk:${MOON_MARKS.dusk}%"><i style="left:${(moon.progress * 100).toFixed(1)}%"></i></div>
+      <div class="hud-top">
+        ${dial(dInfo, night, phaseLabel)}
+        <div class="hud-bars">
+          <div class="bar-row" title="Health">${hudIcon('heart')}<div class="vital hp${hurt ? ' low' : ''}"><i style="width:${pct(s.hp, hpMax)}%"></i></div></div>
+          <div class="bar-row" title="Energy">${hudIcon('energy')}<div class="vital en${hungry ? ' low' : ''}${tired ? ' tired' : ''}"><i style="width:${pct(s.energy, eFull)}%"></i>${lostPct ? `<b class="lost" style="width:${lostPct}%"></b>` : ''}</div></div>
+          ${moonPips(moon, s)}
+        </div>
       </div>
       ${this.alert.text ? `<div class="omen ${this.alert.tone}">${escapeHtml(this.alert.text)}</div>` : ''}
       ${errandLine(s)}
       ${this.game.mp?.hudRoster(escapeHtml) || ''}`;
 
+    const stat = (img, value, title) => `<span class="stat" title="${title}">${img}<b>${value}</b></span>`;
     this.hudMore.innerHTML = `
-      <div><b>${Math.max(0, s.hp)}</b>/${hpMax} health &middot; <b>${Math.floor(s.energy)}</b>/${eMax} energy</div>
-      <div>${food ? `food for <b>${food}</b> more (1 bite/turn)` : 'no food in your pack'}</div>
-      <div><b>${moveMax}</b> hexes/turn &middot; <b>${ACTIONS_PER_TURN}</b> actions/turn &middot; turn <b>${s.turn || 0}</b></div>
-      ${tired ? `<div><b>${fatigue.name}</b> from staying up &mdash; max energy <b>${eMax}</b> of ${eFull} until nightfall</div>` : ''}
-      <div><b>${s.gold}</b> gold &middot; ${usedSlots(s)}/${capacity(s)} slots &middot; ${attackDice(s)} attack, ${defenseDice(s)} defence</div>
-      <div>moon <b>${moon.moon}</b>, day <b>${moon.day}</b> of ${MOON_DAYS}${phase ? ` &middot; ${phase}` : ' &middot; fair days'}</div>
+      <div class="stats">
+        ${stat(hudIcon('heart'), `${Math.max(0, s.hp)}/${hpMax}`, 'Health')}
+        ${stat(hudIcon('energy'), `${Math.floor(s.energy)}/${eMax}`, 'Energy')}
+        ${tired ? stat(hudIcon('tired'), `${eMax}/${eFull}`, `${fatigue.name} from staying up: less energy until nightfall`) : ''}
+        ${stat(itemIcon('berries'), food, 'Food in your pack')}
+        ${stat(itemIcon('gold'), s.gold, 'Gold')}
+        ${stat(itemIcon('basket'), `${usedSlots(s)}/${capacity(s)}`, 'Pack slots')}
+        ${stat(itemIcon('boots'), moveMax, 'Hexes walked in a turn')}
+        ${stat(hudIcon('hand'), ACTIONS_PER_TURN, 'Things done in a turn')}
+        ${stat(itemIcon('sword'), attackDice(s), 'Attack dice')}
+        ${stat(itemIcon('shield'), defenseDice(s), 'Defence dice')}
+        ${stat(hudIcon('moon'), moon.moon, `Moon ${moon.moon}, day ${moon.day} of ${MOON_DAYS}${phase ? `: ${phase}` : ''}`)}
+      </div>
       <div class="skills">${SKILLS.map(skill => {
         const level = levelOf(s, skill);
         const p = level >= MAX_LEVEL ? 100 : Math.round(progress(s, skill) * 100);
@@ -507,6 +522,55 @@ const TASKS = [
 
 const PHASE_NAMES = { fair: 'fair days', omens: 'omens', raid: 'raid night' };
 
+/** What growing in a skill feels like, said once as it happens. */
+const LEVEL_LINES = {
+  woodworking: 'You have grown more skilled with wood.',
+  stoneworking: 'You have grown more skilled with stone.',
+  metalworking: 'You have grown more skilled with metal.',
+  homesteading: 'You have grown more skilled at keeping a home.',
+  mind: 'Your mind has grown clearer.',
+};
+
+const hudIcon = name => `<img class="px" src="icons/hud/${name}.svg" alt="">`;
+const itemIcon = name => `<img class="px" src="icons/${name}.svg" alt="">`;
+
+/** The day's colour at turn `i` of 12: pale morning blue to gold; the night, dark to moonlight. */
+function turnColour(i, n, night) {
+  const t = n > 1 ? i / (n - 1) : 0;
+  const [a, b] = night ? [[58, 68, 102], [238, 241, 255]] : [[221, 233, 247], [242, 179, 61]];
+  const c = a.map((v, k) => Math.round(v + (b[k] - v) * t));
+  return `rgb(${c.join(',')})`;
+}
+
+/**
+ * The clock: the sun (or the moon) with a ring of twelve beads round it, one
+ * for each turn of the day (or night), lit as the turns go by.
+ */
+function dial(dInfo, night, label) {
+  const n = night ? NIGHT_TURNS : DAY_TURNS;
+  const now = Math.max(1, Math.min(n, dInfo.phaseTurn));
+  const beads = Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const x = 50 + Math.cos(a) * 42;
+    const y = 50 + Math.sin(a) * 42;
+    const state = i + 1 < now ? 'past' : i + 1 === now ? 'now' : 'ahead';
+    return `<i class="bead ${state}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%;--c:${turnColour(i, n, night)}"></i>`;
+  }).join('');
+  return `<div class="dial${night ? ' night' : ''}" title="${label}" role="img" aria-label="${label}">${beads}${hudIcon(night ? 'moon' : 'sun')}</div>`;
+}
+
+/** The moon's three days as three beads; the last one red when the raid is coming. */
+function moonPips(moon, s) {
+  const raid = s.raid?.stage === 'night' || moon.phase === 'raid';
+  return `<div class="moon-pips" title="Day ${moon.day} of ${MOON_DAYS} of the moon">${Array.from({ length: MOON_DAYS }, (_, i) => {
+    const d = i + 1;
+    const last = d === MOON_DAYS;
+    const cls = [d < moon.day ? 'past' : d === moon.day ? 'now' : 'ahead', last ? 'last' : '',
+      last && moon.phase === 'omens' ? 'omens' : '', last && raid ? 'raid' : ''].filter(Boolean).join(' ');
+    return `<i class="${cls}"></i>`;
+  }).join('')}</div>`;
+}
+
 /** The errand a master sent you on, and how long you have left. */
 function errandLine(s) {
   const e = s.jobs?.errand;
@@ -516,11 +580,6 @@ function errandLine(s) {
   return `<div class="omen errand${left <= 6 ? ' late' : ''}">Errand for ${escapeHtml(e.name)}: ${escapeHtml(bringText(e.bring))}${ready ? ' &check;' : ''} &middot; due ${escapeHtml(dueText(s, e.due))}</div>`;
 }
 
-/** Where on the moon dial the omens and the last dusk fall, as percentages. */
-const MOON_MARKS = {
-  omens: (((MOON_DAYS - 1) * TURNS_PER_DAY + OMENS_TURN) / (MOON_DAYS * TURNS_PER_DAY)) * 100,
-  dusk: (((MOON_DAYS - 1) * TURNS_PER_DAY + DAY_TURNS) / (MOON_DAYS * TURNS_PER_DAY)) * 100,
-};
 
 const svg = body => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 

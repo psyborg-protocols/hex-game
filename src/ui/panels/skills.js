@@ -15,8 +15,8 @@ function discoveries(state) {
   for (const t of Object.values(mind.explored || {})) tiers[t]++;
   const explored = tiers.reduce((a, b) => a + b, 0);
   const done = completedAchievements(state);
-  const finds = [['copper', tiers[1]], ['silver', tiers[2]], ['gold', tiers[3]]]
-    .filter(([, n]) => n).map(([t, n]) => `<span class="find ${t}">${n} ${t}</span>`).join(' ');
+  const finds = [['copper', 'quiet', tiers[1]], ['silver', 'serene', tiers[2]], ['gold', 'sublime', tiers[3]]]
+    .filter(([, , n]) => n).map(([t, name, n]) => `<span class="find ${t}">${n} ${name}</span>`).join(' ');
   return `<div class="discoveries">
     <p class="dim">${explored} ${explored === 1 ? 'place' : 'places'} explored${finds ? ` &middot; ${finds}` : ''}</p>
     ${done.length ? `<ul class="achievements">${done.map(a => `<li>${escapeHtml(a.name)}</li>`).join('')}</ul>` : ''}

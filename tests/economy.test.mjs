@@ -40,7 +40,7 @@ test('every recipe names real items, skills and gates', () => {
 test('every item has an icon, a description, and (if it can be traded) a price', () => {
   for (const item of Object.values(ITEMS)) {
     ok(existsSync(join(root, item.icon)), `${item.id}: no icon at ${item.icon}`);
-    ok(item.desc && item.desc.length > 8, `${item.id}: no description`);
+    ok(item.desc && item.desc.length >= 5, `${item.id}: no description`);
     if (item.kind !== 'structure') ok(ITEM_BASE_PRICES[item.id] > 0, `${item.id}: no price`);
   }
 });

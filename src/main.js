@@ -17,7 +17,9 @@ import { Player } from './game/player.js';
 import { pickHex, pointInHex, tileCenter, traceTopFace, distance, neighbors, columnBaseY, GEOM } from './world/hexgrid.js';
 
 import { createState, itemName, RECIPES, ITEMS, dayOf, moonOf, isNight, hasBuilt } from './game/state.js';
-import { walkOneStep, recomputeEnergy, countItem, addItem, removeItem, foodValue, usedSlots, capacity, isWorn, ensurePackLayout, takeFromPack, takeFromWorn } from './game/inventory.js';
+import { walkOneStep, recomputeEnergy, countItem, addItem, removeItem, foodValue, usedSlots, capacity, isWorn, ensurePackLayout, takeFromPack, takeFromWorn, maxEnergy } from './game/inventory.js';
+import { nextSaying, sayingLine } from './game/sayings.js';
+import { itemWords } from './game/item_words.js';
 import {
   ensureJobs, startShift, endShift, handIn, checkErrandDeadline, confiscate, milestoneLine, masterLine, jobOf,
   teaches, RANK_NAMES, dueText,
@@ -25,9 +27,9 @@ import {
 import { craft, checkRecipe, recipeKnown } from './game/crafting.js';
 import { ensureVillage, buy, sell, giveFavour, villageContext, isTrusted, isRaided } from './game/economy.js';
 import { villageNear } from './game/context.js';
-import { harvest, shakeTree, prospect, build, relightCampfire, placementSpots, growCrops, refreshArt, penaltyOnDeath, destroyStructure } from './game/actions.js';
+import { harvest, shakeTree, prospect, build, relightCampfire, placementSpots, growCrops, refreshArt, penaltyOnDeath, destroyStructure, feedHearth, fuelLeft } from './game/actions.js';
 import { clash } from './game/combat.js';
-import { harvestSpec } from './game/harvests.js';
+import { harvestSpec, regrowText } from './game/harvests.js';
 import { saveLocal, loadLocal, writeLocal, downloadSave, readSaveFile, saveRoom, loadRoom } from './game/save.js';
 import { myName } from './net/multiplayer.js';
 import { ensureMind, isKnown, isExplored, isMeditated, scenicOf, harvestsHere, HIDDEN } from './game/discovery.js';
@@ -65,28 +67,70 @@ import { Multiplayer } from './net/multiplayer.js';
 import { applyShared } from './game/shared.js';
 import { WorldMap } from './world/mapformat.js';
 
+/**
+ * What the Wanderer thinks the first time they hold a thing: the same voice as
+ * pointing at it (item_words.js), one nearest use and no more. Items that
+ * already speak for themselves say their own line; these are the rest.
+ */
 const ITEM_THOUGHTS = {
-  branch: 'A dry branch. Struck with flint, it could wake the cold campfire. Bound to a stone, it could be an axe.',
-  stone: 'Good heavy stones. Lashed to a branch with cord, one would make an axe, or a hammer.',
-  reed: 'Reeds, long and supple. Twisted, they make cord; woven, a basket.',
-  cord: 'Cord. A stone can be bound to a handle now, or a snare set where the rabbits run.',
-  berries: 'Wild berries. Enough to keep me on my feet a while, and the villages are glad of them.',
-  grain: 'Wild grain. Sown in turned earth it would come back many times over, once I learn to keep a field.',
-  log: 'A log, heavy and green. Ringed with stones, it would make a hearth. With a knife, it could be split into planks.',
-  stone_axe: 'An axe at last. The trees are mine to fell, though planks will want a knife as well.',
-  stone_hammer: 'A hammer. Stone can be dressed into blocks now, and the cliff faces quarried.',
-  stone_knife: 'A keen flint edge. Logs can be whittled into planks, and game skinned for its hide.',
-  plank: 'Planks, smooth and straight. With cord they could make a ladder, or a workbench, once my hands are surer.',
-  meat: 'Raw meat. It will do in a pinch, but cooked over a fire it would go much further.',
-  fish: 'A fresh fish. Better cooked than raw, if I can find a fire.',
-  hide: 'A tough hide. With a knife it could become armour, a pack, or a length of cord.',
-  clay: 'River clay. Fired in a hearth it makes a pot, for stew and salve. A forge would want it too.',
-  herb: 'A healing herb. Mixed with clay in a pot, it makes salve. In a stew, it makes the stew.',
-  herb_seed: 'Herb seeds. With a patch of my own, I would not have to go searching for herbs again.',
-  flint: 'Flint, sharp as glass. Against a dry branch it throws sparks; knapped, it makes a knife.',
-  ore: 'Iron ore, heavy in the hand. A forge and a pair of tongs would turn it into iron.',
-  ingot: 'An iron ingot. At a forge it could become an axe, a pickaxe, a saw.',
+  stone: 'Good heavy rocks. I could probably make an axe with one of these...',
+  grain: 'Wild grain. I could eat this, if I had to...',
+  plank: 'Good straight planks. I could probably make a ladder with these...',
+  hide: 'A tough hide. I could probably cut this into cord...',
+  herb: 'A healing herb. I could probably make a salve with this...',
+  herb_seed: 'Herb seeds. I could probably grow my own...',
+  ore: 'Iron ore. With a forge, I could probably smelt this...',
+  ingot: 'An iron ingot. I could probably forge a tool from this...',
 };
+/** Items whose own line is already a first thought. */
+const SPEAKS_FOR_ITSELF = new Set([
+  'branch', 'flint', 'reed', 'cord', 'berries', 'log', 'clay', 'meat', 'fish',
+  'stone_axe', 'stone_hammer', 'stone_knife',
+]);
+
+const COLD_CAMPFIRE = 'A dead campfire. I wonder if I could get it lit...';
+
+/** The first screen. Friendly, offhand, and short; the world does the rest. */
+const OPENING = `
+  <p class="lede">Well, here you are: a quiet valley, a cold campfire, a handful of berries and the
+    clothes on your back. The land is good, the villages are friendly enough once they know you,
+    and the river keeps the raiders on the far bank, mostly. Be careful of barbarians!</p>
+  <ul class="opening">
+    <li>Click the land to walk.</li>
+    <li>Stand still a while to look around you.</li>
+    <li>Click what you find to use it.</li>
+  </ul>`;
+
+/** What exploring turns up, as you would see it. */
+const FIND_WORDS = {
+  forage: "There's a berry bush here.",
+  gather_grain: 'Wild grain grows here.',
+  find_herb: 'Herbs grow here.',
+  gather_flint: "There's flint on the ground here.",
+  dig_clay: 'The bank here is good clay.',
+  fish: 'Fish are rising here.',
+};
+
+/** Low ground for too long: a thought, then another, pointing uphill. */
+const HIGH_GROUND_NUDGES = [
+  { id: 'seek_high_ground', after: 5, text: 'If I could get higher, I could see all around.' },
+  { id: 'seek_high_ground_2', after: 10, text: 'I should find some high ground, and get a look at the land.' },
+  { id: 'seek_high_ground_3', after: 20, text: 'I can hardly see a thing from down here. I need to get up high.' },
+];
+
+/** How long a fire will burn, in words. `short` for the hover line. */
+function fireWords(turns, short = false) {
+  const days = turns / 24;
+  if (turns <= 0) return short ? 'cold' : 'The fire is out.';
+  if (turns < 6) return short ? 'burning low' : 'The fire is burning low.';
+  if (days < 1) return short ? 'burning' : 'The fire will burn a while yet.';
+  if (days < 2) return short ? 'wood for a day or so' : 'There is wood on the fire for a day or so.';
+  if (days < 4) return short ? 'wood for a few days' : 'There is wood on the fire for a few days.';
+  return short ? 'wood for many days' : 'There is wood on the fire for many days.';
+}
+
+/** Energy that a sit-down gives back, once a day. */
+const SIT_REST = 3;
 
 /** Seconds between your swings. */
 const PLAYER_COOLDOWN = 1.1;
@@ -468,13 +512,48 @@ async function boot() {
       }
     },
 
-    showHelp(first = false) {
+    showHelp() {
       game.ui.openPanel('message', {
-        title: first ? 'Hex Quest' : 'How to play',
+        title: 'How to play',
         html: HOW_TO_PLAY,
-        buttons: [{ label: first ? 'Begin' : 'Back to the game' }],
+        buttons: [{ label: 'Back to the game' }],
       });
     },
+
+    /** The first screen of a new game: the premise, three lines, and in. */
+    showOpening() {
+      game.ui.openPanel('message', {
+        title: 'Across the River',
+        html: OPENING,
+        buttons: [{
+          label: 'Begin',
+          run: () => {
+            const first = STAGES[0];
+            game.ui.showCard(first.name, first.blurb);
+          },
+        }],
+      });
+    },
+
+    /** Put logs on the hearth beside you, or light a cold one. */
+    doFeedHearth(col) {
+      const res = feedHearth(world, state, col);
+      if (!res.ok) { if (res.message) game.ui.notify(res.message); return; }
+      player.triggerAction('forage', 0.6);
+      chime(col.feature.cold === false && res.logs >= 5 ? 'gold' : 'tick', 0.05);
+      game.ui.murmur(res.message, { ms: 3600 });
+      rebuildFeatures();
+      takeAction(1);
+      game.ui.refreshPanel();
+    },
+    hearthNear() {
+      for (const c of [{ q: player.q, r: player.r }, ...neighbors(player.q, player.r)]) {
+        const col = map.get(c.q, c.r);
+        if (col?.feature?.type === 'structure' && col.feature.item === 'hearth' && !col.feature.camp) return col;
+      }
+      return null;
+    },
+    fireWords: (col, short) => fireWords(fuelLeft(state, col), short),
 
     onPanelClosed() { refreshContext(); },
   };
@@ -669,6 +748,28 @@ async function boot() {
   // A guest leaving the page leaves the host their progress.
   addEventListener('pagehide', () => game.mp.sendPersonal());
 
+  // A spent hex, tried again: the second time, it says it will come back.
+  const triedSpent = new Set();
+  function spentAgain(q, r, id) {
+    const k = `${q},${r}:${id}`;
+    const again = triedSpent.has(k);
+    triedSpent.add(k);
+    return regrowText(id, again);
+  }
+
+  /** Sitting down gives back a little energy, the first time each day. */
+  function restAWhile() {
+    const day = dayOf(state).day;
+    if (state.restedDay === day || state.free) return;
+    const max = maxEnergy(state);
+    const gain = Math.min(SIT_REST, Math.max(0, max - state.energy));
+    state.restedDay = day;
+    if (gain <= 0) return;
+    state.energy += gain;
+    game.ui.floatText(playerPos, `+${gain} energy`, 'gain');
+    game.ui.updateHud();
+  }
+
   function thinkOnce(id, text, ms = 5400) {
     if (!text) return false;
     state.thoughts ||= {};
@@ -680,8 +781,17 @@ async function boot() {
 
   function checkItemThoughts(itemIds = []) {
     let spoke = false;
-    for (const id of itemIds) {
-      if (ITEM_THOUGHTS[id] && thinkOnce(`item:${id}`, ITEM_THOUGHTS[id])) {
+    // Before any fire is lit, a branch or a flint makes you think of the other half.
+    const unlit = !(state.stats?.firesLit > 0);
+    const holding = id => countItem(state, id) >= 1;
+    if (unlit && itemIds.includes('branch') && !holding('flint')) {
+      spoke = thinkOnce('item:branch', 'If only I had some flint to light this, I could start a fire...');
+    } else if (unlit && itemIds.includes('flint') && !holding('branch')) {
+      spoke = thinkOnce('item:flint', 'If only I had some wood, I could start a fire with this...');
+    }
+    for (const id of spoke ? [] : itemIds) {
+      const thought = ITEM_THOUGHTS[id] || (SPEAKS_FOR_ITSELF.has(id) ? itemWords(state, id) : '');
+      if (thought && thinkOnce(`item:${id}`, thought)) {
         spoke = true;
         break;
       }
@@ -691,7 +801,7 @@ async function boot() {
     }
     if (map.spawn && !map.get(map.spawn.q, map.spawn.r)?.feature
       && countItem(state, 'branch') >= 1 && countItem(state, 'flint') >= 1) {
-      thinkOnce('ready_to_relight', 'A branch and a piece of flint. The cold campfire could burn again.', 6000);
+      thinkOnce('ready_to_relight', 'Wood and a piece of flint. I could get the campfire going again...', 6000);
     }
   }
 
@@ -946,7 +1056,7 @@ async function boot() {
   }
 
   function announceLevels(skill, levels) {
-    for (const l of levels || []) game.ui.ping({ kind: 'level', title: `${skill} ${l}` });
+    for (const l of levels || []) game.ui.ping({ kind: 'level', skill, title: `${skill} ${l}` });
     if (levels?.length) game.ui.nudge('crafting');
   }
 
@@ -963,8 +1073,8 @@ async function boot() {
     fx.version++;
     pings.add(done.q, done.r, result.found.tier, now);
     if (!result.found.tier) chime('tick', 0.035);
-    const finds = result.found.resources.map(id => (HIDDEN[id].label || itemName(HIDDEN[id].icon)));
-    if (finds.length && inView(done.q, done.r)) game.ui.floatText(playerPos, `found ${finds.join(', ')}`, 'find');
+    const finds = result.found.resources.map(id => FIND_WORDS[id]).filter(Boolean);
+    if (finds.length && inView(done.q, done.r)) game.ui.murmur(finds.join(' '), { ms: 4200 });
     if (result.found.oreSign) game.ui.notify('Ore glints in the rock near here.');
     const revealedCount = result.found.revealed?.length || 0;
     if (revealedCount >= 6) {
@@ -972,16 +1082,20 @@ async function boot() {
       state.thoughts.vista_reached = 1;
       thinkOnce(`vista:${done.q},${done.r}`, 'From this height, the land below opens up before you.');
     } else if (revealedCount >= 1 && !state.thoughts?.vista_reached) {
-      thinkOnce('hill_vantage', 'From up here I can see over the edge. From a real peak I could see half the valley.');
+      thinkOnce('hill_vantage', 'I can see all around from up here. If I could get up higher, I could see the whole valley...');
     }
+    if (revealedCount >= 1) state.thoughts.high_ground = 1;
     if (result.found.tier > 0) {
       const tip = thinkOnce('scenic_meditate', 'A beautiful place. I could sit here a while and let my thoughts settle. (Click yourself to sit.)');
       if (!tip) game.ui.murmur('This looks like a beautiful place to sit down.', { ms: 4600 });
-    } else if (revealedCount === 0 && !state.thoughts?.vista_reached && Object.keys(state.mind?.explored || {}).length >= 8) {
-      thinkOnce('seek_high_ground', 'If I could get higher, I could see all around.');
+    } else if (revealedCount === 0 && !state.thoughts?.high_ground) {
+      // Still on low ground after a while: a nudge uphill, three times at most.
+      const n = Object.keys(state.mind?.explored || {}).length;
+      const nudge = HIGH_GROUND_NUDGES.find(h => n >= h.after && !state.thoughts[h.id]);
+      if (nudge) thinkOnce(nudge.id, nudge.text);
     }
     if (map.spawn && done.q === map.spawn.q && done.r === map.spawn.r && !map.get(done.q, done.r)?.feature) {
-      thinkOnce('cold_campfire', 'The campfire here is cold. A dry branch and a piece of flint would bring it back to life.', 5800);
+      thinkOnce('cold_campfire', COLD_CAMPFIRE, 5800);
     }
     announceMind(result);
     afterChange();
@@ -1330,7 +1444,7 @@ async function boot() {
     }
     maybeRally();
     if (map.spawn && !map.get(map.spawn.q, map.spawn.r)?.feature) {
-      thinkOnce('cold_campfire', 'The campfire here is cold. A dry branch and a piece of flint would bring it back to life.', 5800);
+      thinkOnce('cold_campfire', COLD_CAMPFIRE, 5800);
     }
     const turnStep = spendMoveStep(world, state, player, {
       inCombat: (state.turn || 0) < combatUntilTurn,
@@ -1544,7 +1658,10 @@ async function boot() {
 
   function handleEvents(events) {
     for (const e of events) {
-      if (e.type === 'omen') {
+      if (e.type === 'fireOut') {
+        game.ui.murmur(e.camp ? 'The campfire has burned down to ashes.' : 'The hearth has gone cold.', { ms: 4600 });
+        refreshContext();
+      } else if (e.type === 'omen') {
         const where = e.target?.kind === 'village' ? 'a village' : 'your homestead';
         const waves = e.waves.length > 1 ? ` in ${e.waves.length} waves` : '';
         game.ui.ping({ kind: 'raid', title: `${e.tower ? 'Fires at' : 'Smoke over'} ${e.from.name}`, sub: `${e.size} of them tonight${waves}, for ${where}` });
@@ -1937,7 +2054,7 @@ async function boot() {
       chime('tick', 0.05);
       state.hp = Math.max(0, state.hp - 1);
       game.ui.floatText(playerPos, '-1 bee sting!', 'bad');
-      game.ui.murmur('A bee stings you and drifts off over the meadow.', { ms: 4200 });
+      game.ui.murmur('Ouch! A bee stung you!', { ms: 4200 });
       if (state.hp <= 0) { die(); return; }
       afterChange();
       return;
@@ -1952,7 +2069,7 @@ async function boot() {
       if (res.gained?.length) {
         game.ui.floatText(playerPos, '+ 1 Branch', 'gain');
         checkItemThoughts(res.gained.map(g => g.id));
-        game.ui.notify('A branch shakes loose — you need an axe to fell the tree.');
+        game.ui.notify("A branch shakes loose. To bring the tree down, you'd need an axe.");
         takeAction(1);
       } else {
         game.ui.notify('Nothing else shakes loose. You need an axe to fell the tree.');
@@ -1963,7 +2080,9 @@ async function boot() {
     const entry = harvestsHere(map, state, player).find(h => h.spec.id === node.harvest);
     if (!entry || !entry.ok) {
       player.triggerAction('forage', 0.35);
-      game.ui.notify(entry?.reasons?.[0] || 'Nothing left here right now.');
+      game.ui.notify(entry?.regrowing && entry.reasons.length === 1
+        ? spentAgain(node.q, node.r, node.harvest)
+        : (entry?.reasons?.[0] || regrowText(node.harvest)));
       return;
     }
     game.doHarvest(node.harvest);
@@ -2160,7 +2279,8 @@ async function boot() {
       const clickedCol = map.get(target.q, target.r);
       const structureAction = clickedCol?.feature?.type === 'structure'
         ? (clickedCol.feature.item === 'hut' ? () => game.ui.openPanel('stash')
-          : ['hearth', 'workbench', 'forge'].includes(clickedCol.feature.item) ? () => game.ui.openPanel('crafting')
+          : clickedCol.feature.item === 'hearth' && clickedCol.feature.cold ? () => game.doFeedHearth(clickedCol)
+            : ['hearth', 'workbench', 'forge'].includes(clickedCol.feature.item) ? () => game.ui.openPanel('crafting')
             : null)
         : null;
 
@@ -2179,11 +2299,13 @@ async function boot() {
           } else {
             game.ui.murmur('You sit awhile and take in the view.', { ms: 3000 });
           }
+          restAWhile();
           refreshContext();
           return;
         }
         if (!player.moving) {
           player.seated = !player.seated;
+          if (player.seated) restAWhile();
           refreshContext();
           return;
         }
@@ -2234,6 +2356,7 @@ async function boot() {
           preview = null;
           explorer.startMeditation(player.q, player.r);
           game.ui.murmur('You sit down and quiet your thoughts...', { ms: 3400 });
+          restAWhile();
           refreshContext();
           return;
         }
@@ -2247,6 +2370,7 @@ async function boot() {
           follow = true;
           preview = null;
           game.ui.murmur('You sit awhile and take in the view.', { ms: 3000 });
+          restAWhile();
           refreshContext();
           return;
         }
@@ -2364,7 +2488,7 @@ async function boot() {
         pings.add(medDone.q, medDone.r, medDone.tier, now);
         chime('meditate', 0.07);
         if (res.meditated.xp) game.ui.floatText(playerPos, `+${res.meditated.xp} Mind`, 'gain');
-        game.ui.murmur('Your mind clears, and the land feels sharper.', { tone: 'good', ms: 4500 });
+        game.ui.murmur(sayingLine(nextSaying(state, () => rng.next())), { tone: 'saying', ms: 9000 });
         announceLevels('mind', res.levels);
         takeAction(1);
       }
@@ -2428,7 +2552,8 @@ async function boot() {
         const foe = hostiles(state).find(u => u.q === col.q && u.r === col.r);
         const wd = wildDogAt(state, col.q, col.r);
         const structureHint = f?.type === 'structure'
-          ? ({ hut: 'click for stash', hearth: 'click to craft & cook', workbench: 'click to craft', forge: 'click to smelt' }[f.item] || '')
+          ? (f.item === 'hearth' ? (f.cold ? 'cold · click to light with logs' : `${fireWords(fuelLeft(state, col), true)} · click to cook`)
+            : { hut: 'click for stash', workbench: 'click to craft', forge: 'click to smelt' }[f.item] || '')
           : '';
         label = foe ? `${KINDS[foe.kind].name.toLowerCase()} · ${foe.hp}/${foe.maxHp} · ${KINDS[foe.kind].atk} attack, ${KINDS[foe.kind].def} defence`
           : wd ? (wd.hostile
@@ -2440,7 +2565,7 @@ async function boot() {
                 : f?.type === 'camp' ? `${f.name}${f.burned ? ', burned' : guardsAt(state, col) ? ` · ${guardsAt(state, col)} guards` : ' · click to burn'}`
                   : f?.type === 'structure' ? `${f.name}${f.maxHp ? ` ${f.hp}/${f.maxHp}` : ''}${structureHint ? ` · ${structureHint}` : ''}`
                     : f?.type === 'crossing' ? 'a raiders’ crossing'
-                      : (!f && map.spawn && col.q === map.spawn.q && col.r === map.spawn.r) ? 'cold campfire · relight with branch & flint'
+                      : (!f && map.spawn && col.q === map.spawn.q && col.r === map.spawn.r) ? 'cold campfire · light with wood & flint'
                         : (!f && !fx.hover && hover.q === player.q && hover.r === player.r && ['stony', 'steppes'].includes(col.terrain) && (levelOf(state, 'mind') >= 3 || state.free)) ? 'stony ground · click to prospect for ore'
                           : '';
       }
@@ -2477,6 +2602,13 @@ async function boot() {
   announceMind(mindStep(world, state, player));
   checkJourney(state, world);
   game.ui.updateHud();
+  const freshStart = !restored && !state.ui?.opened?.opening;
+  if (freshStart) {
+    state.ui ||= {};
+    state.ui.opened ||= {};
+    state.ui.opened.opening = 1;
+    setTimeout(() => game.showOpening(), 0);
+  }
 
   // There is one save slot, and every open tab writes to it. `?nosave=1` keeps
   // a tab opened to test something from overwriting the game you are playing.

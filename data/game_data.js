@@ -28,39 +28,39 @@ const I = (id, name, kind, extra = {}) => ({
 
 export const ITEMS = {
   // ------------------------------------------------------------------ raw
-  berries: I('berries', 'Berries', 'raw', { food: 1, stack: 30, desc: 'A handful of food. Found by foraging explored meadows and woods.' }),
+  berries: I('berries', 'Berries', 'raw', { food: 1, stack: 30, desc: 'Wild berries. I could probably live on these for a while...' }),
   grain:   I('grain', 'Grain', 'raw', { food: 1, stack: 40, desc: 'Food, seed for a field, and the makings of bread and stew.' }),
-  meat:    I('meat', 'Raw Meat', 'raw', { food: 2, stack: 20, desc: 'From hunting. Cook it at a hearth for far more energy.' }),
-  fish:    I('fish', 'Fish', 'raw', { food: 2, stack: 20, desc: 'Caught with a rod by the water. Cook it at a hearth.' }),
+  meat:    I('meat', 'Raw Meat', 'raw', { food: 2, stack: 20, desc: 'Raw meat. I should probably cook this...' }),
+  fish:    I('fish', 'Fish', 'raw', { food: 2, stack: 20, desc: 'A fresh fish. It would be better cooked...' }),
   herb:    I('herb', 'Herb', 'raw', { stack: 20, desc: 'Medicine found rarely in tall grass or grown from seed. Goes into salve, stew and shrines.' }),
   herb_seed: I('herb_seed', 'Herb Seeds', 'raw', { iconId: 'seeds', stack: 20, desc: 'Rare wild herb seeds found in tall grass. Sow an herb patch to grow your own medicine.' }),
-  branch:  I('branch', 'Branch', 'raw', { desc: 'Hafts every early tool, or sparks your cold campfire back to life with flint. Gathered from woods and meadows.' }),
-  log:     I('log', 'Log', 'raw', { desc: 'Felled with an axe. Fuel, framing, and planks.' }),
-  reed:    I('reed', 'Reed', 'raw', { desc: 'Cut by low water. Twisted into cord, woven into baskets and thatch.' }),
-  stone:   I('stone', 'Stone', 'raw', { desc: 'Picked up below any rise, or mined out of a cliff face.' }),
-  flint:   I('flint', 'Flint', 'raw', { desc: 'A sharp edge. Strike against a branch to relight your campfire, or knap into knives, amulets and whetstones.' }),
-  clay:    I('clay', 'Clay', 'raw', { desc: 'Dug at low banks. Pots, salve, and the forge lining.' }),
+  branch:  I('branch', 'Branch', 'raw', { desc: 'A dry branch. I could probably start a fire with this...' }),
+  log:     I('log', 'Log', 'raw', { desc: 'Wood. I could do anything with this!' }),
+  reed:    I('reed', 'Reed', 'raw', { desc: 'Reeds. I could probably twist these into cord...' }),
+  stone:   I('stone', 'Stone', 'raw', { desc: 'A rock.' }),
+  flint:   I('flint', 'Flint', 'raw', { desc: 'A sharp flintstone. I could start a fire with this.' }),
+  clay:    I('clay', 'Clay', 'raw', { desc: 'River clay. I could probably shape a pot out of this...' }),
   hide:    I('hide', 'Hide', 'raw', { desc: 'Skinned from game with a knife. Cord, armour and packs.' }),
   ore:     I('ore', 'Ore', 'raw', { desc: 'Only visible to someone who knows Lore (Mind 3). Smelted into ingots.' }),
 
   // ------------------------------------------------------------ materials
-  cord:    I('cord', 'Cord', 'material', { desc: 'Binds heads to hafts. Also sets a snare (used up when hunting without a bow).' }),
+  cord:    I('cord', 'Cord', 'material', { desc: 'Cord. I could probably set a snare with this...' }),
   plank:   I('plank', 'Plank', 'material', { desc: 'Split and whittled from a log with an axe and knife. Every wooden build needs them.' }),
   block:   I('block', 'Stone Block', 'material', { iconId: 'stone_block', desc: 'Dressed stone for walls, the forge and shrines.' }),
   ingot:   I('ingot', 'Ingot', 'material', { desc: 'Smelted metal. The great unlock.' }),
 
   // ----------------------------------------------------------------- food
-  meal:    I('meal', 'Cooked Meal', 'food', { food: 4, stack: 20, iconId: 'cooked_meat', desc: 'Twice the energy of the raw meat it came from.' }),
+  meal:    I('meal', 'Cooked Meal', 'food', { food: 4, stack: 20, iconId: 'cooked_meat', desc: 'A hot meal. It smells wonderful.' }),
   bread:   I('bread', 'Bread', 'food', { food: 4, stack: 20, desc: 'Baked from grain at a hearth. Keeps a farm fed.' }),
   stew:    I('stew', 'Stew', 'food', { food: 7, stack: 20, desc: 'Meat, grain and herb in a pot. The best food per slot.' }),
   rations: I('rations', 'Trail Rations', 'food', { food: 5, stack: 40, desc: 'Packed tight for long expeditions: stacks to 40.' }),
   salve:   I('salve', 'Salve', 'food', { heal: 5, stack: 10, desc: 'Heals 5 health. Used automatically when you are badly hurt.' }),
 
   // ---------------------------------------------------------------- tools
-  stone_knife:  I('stone_knife', 'Flint Knife', 'tool', { slot: 'hand', attack: 1, desc: 'Whittles logs into planks for ladders, skins game for hide, and cuts hide into cord.' }),
-  stone_axe:    I('stone_axe', 'Stone Axe', 'tool', { slot: 'hand', attack: 2, desc: 'Fells trees for logs and splits logs into planks.' }),
-  stone_hammer: I('stone_hammer', 'Stone Hammer', 'tool', { slot: 'hand', attack: 1, desc: 'Dresses stone into blocks, quarries cliff faces and (slowly) ore.' }),
-  fishing_rod:  I('fishing_rod', 'Fishing Rod', 'tool', { desc: 'Fish from any bank where fish are known to be.' }),
+  stone_knife:  I('stone_knife', 'Flint Knife', 'tool', { slot: 'hand', attack: 1, desc: 'A keen flint knife. I could probably whittle planks with this...' }),
+  stone_axe:    I('stone_axe', 'Stone Axe', 'tool', { slot: 'hand', attack: 2, desc: 'A stone axe. I could probably bring down a tree with this...' }),
+  stone_hammer: I('stone_hammer', 'Stone Hammer', 'tool', { slot: 'hand', attack: 1, desc: 'A stone hammer. I could probably cut stone into blocks with this...' }),
+  fishing_rod:  I('fishing_rod', 'Fishing Rod', 'tool', { desc: 'I should find a good fishing spot.' }),
   pot:          I('pot', 'Clay Pot', 'tool', { desc: 'Needed to cook stew and mix salve.' }),
   wood_tongs:   I('wood_tongs', 'Green-wood Tongs', 'tool', { iconId: 'bone_tongs', desc: 'Hold hot metal. Enough to smelt, and to forge iron tongs.' }),
   iron_tongs:   I('iron_tongs', 'Iron Tongs', 'tool', { iconId: 'tongs', desc: 'Smelt 3 ore into 2 ingots instead of 2 into 1.' }),
@@ -70,10 +70,10 @@ export const ITEMS = {
   boat:         I('boat', 'Boat', 'tool', { desc: 'Carry it and you can row across rivers and lakes.' }),
 
   // ----------------------------------------------------------------- gear
-  basket:        I('basket', 'Basket', 'gear', { slot: 'pack', slots: 4, desc: '+4 pack slots while worn.' }),
+  basket:        I('basket', 'Basket', 'gear', { slot: 'pack', slots: 4, desc: 'A woven basket. I can carry more now.' }),
   leather_pack:  I('leather_pack', 'Leather Pack', 'gear', { slot: 'pack', slots: 6, desc: '+6 pack slots while worn.' }),
   cart:          I('cart', 'Cart', 'gear', { slot: 'pack', slots: 8, desc: '+8 pack slots, and you travel roads faster while worn.' }),
-  walking_stick: I('walking_stick', 'Walking Stick', 'gear', { slot: 'hand', moveBonus: 2, desc: 'A simple wooden walking stick. +2 hexes per turn while held.' }),
+  walking_stick: I('walking_stick', 'Walking Stick', 'gear', { slot: 'hand', moveBonus: 2, desc: 'A good stick will help me walk.' }),
   boots:         I('boots', 'Leather Boots', 'gear', { slot: 'feet', moveBonus: 2, desc: 'Stout stitched leather boots. +2 hexes per turn while worn.' }),
   bow:           I('bow', 'Bow', 'gear', { slot: 'hand', attack: 3, range: 2, desc: 'Hunt without spending cord, for more meat. Shoots raiders 2 hexes away while worn.' }),
   sword:         I('sword', 'Sword', 'gear', { slot: 'hand', attack: 4, desc: 'The best weapon there is.' }),
@@ -87,7 +87,7 @@ export const ITEMS = {
   dog:           I('dog', 'Dog', 'gear', { stack: 1, desc: 'Tamed from a rare wild dog. Follows you, +1 attack die, and an extra catch when you hunt or forage.' }),
 
   // ----------------------------------------------------------- structures
-  hearth:     I('hearth', 'Hearth', 'structure', { hp: 8, desc: 'Cook, bake and fire pots here. Rest beside it to heal. Your respawn point.' }),
+  hearth:     I('hearth', 'Hearth', 'structure', { hp: 8, desc: 'A warm hearth. Somewhere to cook, and to rest.' }),
   hut:        I('hut', 'Hut', 'structure', { hp: 14, iconId: 'cabin', desc: 'Home. +6 max energy, a 16-slot stash, full heal when you rest, respawn point.' }),
   workbench:  I('workbench', 'Workbench', 'structure', { hp: 8, desc: 'Bows, boats, shields and carts are made here.' }),
   field:      I('field', 'Field', 'structure', { hp: 4, desc: 'Sow grain or rare herb seeds; reap a rich harvest a day later.' }),
@@ -149,7 +149,7 @@ export const RECIPES = {
   cart:         R('cart', 'Cart', 'woodworking', 5, { plank: 8, log: 2, ingot: 1 }, { cart: 1 }, { xp: 20, tools: ['workbench'] }),
 
   // ======================================================== HOMESTEADING
-  hearth:       R('hearth', 'Hearth', 'homesteading', 1, { stone: 4, log: 2 }, { hearth: 1 }, { xp: 10, category: 'build' }),
+  hearth:       R('hearth', 'Hearth', 'homesteading', 1, { stone: 4, log: 5 }, { hearth: 1 }, { xp: 10, category: 'build' }),
   cook_meat:    R('cook_meat', 'Cook Meat', 'homesteading', 1, { meat: 1 }, { meal: 1 }, { xp: 2, tools: ['hearth'] }),
   cook_fish:    R('cook_fish', 'Cook Fish', 'homesteading', 1, { fish: 1 }, { meal: 1 }, { xp: 2, tools: ['hearth'] }),
   field:        R('field', 'Sow a Field', 'homesteading', 2, { grain: 2 }, { field: 1 }, { xp: 6, category: 'build' }),

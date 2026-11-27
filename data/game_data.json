@@ -7,7 +7,7 @@
       "stack": 30,
       "icon": "icons/berries.svg",
       "food": 1,
-      "desc": "A handful of food. Found by foraging explored meadows and woods."
+      "desc": "Wild berries. I could probably live on these for a while..."
     },
     "grain": {
       "id": "grain",
@@ -25,7 +25,7 @@
       "stack": 20,
       "icon": "icons/meat.svg",
       "food": 2,
-      "desc": "From hunting. Cook it at a hearth for far more energy."
+      "desc": "Raw meat. I should probably cook this..."
     },
     "fish": {
       "id": "fish",
@@ -34,7 +34,7 @@
       "stack": 20,
       "icon": "icons/fish.svg",
       "food": 2,
-      "desc": "Caught with a rod by the water. Cook it at a hearth."
+      "desc": "A fresh fish. It would be better cooked..."
     },
     "herb": {
       "id": "herb",
@@ -59,7 +59,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/branch.svg",
-      "desc": "Hafts every early tool, or sparks your cold campfire back to life with flint. Gathered from woods and meadows."
+      "desc": "A dry branch. I could probably start a fire with this..."
     },
     "log": {
       "id": "log",
@@ -67,7 +67,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/log.svg",
-      "desc": "Felled with an axe. Fuel, framing, and planks."
+      "desc": "Wood. I could do anything with this!"
     },
     "reed": {
       "id": "reed",
@@ -75,7 +75,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/reed.svg",
-      "desc": "Cut by low water. Twisted into cord, woven into baskets and thatch."
+      "desc": "Reeds. I could probably twist these into cord..."
     },
     "stone": {
       "id": "stone",
@@ -83,7 +83,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/stone.svg",
-      "desc": "Picked up below any rise, or mined out of a cliff face."
+      "desc": "A rock."
     },
     "flint": {
       "id": "flint",
@@ -91,7 +91,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/flint.svg",
-      "desc": "A sharp edge. Strike against a branch to relight your campfire, or knap into knives, amulets and whetstones."
+      "desc": "A sharp flintstone. I could start a fire with this."
     },
     "clay": {
       "id": "clay",
@@ -99,7 +99,7 @@
       "kind": "raw",
       "stack": 30,
       "icon": "icons/clay.svg",
-      "desc": "Dug at low banks. Pots, salve, and the forge lining."
+      "desc": "River clay. I could probably shape a pot out of this..."
     },
     "hide": {
       "id": "hide",
@@ -123,7 +123,7 @@
       "kind": "material",
       "stack": 30,
       "icon": "icons/cord.svg",
-      "desc": "Binds heads to hafts. Also sets a snare (used up when hunting without a bow)."
+      "desc": "Cord. I could probably set a snare with this..."
     },
     "plank": {
       "id": "plank",
@@ -158,7 +158,7 @@
       "icon": "icons/cooked_meat.svg",
       "food": 4,
       "iconId": "cooked_meat",
-      "desc": "Twice the energy of the raw meat it came from."
+      "desc": "A hot meal. It smells wonderful."
     },
     "bread": {
       "id": "bread",
@@ -204,7 +204,7 @@
       "icon": "icons/stone_knife.svg",
       "slot": "hand",
       "attack": 1,
-      "desc": "Whittles logs into planks for ladders, skins game for hide, and cuts hide into cord."
+      "desc": "A keen flint knife. I could probably whittle planks with this..."
     },
     "stone_axe": {
       "id": "stone_axe",
@@ -214,7 +214,7 @@
       "icon": "icons/stone_axe.svg",
       "slot": "hand",
       "attack": 2,
-      "desc": "Fells trees for logs and splits logs into planks."
+      "desc": "A stone axe. I could probably bring down a tree with this..."
     },
     "stone_hammer": {
       "id": "stone_hammer",
@@ -224,7 +224,7 @@
       "icon": "icons/stone_hammer.svg",
       "slot": "hand",
       "attack": 1,
-      "desc": "Dresses stone into blocks, quarries cliff faces and (slowly) ore."
+      "desc": "A stone hammer. I could probably cut stone into blocks with this..."
     },
     "fishing_rod": {
       "id": "fishing_rod",
@@ -232,7 +232,7 @@
       "kind": "tool",
       "stack": 1,
       "icon": "icons/fishing_rod.svg",
-      "desc": "Fish from any bank where fish are known to be."
+      "desc": "I should find a good fishing spot."
     },
     "pot": {
       "id": "pot",
@@ -305,7 +305,7 @@
       "icon": "icons/basket.svg",
       "slot": "pack",
       "slots": 4,
-      "desc": "+4 pack slots while worn."
+      "desc": "A woven basket. I can carry more now."
     },
     "leather_pack": {
       "id": "leather_pack",
@@ -335,7 +335,7 @@
       "icon": "icons/walking_stick.svg",
       "slot": "hand",
       "moveBonus": 2,
-      "desc": "A simple wooden walking stick. +2 hexes per turn while held."
+      "desc": "A good stick will help me walk."
     },
     "boots": {
       "id": "boots",
@@ -449,7 +449,7 @@
       "stack": 30,
       "icon": "icons/hearth.svg",
       "hp": 8,
-      "desc": "Cook, bake and fire pots here. Rest beside it to heal. Your respawn point."
+      "desc": "A warm hearth. Somewhere to cook, and to rest."
     },
     "hut": {
       "id": "hut",
@@ -1035,7 +1035,7 @@
       "level": 1,
       "inputs": {
         "stone": 4,
-        "log": 2
+        "log": 5
       },
       "output": {
         "hearth": 1

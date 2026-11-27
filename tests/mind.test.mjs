@@ -187,10 +187,10 @@ test('higher ground reveals lower countryside without looking up mountains or pa
   dropMap.place(2, 2, 'stony', 3);
   dropMap.place(2, 8, 'stony', 8);
   dropMap.place(8, 2, 'stony', 12);
-  eq(exploreRadius(dropMap, dropMap.get(2, 2)), 2, '3-level drop sees radius 2');
-  eq(exploreRadius(dropMap, dropMap.get(2, 8)), 4, '8-level drop sees radius 4');
-  eq(exploreRadius(dropMap, dropMap.get(8, 2)), 6, '12-level drop sees radius 6');
-  eq(exploreRadius(dropMap, dropMap.get(5, 5)), 7, 'summit sees radius 7');
+  eq(exploreRadius(dropMap, dropMap.get(2, 2)), 3, '3-level drop sees radius 3');
+  eq(exploreRadius(dropMap, dropMap.get(2, 8)), 5, '8-level drop sees radius 5');
+  eq(exploreRadius(dropMap, dropMap.get(8, 2)), 7, '12-level drop sees radius 7');
+  eq(exploreRadius(dropMap, dropMap.get(5, 5)), 9, 'summit sees radius 9');
   const dState = createState();
   exploreHex(dropMap, dState, 2, 2);
   ok(isKnown(dState, 2, 3), 'standing 3 levels above an adjacent lowland tile reveals it');

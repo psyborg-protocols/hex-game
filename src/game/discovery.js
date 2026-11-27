@@ -39,6 +39,12 @@ export const HIDDEN = {
 
 export const isHidden = id => id in HIDDEN;
 
+/**
+ * The most hidden things one hex can hold. A hex is a berry bush, or a flinty
+ * patch with clay in the bank: never everything at once.
+ */
+export const MAX_HIDDEN_PER_HEX = 2;
+
 /** How far a village's knowledge of the land reaches, once you trade there. */
 export const TRADE_REVEAL_RADIUS = 4;
 
@@ -103,15 +109,19 @@ export function resourcesAt(map, col) {
     else if (id === 'gather_flint') chance = col.h >= 8 ? 0.78 : col.h >= 6 ? 0.28 : (nearHome ? 0.25 : 0.12);
     else if (id === 'find_herb') {
       if (col.terrain === 'meadow' || col.terrain === 'grass' || col.terrain === 'steppes') {
-        chance = out.includes('gather_grain') ? 0.22 : (col.h >= 7 ? 0.18 : 0);
+        chance = out.some(o => o.id === 'gather_grain') ? 0.22 : (col.h >= 7 ? 0.18 : 0);
       } else {
         chance = col.h >= 7 ? 0.22 : 0.06;
       }
     }
-    if (roll(map, col.q, col.r, `res:${id}`) < chance) out.push(id);
+    const r = roll(map, col.q, col.r, `res:${id}`);
+    if (r < chance) out.push({ id, sure: r / chance });
   }
-  cache.set(k, out);
-  return out;
+  // Keep the surest finds, food first so an early game is never starved.
+  out.sort((a, b) => (b.id === 'forage') - (a.id === 'forage') || a.sure - b.sure);
+  const ids = out.slice(0, MAX_HIDDEN_PER_HEX).map(o => o.id);
+  cache.set(k, ids);
+  return ids;
 }
 const resourceCache = new WeakMap();
 
@@ -284,13 +294,16 @@ export const exploreSeconds = (map, col) => TIERS[scenicOf(map, col).tier].secon
 /** How many hexes away a height advantage of `drop` levels can see. */
 export function sightForDrop(drop) {
   if (drop < 3) return 0;
-  if (drop >= 15) return 7;
-  if (drop >= 12) return 6;
-  if (drop >= 9) return 5;
-  if (drop >= 6) return 4;
-  if (drop >= 4) return 3;
-  return 2;
+  if (drop >= 15) return 8;
+  if (drop >= 12) return 7;
+  if (drop >= 9) return 6;
+  if (drop >= 6) return 5;
+  if (drop >= 4) return 4;
+  return 3;
 }
+
+/** The summit sees furthest of all. */
+const SUMMIT_SIGHT = 9;
 
 /** How far exploring one hex sees across the country round it. Higher ground sees further. */
 export function exploreRadius(map, col) {
@@ -307,16 +320,16 @@ export function exploreRadius(map, col) {
   if (underCliff && adjDrop < 3) return 0;
   // In the lowlands, gentle ground without a 3-level cliff edge sees nothing.
   if (col.h < 6 && adjDrop < 3) return 0;
-  if (col === factsOf(map).summit && adjDrop >= 3) return 7;
+  if (col === factsOf(map).summit && adjDrop >= 3) return SUMMIT_SIGHT;
   if (underCliff) return sightForDrop(adjDrop);
 
   let maxDrop = adjDrop;
   for (const c of map) {
-    if (distance(c.q, c.r, col.q, col.r) <= 7 && col.h - c.h > maxDrop) {
+    if (distance(c.q, c.r, col.q, col.r) <= 8 && col.h - c.h > maxDrop) {
       maxDrop = col.h - c.h;
     }
   }
-  if (col === factsOf(map).summit && maxDrop >= 3) return 7;
+  if (col === factsOf(map).summit && maxDrop >= 3) return SUMMIT_SIGHT;
   return sightForDrop(maxDrop);
 }
 

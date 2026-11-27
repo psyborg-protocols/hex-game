@@ -94,7 +94,7 @@ export function checkRecipe(state, recipeId, ctx = {}) {
 
   const level = levelOf(state, recipe.skill);
   if (level < recipe.level) {
-    reasons.push(`Needs ${recipe.skill} level ${recipe.level} (you are ${level}).`);
+    reasons.push(`${recipe.skill[0].toUpperCase()}${recipe.skill.slice(1)} ${recipe.level}`);
   }
 
   const missingInputs = {};
@@ -102,7 +102,7 @@ export function checkRecipe(state, recipeId, ctx = {}) {
     const have = countItem(state, id);
     if (have < qty) {
       missingInputs[id] = qty - have;
-      reasons.push(`Needs ${qty - have} more ${itemName(id)}.`);
+      reasons.push(`${qty - have} ${itemName(id)}`);
     }
   }
 
@@ -124,7 +124,7 @@ export function checkRecipe(state, recipeId, ctx = {}) {
 
   const energyNeeded = energyCost(recipe);
   if (!canSpend(state, energyNeeded)) {
-    reasons.push(`Needs ${energyNeeded} energy — carry some food.`);
+    reasons.push('Too tired. Eat something first.');
   }
 
   const output = Object.entries(recipe.output)[0];
@@ -170,6 +170,9 @@ export function craft(state, recipeId, ctx = {}, extraCost = null) {
 
   state.stats = state.stats || {};
   state.stats.crafted = (state.stats.crafted || 0) + 1;
+  // What you have made before, so an item can speak of what comes next.
+  state.stats.made ||= {};
+  for (const p of produced) state.stats.made[p.id] = (state.stats.made[p.id] || 0) + p.qty;
   const levelsGained = addXp(state, recipe.skill, recipe.xp);
   return { ok: true, recipe, produced, levelsGained, isBuild, toolPlan: check.toolPlan };
 }

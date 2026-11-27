@@ -12,7 +12,7 @@ import {
 } from './state.js';
 import { maxEnergy, topUp, ensureWorn } from './inventory.js';
 import { moveBonus, maxHp } from './gear.js';
-import { growCrops } from './actions.js';
+import { growCrops, burnFires } from './actions.js';
 import { stepWildDogs } from './wild_dogs.js';
 
 export { BASE_MOVE_DISTANCE, ACTIONS_PER_TURN };
@@ -123,6 +123,11 @@ export function advanceTurn(world, state, player, ctx = {}) {
  */
 export function advanceWorldTurn(world, state, player, ctx = {}, events = []) {
   const cropsChanged = world?.map ? growCrops(world, state) : [];
+  if (world?.map) {
+    const fires = burnFires(world, state);
+    cropsChanged.push(...fires.changed);
+    for (const f of fires.out) events.push({ type: 'fireOut', ...f });
+  }
   if (world?.map && player && !ctx.sleeping) {
     stepWildDogs(world, state, player, ctx.rng, events, ctx.dogs || {});
   }

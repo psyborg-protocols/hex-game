@@ -136,7 +136,6 @@ export const tradePanel = {
             <button data-favour ${have >= qty || state.free ? '' : 'disabled'}>Hand them over</button></div>
           <p class="dim">Their trust opens a market, the use of their ${escapeHtml(station)},
             and what they know of the land around them.${jobOf(col.feature) ? ' Half a day of honest work for them earns it too.' : ''}</p>
-          <p class="dim hint">${escapeHtml(ITEMS[item]?.desc || '')}</p>
         </div>
         ${hintBox(props.hintIndex)}`;
     }

@@ -27,6 +27,8 @@ export const MAX_SPAN = 9;
 
 const roll = (rng, [lo, hi]) => lo + Math.floor(rng.next() * (hi - lo + 1));
 
+const TOO_TIRED = 'Too tired to work. You need something to eat.';
+
 /**
  * Run a harvest at the player's feet.
  * @returns {{ok, gained?, levels?, message, changed?}} `changed` lists columns
@@ -38,16 +40,18 @@ export function harvest(world, state, at, id, rng) {
   // harvestsHere, not availableHarvests: a hidden resource has to have been
   // found on this hex before it can be gathered from it.
   const entry = harvestsHere(map, state, at).find(h => h.spec.id === id);
-  if (!spec || !entry) return { ok: false, message: 'Not here.' };
+  if (!spec || !entry) return { ok: false, message: 'There is nothing to gather here.' };
   if (!entry.ok) return { ok: false, message: entry.reasons[0] };
-  if (!canSpend(state, spec.energy)) return { ok: false, message: 'Too tired. Carry some food.' };
+  if (!canSpend(state, spec.energy)) return { ok: false, message: TOO_TIRED };
 
   const col = map.get(at.q, at.r);
   const changed = [];
 
   // A snare is spent on the catch; a bow is not.
   if (spec.id === 'hunt' && countItem(state, 'bow') === 0 && !isFree(state)) {
-    if (!removeItem(state, 'cord', 1)) return { ok: false, message: 'You need cord for a snare.' };
+    if (!removeItem(state, 'cord', 1)) return { ok: false, message: 'You need cord to set a snare.' };
+    state.stats ||= {};
+    state.stats.snares = (state.stats.snares || 0) + 1;
   }
 
   const gained = [];
@@ -148,7 +152,7 @@ export function shakeTree(world, state, at) {
 export function prospect(world, state, at) {
   const { map } = world;
   if (levelOf(state, 'mind') < 3) return { ok: false, message: 'You do not yet know what to look for.' };
-  if (!spend(state, 1)) return { ok: false, message: 'Too tired. Carry some food.' };
+  if (!spend(state, 1)) return { ok: false, message: TOO_TIRED };
 
   const found = [];
   for (const col of map) {
@@ -307,7 +311,11 @@ export function build(world, state, at, recipeId, target, ctx = {}) {
     };
   } else {
     const hp = STRUCTURE_HP[item] || 8;
-    col.feature = { type: 'structure', item, name: itemName(item), hp, maxHp: hp, ...(ITEMS[item]?.wall ? { wall: true } : {}) };
+    col.feature = {
+      type: 'structure', item, name: itemName(item), hp, maxHp: hp, ...(ITEMS[item]?.wall ? { wall: true } : {}),
+      ...(item === 'hearth' ? { fuelUntil: worldClock(state) + HEARTH_LOGS * TURNS_PER_LOG } : {}),
+    };
+    if (item === 'hearth') { state.stats ||= {}; state.stats.firesLit = (state.stats.firesLit || 0) + 1; }
   }
 
   recordBuilt(state, item, col.q, col.r);
@@ -393,35 +401,122 @@ export function penaltyOnDeath(state) {
   return { lost, gold };
 }
 
+/** What the cold campfire still wants, in your own words; '' when you have both. */
+export function campfireWants(state) {
+  if (isFree(state)) return '';
+  const branch = countItem(state, 'branch') >= 1;
+  const flint = countItem(state, 'flint') >= 1;
+  if (!branch && !flint) return "I'll need some wood and a flint to start that...";
+  if (!branch) return 'I need some wood...';
+  if (!flint) return 'I need some flint to start a fire.';
+  return '';
+}
+
+// ------------------------------------------------------------------ fires
+//
+// A fire burns down. The campfire you wake beside is a night's warmth, a day
+// at most: a branch does not burn for long. A hearth is built round a stack of
+// logs and keeps going for days, and you can feed it more.
+
+/** Turns the campfire burns once lit. */
+export const CAMPFIRE_BURNS = DAY_LENGTH;
+/** Logs a new hearth is built round, and what one log keeps it going for. */
+export const HEARTH_LOGS = 5;
+export const TURNS_PER_LOG = DAY_LENGTH;
+/** The most a hearth will hold: ten days' wood. */
+export const HEARTH_MAX_FUEL = 10 * TURNS_PER_LOG;
+
+const isFire = f => f?.type === 'structure' && f.item === 'hearth';
+
+/** Turns of burning left in a fire, or 0 when it is cold. */
+export function fuelLeft(state, col) {
+  const f = col?.feature;
+  if (!isFire(f) || f.cold) return 0;
+  return Math.max(0, (f.fuelUntil ?? worldClock(state) + HEARTH_LOGS * TURNS_PER_LOG) - worldClock(state));
+}
+
+/** A fire that is lit: a station, warmth and a place to heal. */
+export const isLitFire = (state, col) => isFire(col?.feature) && !col.feature.cold;
+
+/**
+ * Burn the fires down by the clock. A spent campfire goes back to cold ashes,
+ * to be lit again; a spent hearth stands cold until it is fed. Either way it
+ * is no longer a station, so it leaves `built` until it burns again.
+ * @returns {{changed: object[], out: object[]}}
+ */
+export function burnFires(world, state) {
+  const changed = [];
+  const out = [];
+  const turn = worldClock(state);
+  for (const col of world.map) {
+    const f = col.feature;
+    if (!isFire(f) || f.cold) continue;
+    // Older saves: a fire with no stock was built full.
+    if (f.fuelUntil == null) f.fuelUntil = turn + (f.camp ? CAMPFIRE_BURNS : HEARTH_LOGS * TURNS_PER_LOG);
+    if (f.fuelUntil > turn) continue;
+    if (f.camp) delete col.feature;
+    else f.cold = true;
+    forgetBuilt(state, col.q, col.r);
+    changed.push(col);
+    out.push({ q: col.q, r: col.r, camp: !!f.camp });
+  }
+  return { changed, out };
+}
+
+/**
+ * Put logs on a hearth: up to its ten days, and a cold one wants a full
+ * stack before it will catch again.
+ * @returns {{ok, message, logs?, column?}}
+ */
+export function feedHearth(world, state, col) {
+  const f = col?.feature;
+  if (!isFire(f) || f.camp) return { ok: false, message: '' };
+  const turn = worldClock(state);
+  const have = isFree(state) ? HEARTH_MAX_FUEL / TURNS_PER_LOG : countItem(state, 'log');
+  if (f.cold) {
+    if (have < HEARTH_LOGS) return { ok: false, message: 'A cold hearth needs a good stack of logs to catch again.' };
+    if (!isFree(state)) removeItem(state, 'log', HEARTH_LOGS);
+    f.cold = false;
+    f.fuelUntil = turn + HEARTH_LOGS * TURNS_PER_LOG;
+    recordBuilt(state, 'hearth', col.q, col.r);
+    return { ok: true, logs: HEARTH_LOGS, column: col, message: 'The logs catch, and the hearth burns again.' };
+  }
+  const room = Math.floor((turn + HEARTH_MAX_FUEL - (f.fuelUntil ?? turn)) / TURNS_PER_LOG);
+  if (room <= 0) return { ok: false, message: 'The hearth will take no more wood.' };
+  if (have < 1) return { ok: false, message: 'I need some wood...' };
+  const logs = Math.min(room, have);
+  if (!isFree(state)) removeItem(state, 'log', logs);
+  f.fuelUntil = (f.fuelUntil ?? turn) + logs * TURNS_PER_LOG;
+  return { ok: true, logs, column: col, message: logs === 1 ? 'You put a log on the fire.' : 'You stack logs on the fire.' };
+}
+
 /**
  * Strike flint against a dry branch to relight the cold campfire at the spawn
- * into a working hearth.
+ * into a working fire, for a day.
  */
 export function relightCampfire(world, state, at) {
   const { map } = world;
   const spawn = map.spawn && map.get(map.spawn.q, map.spawn.r);
   if (!spawn) return { ok: false, message: 'No campfire here.' };
   if (spawn.feature) return { ok: false, message: 'The fire is already lit.' };
-  if (distance(at.q, at.r, spawn.q, spawn.r) > 1) {
-    return { ok: false, message: 'Stand by the campfire to relight it.' };
-  }
+  // Only reachable from afar by code; a click walks you over first.
+  if (distance(at.q, at.r, spawn.q, spawn.r) > 1) return { ok: false, message: '' };
   if (!isFree(state)) {
-    const hasBranch = countItem(state, 'branch') >= 1;
-    const hasFlint = countItem(state, 'flint') >= 1;
-    if (!hasBranch && !hasFlint) {
-      return { ok: false, message: 'Needs a branch and a piece of flint to relight the campfire.' };
-    }
-    if (!hasBranch) return { ok: false, message: 'Needs a dry branch to catch the spark.' };
-    if (!hasFlint) return { ok: false, message: 'Needs a piece of flint to strike a spark.' };
+    const wants = campfireWants(state);
+    if (wants) return { ok: false, message: wants };
     removeItem(state, 'branch', 1);
     removeItem(state, 'flint', 1);
   }
   const hp = STRUCTURE_HP.hearth || 8;
-  spawn.feature = { type: 'structure', item: 'hearth', name: itemName('hearth'), camp: true, hp, maxHp: hp };
+  spawn.feature = {
+    type: 'structure', item: 'hearth', name: 'Campfire', camp: true, hp, maxHp: hp,
+    fuelUntil: worldClock(state) + CAMPFIRE_BURNS,
+  };
   recordBuilt(state, 'hearth', spawn.q, spawn.r);
   const levels = addXp(state, 'homesteading', 6);
   state.stats ||= {};
   state.stats.crafted = (state.stats.crafted || 0) + 1;
+  state.stats.firesLit = (state.stats.firesLit || 0) + 1;
   return {
     ok: true,
     message: 'Sparks catch in the dry kindling, and the campfire comes back to life.',

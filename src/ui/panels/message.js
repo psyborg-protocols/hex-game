@@ -36,6 +36,8 @@ export const HOW_TO_PLAY = `
     <div><b>Explore</b><span>Stand still on a hex to explore it. Scenic places take longer and raise your <i>Mind</i>.
       Berries, herbs, flint, clay and fish only show on hexes you have explored.</span></div>
     <div><b>Gather &amp; make</b><span>Click resources, campfires, huts, benches, villages, or cliff faces directly to gather, craft, trade, or mine.</span></div>
+    <div><b>Fire</b><span>A branch and a flint light the cold campfire, but it burns for only a day. A hearth is built round a stack of five logs and burns for five days; click it to add wood, a day for every log. A cold hearth needs five logs to catch again.</span></div>
+    <div><b>Rest</b><span>Click yourself to sit down. The first sit of each day gives back a little energy.</span></div>
     <div><b>Food is energy</b><span>Work and walking burn energy; food in your pack refills it automatically (1 bite per turn).
       Cooked food packs more into a slot.</span></div>
     <div><b>Worn Gear</b><span>Open Pack (<kbd>I</kbd>) to equip weapons, armour, boots, walking stick, and packs in the gear bar above your slots. Four slots on the left are for food. Right-click (or hold) an item to drop or toss it.</span></div>
@@ -49,5 +51,5 @@ export const HOW_TO_PLAY = `
       Walls slow them, watchtowers shoot, shrines protect. Stand next to a raider to fight: attack dice hit on 4+, defence dice block on 5+.
       Anything that hits you, you hit back. A fallen raider drops its loot on the ground, and so do you when you fall: click the sack to pick it up.</span></div>
     <div><b>Space</b><span>The eye: everything you know of the land.</span></div>
-    <div><b>The corners</b><span>Top left: health, energy, day/night turn &amp; the moon. Point at it for full details.</span></div>
+    <div><b>The corners</b><span>Top left: the sun (or moon) with a bead for every turn of the day or night, health and energy, and the moon's three days, the last red when raiders come. Point at it for the numbers.</span></div>
   </div>`;
